@@ -1,5 +1,10 @@
-//! Minimal v4l2loopback writer: set the output format once, then `write()` raw frames.
-//! Uses a single ioctl (VIDIOC_S_FMT), declared by hand to avoid a heavy dependency.
+//! Minimal v4l2loopback writer: set the output format, read back what the driver really
+//! accepted, then `write()` exactly one frame per call.
+//! Uses two ioctls (VIDIOC_G_FMT / VIDIOC_S_FMT), declared by hand to avoid a heavy dependency.
+//!
+//! v4l2loopback can refuse a new size (an app is reading the camera, or the format is
+//! locked) and does so *silently*: S_FMT succeeds but returns the old size. So the size
+//! actually in use is always read back, and the caller scales frames to it.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -17,7 +22,7 @@ const V4L2_PIX_FMT_YUYV: u32 = fourcc(b"YUYV");
 
 /// `struct v4l2_pix_format` (linux/videodev2.h)
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 struct PixFormat {
     width: u32,
     height: u32,
@@ -43,85 +48,113 @@ struct Format {
 const _: () = assert!(std::mem::size_of::<Format>() == 208);
 const _: () = assert!(std::mem::size_of::<PixFormat>() <= 200);
 
+const fn iowr(nr: u64) -> u64 {
+    (3u64 << 30) | ((std::mem::size_of::<Format>() as u64) << 16) | ((b'V' as u64) << 8) | nr
+}
+/// `_IOWR('V', 4, struct v4l2_format)`
+const VIDIOC_G_FMT: u64 = iowr(4);
 /// `_IOWR('V', 5, struct v4l2_format)`
-const VIDIOC_S_FMT: u64 =
-    (3u64 << 30) | ((std::mem::size_of::<Format>() as u64) << 16) | ((b'V' as u64) << 8) | 5;
+const VIDIOC_S_FMT: u64 = iowr(5);
+
+impl Format {
+    fn output(pix: PixFormat) -> Self {
+        let mut f = Format { type_: V4L2_BUF_TYPE_VIDEO_OUTPUT, fmt: [0; 25] };
+        // SAFETY: PixFormat is plain old data and smaller than the union.
+        unsafe { std::ptr::write_unaligned(f.fmt.as_mut_ptr().cast::<PixFormat>(), pix) };
+        f
+    }
+
+    fn pix(&self) -> PixFormat {
+        // SAFETY: the union starts with a v4l2_pix_format for VIDEO_OUTPUT.
+        unsafe { std::ptr::read_unaligned(self.fmt.as_ptr().cast::<PixFormat>()) }
+    }
+}
 
 pub struct OutputDevice {
     file: File,
-    path: PathBuf,
-    format: Option<(u32, u32)>,
+    size: (usize, usize),
 }
 
 impl OutputDevice {
-    pub fn open(path: &Path) -> io::Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)
-            .map_err(|e| {
-                io::Error::new(e.kind(), format!("cannot open {}: {e}", path.display()))
-            })?;
-        Ok(Self {
-            file,
-            path: path.to_owned(),
-            format: None,
-        })
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    /// Sets YUYV `width`×`height` the first time, or when the resolution changes.
-    pub fn ensure_format(&mut self, width: u32, height: u32) -> io::Result<()> {
-        if self.format == Some((width, height)) {
-            return Ok(());
-        }
-        let pix = PixFormat {
-            width,
-            height,
+    /// Opens the device and asks for YUYV `width`×`height`.
+    /// Check [`size`](Self::size): the driver may have kept another size.
+    pub fn open(path: &Path, width: usize, height: usize) -> io::Result<Self> {
+        let file = open_rw(path)?;
+        let requested = PixFormat {
+            width: width as u32,
+            height: height as u32,
             pixelformat: V4L2_PIX_FMT_YUYV,
             field: V4L2_FIELD_NONE,
-            bytesperline: width * 2,
-            sizeimage: width * height * 2,
+            bytesperline: (width * 2) as u32,
+            sizeimage: (width * height * 2) as u32,
             colorspace: V4L2_COLORSPACE_SRGB,
             ..Default::default()
         };
-        let mut fmt = Format {
-            type_: V4L2_BUF_TYPE_VIDEO_OUTPUT,
-            fmt: [0; 25],
-        };
-        // SAFETY: PixFormat is plain old data and smaller than the union.
-        unsafe {
-            std::ptr::write_unaligned(fmt.fmt.as_mut_ptr().cast::<PixFormat>(), pix);
-        }
+
+        let mut fmt = Format::output(requested);
         // SAFETY: valid fd, correctly sized and initialised struct for this request.
-        let ret = unsafe {
-            libc::ioctl(
-                self.file.as_raw_fd(),
-                VIDIOC_S_FMT as _,
-                &mut fmt as *mut Format,
-            )
-        };
+        let ret = unsafe { libc::ioctl(file.as_raw_fd(), VIDIOC_S_FMT as _, &mut fmt as *mut Format) };
         if ret < 0 {
-            let err = io::Error::last_os_error();
-            return Err(io::Error::new(
-                err.kind(),
-                format!(
-                    "VIDIOC_S_FMT {width}x{height} on {} failed: {err} \
-                     (is the camera already open in an app at another resolution?)",
-                    self.path.display()
-                ),
-            ));
+            // Refused outright (e.g. EBUSY): fall back to the format currently in use.
+            let mut current = Format::output(PixFormat::default());
+            // SAFETY: as above.
+            let ret = unsafe {
+                libc::ioctl(file.as_raw_fd(), VIDIOC_G_FMT as _, &mut current as *mut Format)
+            };
+            if ret < 0 {
+                let err = io::Error::last_os_error();
+                return Err(io::Error::new(
+                    err.kind(),
+                    format!("cannot set or read the format of {}: {err}", path.display()),
+                ));
+            }
+            fmt = current;
         }
-        self.format = Some((width, height));
-        Ok(())
+
+        let pix = fmt.pix();
+        if pix.pixelformat != V4L2_PIX_FMT_YUYV || pix.width == 0 || pix.height == 0 {
+            return Err(io::Error::other(format!(
+                "{} is locked in a format other than YUYV ({}x{}, fourcc {:#x}) — \
+                 close the apps using it, or reload it with: bash scripts/vcam-load.sh",
+                path.display(),
+                pix.width,
+                pix.height,
+                pix.pixelformat
+            )));
+        }
+        Ok(Self { file, size: (pix.width as usize, pix.height as usize) })
     }
 
-    pub fn write_frame(&mut self, frame: &[u8]) -> io::Result<()> {
-        self.file.write_all(frame)
+    /// The size frames must have (what the driver really uses).
+    pub fn size(&self) -> (usize, usize) {
+        self.size
     }
+
+    /// Writes one YUYV frame. v4l2loopback treats every `write()` as one frame,
+    /// so it must go out in a single call.
+    pub fn write_frame(&mut self, frame: &[u8]) -> io::Result<()> {
+        let n = self.file.write(frame)?;
+        if n != frame.len() {
+            return Err(io::Error::other(format!(
+                "virtual camera accepted {n} of {} bytes (frame size mismatch)",
+                frame.len()
+            )));
+        }
+        Ok(())
+    }
+}
+
+fn open_rw(path: &Path) -> io::Result<File> {
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|e| io::Error::new(e.kind(), format!("cannot open {}: {e}", path.display())))
+}
+
+/// Fails early (permissions, wrong path) before waiting for the phone.
+pub fn check_access(path: &Path) -> io::Result<()> {
+    open_rw(path).map(drop)
 }
 
 /// Finds the v4l2loopback device: first one named "Oculibre", else any loopback device.

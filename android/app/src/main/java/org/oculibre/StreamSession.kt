@@ -1,15 +1,18 @@
 package org.oculibre
 
 import android.annotation.SuppressLint
+import android.annotation.TargetApi
 import android.content.Context
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraConstrainedHighSpeedCaptureSession
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.TotalCaptureResult
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -37,7 +40,35 @@ data class StreamConfig(
     val fps: Int = 30,
     val bitrate: Int = 4_000_000,
     val iFrameIntervalSec: Int = 1,
-)
+    /** H.264 level matching size × fps (see [QualityMode.avcLevel]). */
+    val avcLevel: Int = MediaCodecInfo.CodecProfileLevel.AVCLevel31,
+    /** Request Baseline (no B-frames) — only if the encoder supports it at [avcLevel]. */
+    val baseline: Boolean = true,
+    /** Encoder found by [Capabilities.probe]; null = system default. */
+    val encoderName: String? = null,
+    /** Camera found by [Capabilities.probe]; null = back camera. */
+    val cameraId: String? = null,
+    /** > 0: capture with the high-speed session at this rate, encoder keeps [fps]. */
+    val highSpeedFps: Int = 0,
+) {
+    companion object {
+        fun from(support: ModeSupport, caps: DeviceCapabilities): StreamConfig {
+            val mode = support.mode
+            return fromMode(mode, caps).copy(highSpeedFps = support.highSpeedFps)
+        }
+
+        private fun fromMode(mode: QualityMode, caps: DeviceCapabilities) = StreamConfig(
+            width = mode.width,
+            height = mode.height,
+            fps = mode.fps,
+            bitrate = mode.bitrate,
+            avcLevel = mode.avcLevel,
+            baseline = caps.baselineMaxLevel >= mode.avcLevel,
+            encoderName = caps.encoderName,
+            cameraId = caps.cameraId,
+        )
+    }
+}
 
 /**
  * Phase-1 pipeline:
@@ -88,6 +119,7 @@ class StreamSession(
 
     private val framesSent = AtomicInteger()
     private val framesDropped = AtomicInteger()
+    private val cameraFrames = AtomicInteger()
     private val bytesSent = AtomicLong()
 
     // ------------------------------------------------------------------ lifecycle
@@ -103,7 +135,7 @@ class StreamSession(
                 if (!running.get()) return@thread
 
                 status("Connected — opening camera…")
-                val cameraId = pickCamera()
+                val cameraId = requested.cameraId ?: Capabilities.pickCamera(cameraManager)
                 val chars = cameraManager.getCameraCharacteristics(cameraId)
                 val size = pickSize(chars)
                 val cfg = requested.copy(width = size.width, height = size.height)
@@ -150,15 +182,6 @@ class StreamSession(
 
     // ------------------------------------------------------------------ camera selection
 
-    private fun pickCamera(): String {
-        val ids = cameraManager.cameraIdList
-        if (ids.isEmpty()) throw IllegalStateException("No camera found")
-        return ids.firstOrNull { id ->
-            cameraManager.getCameraCharacteristics(id)
-                .get(CameraCharacteristics.LENS_FACING) == CameraMetadata.LENS_FACING_BACK
-        } ?: ids[0]
-    }
-
     private fun pickSize(chars: CameraCharacteristics): Size {
         val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             ?: throw IllegalStateException("Camera has no stream configuration map")
@@ -176,13 +199,6 @@ class StreamSession(
             ?: sizes.minByOrNull { it.width * it.height }!!
     }
 
-    private fun pickFpsRange(chars: CameraCharacteristics, fps: Int): Range<Int>? {
-        val ranges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-            ?: return null
-        return ranges.firstOrNull { it.lower == fps && it.upper == fps }
-            ?: ranges.filter { it.upper == fps }.maxByOrNull { it.lower }
-    }
-
     // ------------------------------------------------------------------ encoder
 
     private fun baseFormat(cfg: StreamConfig): MediaFormat =
@@ -198,10 +214,17 @@ class StreamSession(
             setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000L)
             if (Build.VERSION.SDK_INT >= 23) setInteger(MediaFormat.KEY_PRIORITY, 0) // realtime
             if (Build.VERSION.SDK_INT >= 30) setInteger(MediaFormat.KEY_LATENCY, 1)
+            // High-speed capture (e.g. 120 fps): drop frames before the encoder to reach cfg.fps.
+            // Public as KEY_MAX_FPS_TO_ENCODER since API 29, understood by older versions too.
+            if (cfg.highSpeedFps > 0) setFloat("max-fps-to-encoder", cfg.fps.toFloat())
         }
 
-    private fun configureEncoder(format: MediaFormat): MediaCodec {
-        val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+    private fun configureEncoder(format: MediaFormat, name: String?): MediaCodec {
+        val c = if (name != null) {
+            MediaCodec.createByCodecName(name)
+        } else {
+            MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        }
         try {
             c.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             return c
@@ -212,21 +235,23 @@ class StreamSession(
     }
 
     private fun startEncoder(cfg: StreamConfig) {
-        // Baseline = no B-frames = lowest latency. Some encoders refuse an explicit
-        // profile, so fall back to the vendor default.
-        val baseline = baseFormat(cfg).apply {
-            setInteger(
-                MediaFormat.KEY_PROFILE,
-                MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline,
-            )
-            if (Build.VERSION.SDK_INT >= 23) {
-                setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel31)
+        // Baseline = no B-frames = lowest latency, with the level matching size × fps.
+        // Some encoders refuse an explicit profile, so fall back to the vendor default.
+        val c = if (cfg.baseline) {
+            val baseline = baseFormat(cfg).apply {
+                setInteger(
+                    MediaFormat.KEY_PROFILE,
+                    MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline,
+                )
+                if (Build.VERSION.SDK_INT >= 23) setInteger(MediaFormat.KEY_LEVEL, cfg.avcLevel)
             }
-        }
-        val c = try {
-            configureEncoder(baseline)
-        } catch (e: Exception) {
-            configureEncoder(baseFormat(cfg))
+            try {
+                configureEncoder(baseline, cfg.encoderName)
+            } catch (e: Exception) {
+                configureEncoder(baseFormat(cfg), cfg.encoderName)
+            }
+        } else {
+            configureEncoder(baseFormat(cfg), cfg.encoderName)
         }
         codec = c
         inputSurface = c.createInputSurface()
@@ -322,7 +347,11 @@ class StreamSession(
                     return
                 }
                 camera = device
-                createSession(device, chars, cfg, handler)
+                if (cfg.highSpeedFps > 0 && Build.VERSION.SDK_INT >= 23) {
+                    createHighSpeedSession(device, cfg, handler)
+                } else {
+                    createSession(device, chars, cfg, handler)
+                }
             }
 
             override fun onDisconnected(device: CameraDevice) {
@@ -357,9 +386,13 @@ class StreamSession(
                         val request = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             addTarget(surface)
                             set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                            pickFpsRange(chars, cfg.fps)?.let {
-                                set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it)
-                            }
+                            val ranges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+                            // Above 30 fps, ask for [fps, fps] even when it is not listed: many HALs
+                            // (Xiaomi, Samsung…) honour it although they hide it (docs/research/60fps.md).
+                            // The real rate is measured by cameraCallback and shown in the stats.
+                            val range = fpsRangeFor(ranges, cfg.fps)
+                                ?: if (cfg.fps > 30) Range(cfg.fps, cfg.fps) else null
+                            range?.let { set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
                             val afModes = chars.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
                             if (afModes?.contains(CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO) == true) {
                                 set(
@@ -368,7 +401,7 @@ class StreamSession(
                                 )
                             }
                         }.build()
-                        session.setRepeatingRequest(request, null, handler)
+                        session.setRepeatingRequest(request, cameraCallback, handler)
                         status("Streaming ${cfg.width}x${cfg.height}…")
                     } catch (e: CameraAccessException) {
                         fail(e)
@@ -386,25 +419,103 @@ class StreamSession(
         }
     }
 
+    /**
+     * Slow-motion session: fixed [cfg.highSpeedFps] range, requests sent as bursts.
+     * Exposure is capped at 1/highSpeedFps s, hence "needs light".
+     */
+    @TargetApi(23)
+    private fun createHighSpeedSession(device: CameraDevice, cfg: StreamConfig, handler: Handler) {
+        val surface = inputSurface ?: return
+        try {
+            device.createConstrainedHighSpeedCaptureSession(
+                listOf(surface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        if (!running.get()) {
+                            session.close()
+                            return
+                        }
+                        captureSession = session
+                        try {
+                            val highSpeed = session as CameraConstrainedHighSpeedCaptureSession
+                            val request = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                                addTarget(surface)
+                                set(
+                                    CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                                    Range(cfg.highSpeedFps, cfg.highSpeedFps),
+                                )
+                            }.build()
+                            highSpeed.setRepeatingBurst(
+                                highSpeed.createHighSpeedRequestList(request),
+                                cameraCallback,
+                                handler,
+                            )
+                            status("Streaming ${cfg.width}x${cfg.height} (high-speed ${cfg.highSpeedFps} → ${cfg.fps} fps)…")
+                        } catch (e: CameraAccessException) {
+                            fail(e)
+                        } catch (e: IllegalArgumentException) {
+                            fail(e)
+                        } catch (e: IllegalStateException) {
+                            if (running.get()) fail(e)
+                        }
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {
+                        fail("High-speed camera session refused")
+                    }
+                },
+                handler,
+            )
+        } catch (e: CameraAccessException) {
+            fail(e)
+        } catch (e: IllegalArgumentException) {
+            fail(e)
+        }
+    }
+
     // ------------------------------------------------------------------ stats
+
+    /** Counts frames actually delivered by the camera (≠ requested rate on some phones). */
+    private val cameraCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult,
+        ) {
+            cameraFrames.incrementAndGet()
+        }
+    }
 
     private fun startStats() {
         statsThread = thread(name = "oculibre-stats") {
             var lastFrames = 0
+            var lastCameraFrames = 0
             var lastBytes = 0L
+            var seconds = 0
             try {
                 while (running.get()) {
                     Thread.sleep(1000)
+                    seconds++
                     val frames = framesSent.get()
+                    val camera = cameraFrames.get()
                     val bytes = bytesSent.get()
                     val cfg = activeConfig
                     val mbps = (bytes - lastBytes) * 8 / 1_000_000.0
+                    val cameraFps = camera - lastCameraFrames
+                    val captureFps = if (cfg.highSpeedFps > 0) cfg.highSpeedFps else cfg.fps
+                    // After a warm-up, warn if the camera ignores the requested rate.
+                    val warning = if (seconds >= 3 && cameraFps < captureFps * 0.85) {
+                        "\n⚠ camera delivers $cameraFps fps, not $captureFps: this phone refuses it"
+                    } else {
+                        ""
+                    }
                     status(
                         "Streaming ${cfg.width}x${cfg.height}\n" +
-                            "${frames - lastFrames} fps · ${"%.1f".format(mbps)} Mbit/s\n" +
-                            "dropped: ${framesDropped.get()}",
+                            "camera $cameraFps fps · sent ${frames - lastFrames} fps · ${"%.1f".format(mbps)} Mbit/s\n" +
+                            "dropped: ${framesDropped.get()}" + warning,
                     )
                     lastFrames = frames
+                    lastCameraFrames = camera
                     lastBytes = bytes
                 }
             } catch (e: InterruptedException) {

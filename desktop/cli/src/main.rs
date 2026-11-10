@@ -81,8 +81,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         Some(d) => d,
         None => v4l2::find_loopback()?,
     };
-    let mut camera = v4l2::OutputDevice::open(&device_path)?;
-    println!("Virtual camera: {}", camera.path().display());
+    v4l2::check_access(&device_path)?;
+    println!("Virtual camera: {}", device_path.display());
 
     if args.adb {
         adb_reverse(args.port);
@@ -108,7 +108,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             .map(|a| a.to_string())
             .unwrap_or_default();
         println!("Phone connected ({peer})");
-        match receive(stream, &mut camera) {
+        match receive(stream, &device_path) {
             Ok(()) => println!("\nPhone disconnected — waiting for it to reconnect…"),
             Err(e) => eprintln!("\nConnection ended: {e} — waiting for the phone…"),
         }
@@ -149,8 +149,12 @@ fn find_adb() -> PathBuf {
     PathBuf::from("adb") // rely on PATH
 }
 
-fn receive(mut stream: TcpStream, camera: &mut v4l2::OutputDevice) -> Result<(), Box<dyn Error>> {
+/// One phone session. The virtual camera is opened on the first decoded frame (when the
+/// size is known) and closed when the phone disconnects, so the next session can use
+/// another resolution.
+fn receive(mut stream: TcpStream, device_path: &Path) -> Result<(), Box<dyn Error>> {
     stream.set_nodelay(true)?;
+    let mut camera: Option<v4l2::OutputDevice> = None;
     let mut decoder = Decoder::new()?;
     let mut splitter = annexb::Splitter::new();
     let mut chunk = vec![0u8; 256 * 1024];
@@ -177,10 +181,28 @@ fn receive(mut stream: TcpStream, camera: &mut v4l2::OutputDevice) -> Result<(),
                     if (w, h) != size {
                         println!("\nStream: {w}x{h}");
                         size = (w, h);
+                        camera = None; // close before reopening at the new size
                     }
-                    camera.ensure_format(w as u32, h as u32)?;
-                    yuv::i420_to_yuyv(&picture, &mut frame);
-                    camera.write_frame(&frame)?;
+                    let cam = match camera.as_mut() {
+                        Some(cam) => cam,
+                        None => {
+                            let cam = v4l2::OutputDevice::open(device_path, w, h)?;
+                            let (cw, ch) = cam.size();
+                            if (cw, ch) == (w, h) {
+                                println!("Virtual camera set to {cw}x{ch}");
+                            } else {
+                                println!(
+                                    "Virtual camera is locked at {cw}x{ch} by an app reading it: \
+                                     scaling {w}x{h} down/up to it.\n\
+                                     Close the apps using the camera, then Stop/Start, to get {w}x{h}."
+                                );
+                            }
+                            camera.insert(cam)
+                        }
+                    };
+                    let (cw, ch) = cam.size();
+                    yuv::i420_to_yuyv(&picture, cw, ch, &mut frame);
+                    cam.write_frame(&frame)?;
                     frames += 1;
                 }
                 Ok(None) => {}
@@ -235,7 +257,7 @@ mod tests {
             while let Some(nal) = splitter.next_nal() {
                 if let Some(pic) = decoder.decode(&nal).unwrap() {
                     assert_eq!(pic.dimensions(), (w, h));
-                    yuv::i420_to_yuyv(&pic, &mut out);
+                    yuv::i420_to_yuyv(&pic, w, h, &mut out);
                     assert_eq!(out.len(), w * h * 2);
                     decoded += 1;
                 }

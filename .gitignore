@@ -53,3 +53,7 @@ xcuserdata/
 .env
 *.pem
 *.p12
+
+# --- Raw camera dumps (personal data): use scripts/device-report.py ---
+camera-dump*.txt
+*.dumpsys.txt
