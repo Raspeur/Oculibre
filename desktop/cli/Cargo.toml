@@ -10,6 +10,8 @@ name = "oculibre"
 path = "src/main.rs"
 
 [dependencies]
+oculibre-protocol = { path = "../protocol" }
+serde_json = "1"
 # Cisco OpenH264, BSD-2-Clause, compiled from source: no system library needed.
 openh264 = "0.9"
 libc = "0.2"

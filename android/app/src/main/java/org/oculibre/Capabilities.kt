@@ -42,6 +42,12 @@ data class ModeSupport(
     val unlisted: Boolean = false,
 ) {
     val supported: Boolean get() = missing == null
+    /** Protocol name of the capture path: normal, unlisted or high_speed. */
+    val path: String get() = when {
+        highSpeedFps > 0 -> "high_speed"
+        unlisted -> "unlisted"
+        else -> "normal"
+    }
     val id: String get() = if (highSpeedFps > 0) "${mode.id}-hs" else mode.id
     val label: String
         get() = if (highSpeedFps > 0) "${mode.label} · slow-motion mode (needs light)" else mode.label
@@ -53,7 +59,32 @@ class DeviceCapabilities(
     /** Highest H.264 Baseline level the encoder advertises (0 if none). */
     val baselineMaxLevel: Int,
     val modes: List<ModeSupport>,
-)
+    /** back, front or external. */
+    val facing: String = "back",
+    /** Degrees clockwise (CameraCharacteristics.SENSOR_ORIENTATION). */
+    val sensorOrientation: Int = 0,
+) {
+    /** Capabilities catalogue sent to the computer (docs/protocol.typ, Capabilities). */
+    fun catalogue(): Map<String, Any?> = linkedMapOf(
+        "cameras" to listOf(
+            linkedMapOf(
+                "id" to cameraId,
+                "facing" to facing,
+                "sensor_orientation" to sensorOrientation.toLong(),
+                "modes" to modes.filter { it.supported }.map { s ->
+                    linkedMapOf<String, Any?>(
+                        "width" to s.mode.width.toLong(),
+                        "height" to s.mode.height.toLong(),
+                        "fps" to s.mode.fps.toLong(),
+                        "path" to s.path,
+                    ).apply { if (s.highSpeedFps > 0) put("capture_fps", s.highSpeedFps.toLong()) }
+                },
+                "controls" to emptyList<String>(),
+            ),
+        ),
+        "codecs" to listOf("h264"),
+    )
+}
 
 /** Exact `[fps, fps]` AE range if available, else the range ending at `fps` with the highest floor. */
 fun fpsRangeFor(ranges: Array<Range<Int>>?, fps: Int): Range<Int>? {
@@ -91,6 +122,12 @@ object Capabilities {
         } ?: ids[0]
     }
 
+    fun facingName(lensFacing: Int?): String = when (lensFacing) {
+        CameraMetadata.LENS_FACING_FRONT -> "front"
+        CameraMetadata.LENS_FACING_BACK -> "back"
+        else -> "external"
+    }
+
     /** Asks the camera and the H.264 encoder what they can really do. Takes ~100 ms: call off the UI thread. */
     fun probe(context: Context): DeviceCapabilities {
         val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -102,7 +139,11 @@ object Capabilities {
         val encoder = findAvcEncoder()
 
         val modes = MODES.flatMap { mode -> check(mode, chars, map, sizes, fpsRanges, encoder) }
-        return DeviceCapabilities(cameraId, encoder?.name, encoder?.baselineMaxLevel ?: 0, modes)
+        return DeviceCapabilities(
+            cameraId, encoder?.name, encoder?.baselineMaxLevel ?: 0, modes,
+            facing = facingName(chars.get(CameraCharacteristics.LENS_FACING)),
+            sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0,
+        )
     }
 
     private fun check(

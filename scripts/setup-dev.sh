@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Oculibre — check and install the development environment (Ubuntu / Debian).
 #
-#   bash scripts/setup-dev.sh          # Android build + phase-1 viewer
-#   bash scripts/setup-dev.sh --vcam   # also v4l2loopback (Linux virtual webcam, needed soon)
+#   bash scripts/setup-dev.sh          # Android build + desktop receiver
+#   bash scripts/setup-dev.sh --vcam   # also v4l2loopback (Linux virtual webcam)
 #
 # Safe to run several times. Uses sudo only for apt packages.
 set -euo pipefail
@@ -65,7 +65,7 @@ else
 fi
 
 # ---------------------------------------------------------------- ffmpeg
-step "3. ffmpeg / ffplay (phase-1 viewer)"
+step "3. ffmpeg / ffplay (to look at the virtual camera: ffplay /dev/videoN)"
 if command -v ffplay > /dev/null; then ok "$(ffplay -version | head -1)"; else APT+=(ffmpeg); warn "ffmpeg will be installed"; fi
 
 # ---------------------------------------------------------------- Rust
@@ -83,7 +83,7 @@ if [ "$WITH_VCAM" = 1 ]; then
     APT+=(v4l2loopback-dkms v4l-utils "linux-headers-$(uname -r)")
     warn "v4l2loopback will be installed (if Secure Boot is on, you may be asked to enroll a MOK key)"
 else
-    ok "skipped (run with --vcam when we get to the virtual webcam)"
+    ok "skipped (run with --vcam to install it)"
 fi
 
 # ---------------------------------------------------------------- apt
@@ -102,5 +102,5 @@ step "Done. Next:"
 echo "  1. On the phone: enable Developer options + USB debugging (Xiaomi: also 'Install via USB')"
 echo "  2. Plug it in, accept the RSA prompt, check:  adb devices"
 echo "  3. Build and install:  cd android && ./gradlew installDebug"
-echo "  4. On the PC:          bash scripts/view.sh"
+echo "  4. On the PC:          bash scripts/vcam-load.sh && cd desktop && cargo run --release"
 echo "  5. In the app:         press Start"

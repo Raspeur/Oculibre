@@ -400,9 +400,11 @@ final rotation and mirroring (user setting `0`, `90`, `180`, `270` or `auto`, pl
 
 The camera provides what `auto` needs:
 - `camera.sensor_orientation` and `camera.facing` (in `STREAM_CONFIG`), from the camera characteristics;
-- `device_rotation` (`orientation` event): physical rotation of the phone, *clockwise from its natural
-  (portrait) position*, from the accelerometer, quantised to 0/90/180/270; `null` when the phone lies
-  flat or the value is unknown. Sent at stream start and on every change.
+- `device_rotation` (`orientation` event): physical rotation of the phone from its natural (portrait)
+  position, *counter-clockwise*, from the accelerometer, quantised to 0/90/180/270: the same convention
+  as Android's `Display.getRotation()` (`90` = turned to landscape with its top edge on the left).
+  `null` when the phone lies flat or the value is unknown. Sent at stream start and on every change.
+  Android's `OrientationEventListener` counts clockwise: the camera sends `(360 - angle) mod 360`.
 
 `auto` rotation applied by the host (clockwise), as Android does:
 
@@ -424,7 +426,8 @@ clock offset of the responder relative to the sender:
 $ "rtt" = (t_4 - t_1) - (t_3 - t_2) quad quad "offset" = ((t_2 - t_1) + (t_3 - t_4)) / 2 $
 
 - The host keeps the offset with the lowest `rtt` over the last few seconds and computes the
-  *capture-to-display latency* of each frame as $"display_time" - ("frame.timestamp" + "offset")$.
+  *capture-to-display latency* of each frame as $"display_time" - ("frame.timestamp" - "offset")$, with
+  `offset` measured by the host's own `PING`s (camera clock minus host clock).
 
 = Flow control <flow>
 

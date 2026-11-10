@@ -11,8 +11,8 @@ android {
         applicationId = "org.oculibre"
         minSdk = 21 // Android 5.0 — the whole point of the project
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = 2
+        versionName = "0.1.0" // speaks protocol 0.1
     }
 
     buildTypes {
@@ -29,6 +29,17 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        unitTests.all {
+            // Shared protocol vectors (docs/protocol.typ, conformance tests).
+            it.systemProperty("oculibre.vectors", rootProject.file("../tests/protocol/vectors").absolutePath)
+        }
+    }
 }
 
-// Intentionally no dependencies: platform APIs only (small APK, F-Droid friendly, works on old devices).
+// Intentionally no runtime dependencies: platform APIs only (small APK, F-Droid friendly, works on
+// old devices). JUnit is only used by the unit tests on the build machine.
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}

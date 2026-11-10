@@ -25,7 +25,7 @@ import android.widget.TextView
 import kotlin.concurrent.thread
 
 /**
- * Phase-1 test screen: PC address, quality picker (only what this phone supports),
+ * Main screen: PC address, quality picker (only what this phone supports),
  * Start/Stop and a status line. Streaming itself runs in [StreamService], so it survives
  * the screen turning off. Built in code on purpose (no AndroidX, no layout XML).
  */
@@ -88,7 +88,7 @@ class MainActivity : Activity() {
             fitsSystemWindows = true
             setPadding(pad, pad, pad, pad)
             addView(TextView(context).apply {
-                text = "PC address (127.0.0.1 over USB, or the PC's IP over Wi-Fi)"
+                text = "PC address (127.0.0.1 over USB, or the PC's IP over Wi-Fi with --insecure-lan)"
             })
             addView(hostInput)
             addView(TextView(context).apply {

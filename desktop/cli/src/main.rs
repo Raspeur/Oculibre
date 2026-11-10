@@ -1,26 +1,24 @@
-//! `oculibre` — phase-1 desktop receiver.
+//! `oculibre` — desktop receiver (Linux).
 //!
-//! Listens for the phone (raw H.264 Annex B over TCP), decodes it with OpenH264 and
-//! writes the frames to a v4l2loopback device, so the phone shows up as a regular webcam.
+//! Waits for the phone, speaks the Oculibre protocol 0.1 with it (`docs/protocol.typ`), decodes
+//! the H.264 video with OpenH264 and writes the frames to a v4l2loopback device, so the phone
+//! shows up as a regular webcam.
 
-mod annexb;
+mod session;
 mod v4l2;
 mod yuv;
 
 use std::error::Error;
-use std::io::Read;
-use std::net::{TcpListener, TcpStream};
+use std::fs;
+use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, Instant};
 
-use openh264::decoder::Decoder;
+use openh264::decoder::DecodedYUV;
 use openh264::formats::YUVSource;
 
-const DEFAULT_PORT: u16 = 47100;
-
 const USAGE: &str = "\
-Oculibre — use your Android phone as a webcam (phase-1 receiver, Linux)
+Oculibre — use your Android phone as a webcam (Linux receiver)
 
 USAGE:
     oculibre [OPTIONS]
@@ -28,7 +26,9 @@ USAGE:
 OPTIONS:
     -p, --port <PORT>       TCP port to listen on [default: 47100]
     -d, --device <PATH>     v4l2loopback device [default: auto-detect]
-        --no-adb            Don't run `adb reverse` (Wi-Fi only)
+        --no-adb            Don't run `adb reverse`
+        --insecure-lan      Also accept phones over the network (Wi-Fi), UNENCRYPTED:
+                            anyone on the same network could watch or inject video
     -h, --help              Show this help
 
 Several phones plugged in? Choose one with ANDROID_SERIAL=<serial> oculibre
@@ -38,13 +38,15 @@ struct Args {
     port: u16,
     device: Option<PathBuf>,
     adb: bool,
+    insecure_lan: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut args = Args {
-        port: DEFAULT_PORT,
+        port: oculibre_protocol::HOST_PORT,
         device: None,
         adb: true,
+        insecure_lan: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -57,6 +59,7 @@ fn parse_args() -> Result<Args, String> {
                 args.device = Some(it.next().ok_or("--device needs a value")?.into());
             }
             "--no-adb" => args.adb = false,
+            "--insecure-lan" => args.insecure_lan = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -88,12 +91,27 @@ fn run() -> Result<(), Box<dyn Error>> {
         adb_reverse(args.port);
     }
 
-    let listener = TcpListener::bind(("0.0.0.0", args.port))
+    // §13: plaintext is only acceptable on loopback (USB through adb reverse).
+    let bind_ip = if args.insecure_lan {
+        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+    } else {
+        IpAddr::V4(Ipv4Addr::LOCALHOST)
+    };
+    let listener = TcpListener::bind((bind_ip, args.port))
         .map_err(|e| format!("cannot listen on port {}: {e}", args.port))?;
+    if args.insecure_lan {
+        eprintln!(
+            "WARNING: --insecure-lan: network connections are accepted WITHOUT encryption or \
+             pairing. Anyone on this network can watch the video or send fake video to this \
+             virtual camera. Use it only on a network you trust."
+        );
+    }
     println!(
-        "Listening on port {} — press Start in the app (Ctrl+C to quit)",
-        args.port
+        "Listening on {}:{} — press Start in the app (Ctrl+C to quit)",
+        bind_ip, args.port
     );
+
+    let hello = session::host_hello(host_id(), host_name(), os_version());
 
     for conn in listener.incoming() {
         let stream = match conn {
@@ -103,17 +121,124 @@ fn run() -> Result<(), Box<dyn Error>> {
                 continue;
             }
         };
-        let peer = stream
-            .peer_addr()
-            .map(|a| a.to_string())
-            .unwrap_or_default();
+        let peer = match stream.peer_addr() {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+        if !peer.ip().is_loopback() && !args.insecure_lan {
+            eprintln!("Refused a connection from {peer}: only USB (adb) is allowed without --insecure-lan");
+            continue;
+        }
         println!("Phone connected ({peer})");
-        match receive(stream, &device_path) {
-            Ok(()) => println!("\nPhone disconnected — waiting for it to reconnect…"),
+        let mut sink = VirtualCamera::new(&device_path);
+        match session::run(stream, &hello, &mut sink, false) {
+            Ok(session::End::Bye { reason, message }) => println!(
+                "\nPhone stopped ({reason}{}) — waiting for it…",
+                message.map(|m| format!(": {m}")).unwrap_or_default()
+            ),
+            Ok(session::End::Closed) => println!("\nPhone disconnected — waiting for it…"),
             Err(e) => eprintln!("\nConnection ended: {e} — waiting for the phone…"),
         }
     }
     Ok(())
+}
+
+/// The v4l2loopback device, opened at the first picture (when the size is known) and closed
+/// with the session, so the next session can use another resolution.
+struct VirtualCamera<'a> {
+    path: &'a Path,
+    device: Option<v4l2::OutputDevice>,
+    size: (usize, usize),
+    frame: Vec<u8>,
+}
+
+impl<'a> VirtualCamera<'a> {
+    fn new(path: &'a Path) -> Self {
+        Self {
+            path,
+            device: None,
+            size: (0, 0),
+            frame: Vec::new(),
+        }
+    }
+}
+
+impl session::Sink for VirtualCamera<'_> {
+    fn show(&mut self, picture: &DecodedYUV<'_>) -> Result<(), Box<dyn Error>> {
+        let (w, h) = picture.dimensions();
+        if (w, h) != self.size {
+            self.size = (w, h);
+            self.device = None; // close before reopening at the new size
+        }
+        let device = match self.device.as_mut() {
+            Some(d) => d,
+            None => {
+                let d = v4l2::OutputDevice::open(self.path, w, h)?;
+                let (cw, ch) = d.size();
+                if (cw, ch) == (w, h) {
+                    println!("Virtual camera set to {cw}x{ch}");
+                } else {
+                    println!(
+                        "Virtual camera is locked at {cw}x{ch} by an app reading it: \
+                         scaling {w}x{h} to it.\n\
+                         Close the apps using the camera, then Stop/Start, to get {w}x{h}."
+                    );
+                }
+                self.device.insert(d)
+            }
+        };
+        let (cw, ch) = device.size();
+        yuv::i420_to_yuyv(picture, cw, ch, &mut self.frame);
+        device.write_frame(&self.frame)?;
+        Ok(())
+    }
+}
+
+/// Random id of this computer, created once (§7.1: never derived from hardware identifiers).
+fn host_id() -> String {
+    let dir = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".config")))
+        .map(|d| d.join("oculibre"));
+    let file = dir.as_ref().map(|d| d.join("host-id"));
+    if let Some(id) = file.as_ref().and_then(|f| fs::read_to_string(f).ok()) {
+        let id = id.trim().to_string();
+        if !id.is_empty() {
+            return id;
+        }
+    }
+    let mut b = [0u8; 16];
+    if let Ok(mut f) = fs::File::open("/dev/urandom") {
+        let _ = std::io::Read::read_exact(&mut f, &mut b);
+    }
+    b[6] = (b[6] & 0x0f) | 0x40; // UUID version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
+    let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    let id = format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    );
+    if let (Some(dir), Some(file)) = (dir, file) {
+        let _ = fs::create_dir_all(dir).and_then(|_| fs::write(file, &id));
+    }
+    id
+}
+
+fn host_name() -> String {
+    fs::read_to_string("/proc/sys/kernel/hostname")
+        .or_else(|_| fs::read_to_string("/etc/hostname"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "computer".into())
+}
+
+fn os_version() -> Option<String> {
+    fs::read_to_string("/proc/sys/kernel/osrelease")
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// Runs `adb reverse` so the phone's 127.0.0.1:<port> reaches this PC over USB.
@@ -149,120 +274,5 @@ fn find_adb() -> PathBuf {
     PathBuf::from("adb") // rely on PATH
 }
 
-/// One phone session. The virtual camera is opened on the first decoded frame (when the
-/// size is known) and closed when the phone disconnects, so the next session can use
-/// another resolution.
-fn receive(mut stream: TcpStream, device_path: &Path) -> Result<(), Box<dyn Error>> {
-    stream.set_nodelay(true)?;
-    let mut camera: Option<v4l2::OutputDevice> = None;
-    let mut decoder = Decoder::new()?;
-    let mut splitter = annexb::Splitter::new();
-    let mut chunk = vec![0u8; 256 * 1024];
-    let mut frame = Vec::new();
-
-    let mut frames = 0u32;
-    let mut errors = 0u32;
-    let mut bytes = 0usize;
-    let mut size = (0, 0);
-    let mut last_report = Instant::now();
-
-    loop {
-        let n = stream.read(&mut chunk)?;
-        if n == 0 {
-            return Ok(());
-        }
-        bytes += n;
-        splitter.push(&chunk[..n]);
-
-        while let Some(nal) = splitter.next_nal() {
-            match decoder.decode(&nal) {
-                Ok(Some(picture)) => {
-                    let (w, h) = picture.dimensions();
-                    if (w, h) != size {
-                        println!("\nStream: {w}x{h}");
-                        size = (w, h);
-                        camera = None; // close before reopening at the new size
-                    }
-                    let cam = match camera.as_mut() {
-                        Some(cam) => cam,
-                        None => {
-                            let cam = v4l2::OutputDevice::open(device_path, w, h)?;
-                            let (cw, ch) = cam.size();
-                            if (cw, ch) == (w, h) {
-                                println!("Virtual camera set to {cw}x{ch}");
-                            } else {
-                                println!(
-                                    "Virtual camera is locked at {cw}x{ch} by an app reading it: \
-                                     scaling {w}x{h} down/up to it.\n\
-                                     Close the apps using the camera, then Stop/Start, to get {w}x{h}."
-                                );
-                            }
-                            camera.insert(cam)
-                        }
-                    };
-                    let (cw, ch) = cam.size();
-                    yuv::i420_to_yuyv(&picture, cw, ch, &mut frame);
-                    cam.write_frame(&frame)?;
-                    frames += 1;
-                }
-                Ok(None) => {}
-                Err(_) => errors += 1,
-            }
-        }
-
-        let elapsed = last_report.elapsed();
-        if elapsed >= Duration::from_secs(1) {
-            let secs = elapsed.as_secs_f64();
-            print!(
-                "\r{:>3.0} fps · {:>4.1} Mbit/s · decode errors: {errors}   ",
-                f64::from(frames) / secs,
-                bytes as f64 * 8.0 / secs / 1e6,
-            );
-            let _ = std::io::Write::flush(&mut std::io::stdout());
-            frames = 0;
-            bytes = 0;
-            last_report = Instant::now();
-        }
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use openh264::encoder::Encoder;
-    use openh264::formats::YUVBuffer;
-
-    /// Encodes a few frames with OpenH264, feeds the bytes in awkward chunk sizes through
-    /// the splitter and decoder, and checks every frame comes out — no phone needed.
-    #[test]
-    fn encode_split_decode_roundtrip() {
-        let (w, h) = (320usize, 240usize);
-        let mut encoder = Encoder::new().unwrap();
-        let mut stream = Vec::new();
-        for i in 0..10u8 {
-            let mut yuv = vec![i.wrapping_mul(20); w * h * 3 / 2];
-            yuv[i as usize * 100] = 255;
-            let buffer = YUVBuffer::from_vec(yuv, w, h);
-            stream.extend(encoder.encode(&buffer).unwrap().to_vec());
-        }
-        // A trailing start code flushes the last NAL out of the splitter.
-        stream.extend([0, 0, 0, 1]);
-
-        let mut decoder = Decoder::new().unwrap();
-        let mut splitter = annexb::Splitter::new();
-        let mut out = Vec::new();
-        let mut decoded = 0;
-        for chunk in stream.chunks(777) {
-            splitter.push(chunk);
-            while let Some(nal) = splitter.next_nal() {
-                if let Some(pic) = decoder.decode(&nal).unwrap() {
-                    assert_eq!(pic.dimensions(), (w, h));
-                    yuv::i420_to_yuyv(&pic, w, h, &mut out);
-                    assert_eq!(out.len(), w * h * 2);
-                    decoded += 1;
-                }
-            }
-        }
-        assert_eq!(decoded, 10);
-    }
-}
+mod tests;

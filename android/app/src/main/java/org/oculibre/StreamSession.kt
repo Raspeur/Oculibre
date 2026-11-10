@@ -20,19 +20,27 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Range
 import android.util.Size
+import android.view.OrientationEventListener
 import android.view.Surface
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.IOException
-import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
+import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
+import org.oculibre.Protocol.Message
 
 data class StreamConfig(
     val width: Int = 1280,
@@ -50,11 +58,19 @@ data class StreamConfig(
     val cameraId: String? = null,
     /** > 0: capture with the high-speed session at this rate, encoder keeps [fps]. */
     val highSpeedFps: Int = 0,
+    /** Capture path announced to the computer: normal, unlisted or high_speed. */
+    val path: String = "normal",
+    /** Capabilities catalogue (HELLO and get_capabilities), null if unknown. */
+    val capabilities: Map<String, Any?>? = null,
 ) {
     companion object {
         fun from(support: ModeSupport, caps: DeviceCapabilities): StreamConfig {
             val mode = support.mode
-            return fromMode(mode, caps).copy(highSpeedFps = support.highSpeedFps)
+            return fromMode(mode, caps).copy(
+                highSpeedFps = support.highSpeedFps,
+                path = support.path,
+                capabilities = caps.catalogue(),
+            )
         }
 
         private fun fromMode(mode: QualityMode, caps: DeviceCapabilities) = StreamConfig(
@@ -71,14 +87,19 @@ data class StreamConfig(
 }
 
 /**
- * Phase-1 pipeline:
+ * One streaming session, speaking the Oculibre protocol 0.1 (docs/protocol.typ):
  *
  *   Camera2 ──► encoder input Surface ──► MediaCodec (H.264) ──► queue ──► TCP socket
+ *                                                                           ▲   │
+ *                                         PONG, RESPONSE, events ───────────┘   ▼
+ *                                                       reader ◄── PING, REQUEST, BYE, stats
  *
- * The stream is raw H.264 Annex B (no Oculibre framing yet), so the PC can simply run
- * `ffplay -f h264 tcp://0.0.0.0:47100?listen=1`. The phone is the TCP client.
+ * The phone dials the computer (USB: 127.0.0.1 through `adb reverse`), sends its preamble and
+ * HELLO, then a STREAM_CONFIG each time the encoder (re)starts, and one VIDEO_FRAME per access unit.
+ * The camera never rotates the picture: it reports its sensor orientation and the phone rotation,
+ * and the computer decides.
  *
- * Threads: setup, camera (HandlerThread), encoder drain, sender, stats, stop.
+ * Threads: setup, camera (HandlerThread), encoder drain, sender, reader, control, stats, stop.
  */
 class StreamSession(
     context: Context,
@@ -92,35 +113,62 @@ class StreamSession(
         fun onStopped(session: StreamSession, error: String?)
     }
 
-    private class Packet(val data: ByteArray, val isConfig: Boolean)
+    /** An encoded message ready to send; [isFrame] for the stats. */
+    private class Packet(val bytes: ByteArray, val isFrame: Boolean)
 
+    private val appContext = context.applicationContext
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
     private val running = AtomicBoolean(false)
     private val stopped = AtomicBoolean(false)
 
     @Volatile private var socket: Socket? = null
+    @Volatile private var writer: Protocol.MessageWriter? = null
     @Volatile private var codec: MediaCodec? = null
     @Volatile private var inputSurface: Surface? = null
     @Volatile private var camera: CameraDevice? = null
     @Volatile private var captureSession: CameraCaptureSession? = null
     @Volatile private var cameraThread: HandlerThread? = null
     @Volatile private var activeConfig: StreamConfig = requested
+    @Volatile private var cameraInfo: Protocol.CameraInfo? = null
+    @Volatile private var orientationListener: OrientationEventListener? = null
 
     @Volatile private var setupThread: Thread? = null
     @Volatile private var drainThread: Thread? = null
     @Volatile private var senderThread: Thread? = null
+    @Volatile private var readerThread: Thread? = null
     @Volatile private var statsThread: Thread? = null
+
+    /** Small writes that must not happen on the main thread (orientation events). */
+    private val control: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "oculibre-control")
+    }
 
     private val queue = ArrayBlockingQueue<Packet>(QUEUE_CAPACITY)
 
-    /** Only touched by the drain thread. */
+    /** Features both sides understand (HELLO intersection). */
+    @Volatile private var shared: Set<String> = emptySet()
+
+    /** Clock of the camera timestamps (§11): frames and PONG times must use the same one. */
+    @Volatile private var realtimeClock = false
+
+    // Only touched by the drain thread.
     private var waitingForKeyframe = false
+    private var pendingDiscontinuity = false
+    private var frameNumber = 0L
+    private var configId = 0
+    private var outputFormat: MediaFormat? = null
 
     private val framesSent = AtomicInteger()
     private val framesDropped = AtomicInteger()
     private val cameraFrames = AtomicInteger()
     private val bytesSent = AtomicLong()
+
+    // What the computer reports (its `stats` event).
+    @Volatile private var hostStats: Map<*, *>? = null
+
+    /** Last device rotation sent, -1 = none yet. Main thread only. */
+    private var lastRotation = -1
 
     // ------------------------------------------------------------------ lifecycle
 
@@ -134,41 +182,73 @@ class StreamSession(
                 socket = s
                 if (!running.get()) return@thread
 
-                status("Connected — opening camera…")
                 val cameraId = requested.cameraId ?: Capabilities.pickCamera(cameraManager)
                 val chars = cameraManager.getCameraCharacteristics(cameraId)
+                realtimeClock = Build.VERSION.SDK_INT >= 23 &&
+                    chars.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+                    CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+                val facing = Capabilities.facingName(chars.get(CameraCharacteristics.LENS_FACING))
+                cameraInfo = Protocol.CameraInfo(
+                    id = cameraId,
+                    facing = facing,
+                    sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0,
+                    mirrored = false,
+                )
+
+                status("Connected — handshake…")
+                val reader = handshake(s)
+                if (!running.get()) return@thread
+
+                status("Connected — opening camera…")
                 val size = pickSize(chars)
                 val cfg = requested.copy(width = size.width, height = size.height)
                 activeConfig = cfg
 
+                startReader(reader)
                 startEncoder(cfg)
-                startSender(s.getOutputStream())
+                startSender()
                 openCamera(cameraId, chars, cfg)
+                startOrientation()
                 startStats()
+            } catch (e: Protocol.ProtocolException) {
+                fail(e.message ?: e.kind, if (e.kind == "incompatible_major") "version" else "protocol_error")
+            } catch (e: SocketTimeoutException) {
+                fail("The computer did not answer (is it running Oculibre 0.1 or newer?)", "protocol_error")
             } catch (e: Exception) {
                 fail(e)
             }
         }
     }
 
-    fun stop() = shutdown(null)
+    fun stop() = shutdown(null, "user_stop")
 
     private fun fail(e: Throwable) = fail(e.message ?: e.javaClass.simpleName)
 
-    private fun fail(message: String) = shutdown(message)
+    private fun fail(message: String, byeReason: String = "other") = shutdown(message, byeReason)
 
-    private fun shutdown(error: String?) {
+    private fun shutdown(error: String?, byeReason: String?) {
         if (!stopped.compareAndSet(false, true)) return
         running.set(false)
         thread(name = "oculibre-stop") {
-            // Closing the socket first unblocks a sender stuck in write().
+            orientationListener?.disable()
+            // Polite goodbye, without waiting long on a congested link.
+            val w = writer
+            if (w != null && byeReason != null) {
+                val bye = thread(name = "oculibre-bye") {
+                    runCatching { w.write(Message.Bye(byeReason, error)) }
+                }
+                bye.join(BYE_TIMEOUT_MS)
+            }
+            // Closing the socket unblocks the sender (write) and the reader (read).
             runCatching { socket?.close() }
             setupThread?.join(CONNECT_TIMEOUT_MS + 1000L)
             runCatching { captureSession?.close() }
             runCatching { camera?.close() }
             drainThread?.join(1000)
             senderThread?.join(1000)
+            readerThread?.join(1000)
             statsThread?.interrupt()
+            control.shutdownNow()
             runCatching { codec?.stop() }
             runCatching { codec?.release() }
             runCatching { inputSurface?.release() }
@@ -179,6 +259,186 @@ class StreamSession(
     }
 
     private fun status(text: String) = listener.onStatus(this, text)
+
+    /** Now, on the clock of the camera timestamps, in µs. */
+    private fun nowUs(): Long =
+        if (realtimeClock) SystemClock.elapsedRealtimeNanos() / 1000 else System.nanoTime() / 1000
+
+    // ------------------------------------------------------------------ protocol
+
+    /** Preambles and HELLOs (§4, §7.1). The computer has 5 s to answer. */
+    private fun handshake(s: Socket): Protocol.MessageReader {
+        s.soTimeout = HANDSHAKE_TIMEOUT_MS
+        val w = Protocol.MessageWriter(BufferedOutputStream(s.getOutputStream(), 64 * 1024))
+        val r = Protocol.MessageReader(BufferedInputStream(s.getInputStream(), 64 * 1024))
+        val ours = Protocol.Preamble.ours(Protocol.ROLE_CAMERA)
+        w.writeRaw(ours.encode())
+        w.write(hello())
+        writer = w
+
+        val peer = try {
+            r.readPreamble()
+        } catch (e: Protocol.ProtocolException) {
+            if (e.kind == "connection_closed") {
+                throw IOException("The computer closed the connection (only USB/localhost connections are accepted unless it runs with --insecure-lan)")
+            }
+            throw e
+        }
+        ours.checkPeer(peer)
+
+        while (true) {
+            when (val m = r.readMessage()) {
+                is Message.Hello -> {
+                    shared = m.features.toSet() intersect OUR_FEATURES.toSet()
+                    break
+                }
+                is Message.Bye -> throw IOException(byeText(m))
+                else -> {} // nothing else is allowed before HELLO: ignore
+            }
+        }
+        // From now on, 5 s of silence means the computer is gone (§7.3).
+        s.soTimeout = SILENCE_TIMEOUT_MS
+        return r
+    }
+
+    private fun hello(): Message.Hello {
+        val prefs = appContext.getSharedPreferences("oculibre", Context.MODE_PRIVATE)
+        // Random, per installation, never derived from hardware identifiers (§7.1).
+        val id = prefs.getString(PREF_INSTALL_ID, null) ?: UUID.randomUUID().toString().also {
+            prefs.edit().putString(PREF_INSTALL_ID, it).apply()
+        }
+        val version = runCatching {
+            appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName
+        }.getOrNull() ?: ""
+        return Message.Hello(
+            app = "oculibre-android",
+            appVersion = version,
+            id = id,
+            name = Build.MODEL,
+            device = Protocol.Device(
+                manufacturer = Build.MANUFACTURER,
+                model = Build.MODEL,
+                os = "android",
+                osVersion = Build.VERSION.RELEASE,
+                sdk = Build.VERSION.SDK_INT.toLong(),
+            ),
+            features = OUR_FEATURES,
+            capabilities = requested.capabilities,
+        )
+    }
+
+    private fun byeText(m: Message.Bye): String {
+        val why = when (m.reason) {
+            "user_stop", "shutdown" -> "The computer stopped the stream"
+            "busy" -> "The computer is busy"
+            "version" -> "Incompatible versions: update Oculibre"
+            "protocol_error" -> "The computer rejected the stream (protocol error)"
+            else -> "The computer closed the connection (${m.reason})"
+        }
+        return if (m.message.isNullOrEmpty()) why else "$why: ${m.message}"
+    }
+
+    /** Messages from the computer. */
+    private fun startReader(r: Protocol.MessageReader) {
+        readerThread = thread(name = "oculibre-reader") {
+            try {
+                while (running.get()) {
+                    when (val m = r.readMessage()) {
+                        is Message.Ping -> {
+                            val t2 = nowUs()
+                            writer?.write(Message.Pong(m.seq, m.t1, t2, nowUs()))
+                        }
+                        is Message.Request -> writer?.write(handle(m))
+                        is Message.Event -> if (m.event == "stats") hostStats = m.data as? Map<*, *>
+                        is Message.Bye -> {
+                            // The computer leaves on purpose: no BYE back.
+                            shutdown(byeText(m), null)
+                            return@thread
+                        }
+                        else -> {} // PONG (we don't ping), unknown types…
+                    }
+                }
+            } catch (e: Protocol.ProtocolException) {
+                if (!running.get()) return@thread
+                when (e.kind) {
+                    "connection_closed" -> fail("The computer closed the connection", "other")
+                    "io" -> fail("Connection lost: ${e.message}", "other")
+                    else -> fail("Invalid data from the computer: ${e.message}", "protocol_error")
+                }
+            } catch (e: SocketTimeoutException) {
+                if (running.get()) fail("The computer stopped answering", "other")
+            } catch (e: IOException) {
+                if (running.get()) fail("Connection lost: ${e.message}", "other")
+            }
+        }
+    }
+
+    /** Commands of §9.1. Every request gets exactly one response. */
+    private fun handle(req: Message.Request): Message.Response {
+        val c = codec ?: return Message.Response.error(req.id, Protocol.ErrorCode.BUSY, "encoder not ready")
+        return when (req.cmd) {
+            "request_keyframe" -> {
+                requestKeyframe(c)
+                Message.Response.ok(req.id)
+            }
+            "set_bitrate" -> {
+                val bitrate = ((req.args as? Map<*, *>)?.get("bitrate") as? Long)
+                if (bitrate == null || bitrate < MIN_BITRATE || bitrate > MAX_BITRATE) {
+                    Message.Response.error(
+                        req.id, Protocol.ErrorCode.INVALID_ARGS,
+                        "bitrate must be an integer between $MIN_BITRATE and $MAX_BITRATE",
+                    )
+                } else {
+                    try {
+                        c.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bitrate.toInt()) })
+                        activeConfig = activeConfig.copy(bitrate = bitrate.toInt())
+                        Message.Response.ok(req.id)
+                    } catch (e: IllegalStateException) {
+                        Message.Response.error(req.id, Protocol.ErrorCode.FAILED, e.message)
+                    }
+                }
+            }
+            "get_capabilities" -> requested.capabilities?.let { Message.Response.ok(req.id, it) }
+                ?: Message.Response.error(req.id, Protocol.ErrorCode.UNSUPPORTED, "capabilities unknown")
+            else -> Message.Response.error(req.id, Protocol.ErrorCode.UNKNOWN_COMMAND, req.cmd)
+        }
+    }
+
+    private fun sendEvent(event: String, data: Any?) {
+        val w = writer ?: return
+        runCatching { control.execute { runCatching { w.write(Message.Event(event, data)) } } }
+    }
+
+    /**
+     * Phone rotation for the computer's `auto` mode (§10), counter-clockwise from the natural
+     * position like Display.getRotation(), quantised with a 15° hysteresis; null when flat.
+     */
+    private fun startOrientation() {
+        if (Protocol.Feature.ORIENTATION !in shared) return
+        val l = object : OrientationEventListener(appContext) {
+            override fun onOrientationChanged(degrees: Int) {
+                if (!running.get()) return
+                val rotation = if (degrees == ORIENTATION_UNKNOWN) {
+                    null
+                } else {
+                    // OrientationEventListener is clockwise; the protocol uses the display convention.
+                    val current = if (lastRotation < 0 || lastRotation == 360) -1 else (360 - lastRotation) % 360
+                    val clockwise = quantise(degrees, current)
+                    (360 - clockwise) % 360
+                }
+                val code = rotation ?: 360 // 360 = flat/unknown
+                if (code == lastRotation) return
+                lastRotation = code
+                sendEvent("orientation", mapOf("device_rotation" to rotation?.toLong()))
+            }
+        }
+        orientationListener = l
+        if (l.canDetectOrientation()) {
+            l.enable()
+        } else {
+            sendEvent("orientation", mapOf("device_rotation" to null))
+        }
+    }
 
     // ------------------------------------------------------------------ camera selection
 
@@ -261,20 +521,28 @@ class StreamSession(
 
     private fun drainLoop(c: MediaCodec) {
         val info = MediaCodec.BufferInfo()
+        var scratch = ByteArray(256 * 1024)
         try {
             while (running.get()) {
                 val index = c.dequeueOutputBuffer(info, DEQUEUE_TIMEOUT_US)
-                if (index < 0) continue // try again later / format changed / buffers changed
+                if (index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    outputFormat = c.outputFormat
+                    continue
+                }
+                if (index < 0) continue // try again later / buffers changed
 
                 val buffer = c.getOutputBuffer(index)
                 if (buffer != null && info.size > 0) {
+                    if (scratch.size < info.size) scratch = ByteArray(info.size * 2)
                     buffer.position(info.offset)
                     buffer.limit(info.offset + info.size)
-                    val data = ByteArray(info.size)
-                    buffer.get(data)
-                    val isConfig = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                    val isKey = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
-                    enqueue(c, data, isConfig, isKey)
+                    buffer.get(scratch, 0, info.size)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                        sendStreamConfig(scratch.copyOf(info.size))
+                    } else {
+                        val isKey = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+                        sendFrame(c, scratch, info.size, info.presentationTimeUs, isKey)
+                    }
                 }
                 c.releaseOutputBuffer(index, false)
 
@@ -285,23 +553,52 @@ class StreamSession(
         }
     }
 
+    /** SPS + PPS from the encoder: a new configuration of stream 1 (§8.1). */
+    private fun sendStreamConfig(codecData: ByteArray) {
+        val cfg = activeConfig
+        configId = (configId + 1) and 0xFFFF
+        val config = Protocol.VideoConfig(
+            configId = configId,
+            codecData = Base64Codec.encode(codecData),
+            width = cfg.width.toLong(),
+            height = cfg.height.toLong(),
+            fps = cfg.fps.toLong(),
+            captureFps = (if (cfg.highSpeedFps > 0) cfg.highSpeedFps else cfg.fps).toLong(),
+            path = cfg.path,
+            bitrate = cfg.bitrate.toLong(),
+            color = colorOf(outputFormat),
+            camera = cameraInfo,
+        )
+        val bytes = Protocol.encode(Message.StreamConfig(Protocol.STREAM_VIDEO, config))
+        // Never dropped: wait for room (the frames behind it are useless without it).
+        if (!queue.offer(Packet(bytes, false), 1, TimeUnit.SECONDS)) {
+            fail("Network too slow: cannot even send the stream configuration")
+        }
+        waitingForKeyframe = false
+    }
+
     /**
-     * Drop policy: if the network can't keep up and the queue is full, drop every frame
-     * until the next keyframe (and ask the encoder for one right away). Latency never piles up.
+     * Drop policy (§12): if the network can't keep up and the queue is full, drop every frame
+     * until the next keyframe (and ask the encoder for one right away); the first frame sent
+     * after a gap carries DISCONTINUITY. Latency never piles up.
      */
-    private fun enqueue(c: MediaCodec, data: ByteArray, isConfig: Boolean, isKey: Boolean) {
+    private fun sendFrame(c: MediaCodec, data: ByteArray, size: Int, ptsUs: Long, isKey: Boolean) {
+        val number = frameNumber
+        frameNumber = (frameNumber + 1) and 0xFFFF_FFFFL // counts dropped frames too
+        if (configId == 0) return // no STREAM_CONFIG yet (should not happen)
         if (isKey) waitingForKeyframe = false
-        if (waitingForKeyframe && !isConfig) {
+        if (waitingForKeyframe) {
             framesDropped.incrementAndGet()
             return
         }
-        val accepted = if (isConfig) {
-            queue.offer(Packet(data, true), 1, TimeUnit.SECONDS)
+        val bytes = Protocol.encodeVideoFrame(
+            Protocol.STREAM_VIDEO, ptsUs, isKey, pendingDiscontinuity, number, configId, data, 0, size,
+        )
+        if (queue.offer(Packet(bytes, true))) {
+            pendingDiscontinuity = false
         } else {
-            queue.offer(Packet(data, false))
-        }
-        if (!accepted) {
             framesDropped.incrementAndGet()
+            pendingDiscontinuity = true
             waitingForKeyframe = true
             requestKeyframe(c)
         }
@@ -315,14 +612,15 @@ class StreamSession(
 
     // ------------------------------------------------------------------ network
 
-    private fun startSender(out: OutputStream) {
+    private fun startSender() {
+        val w = writer ?: return
         senderThread = thread(name = "oculibre-sender") {
             try {
                 while (running.get()) {
                     val packet = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
-                    out.write(packet.data)
-                    bytesSent.addAndGet(packet.data.size.toLong())
-                    if (!packet.isConfig) framesSent.incrementAndGet()
+                    w.writeRaw(packet.bytes)
+                    bytesSent.addAndGet(packet.bytes.size.toLong())
+                    if (packet.isFrame) framesSent.incrementAndGet()
                 }
             } catch (e: IOException) {
                 if (running.get()) fail("Connection lost: ${e.message}")
@@ -356,12 +654,12 @@ class StreamSession(
 
             override fun onDisconnected(device: CameraDevice) {
                 device.close()
-                fail("Camera disconnected (used by another app?)")
+                fail("Camera disconnected (used by another app?)", "camera_lost")
             }
 
             override fun onError(device: CameraDevice, error: Int) {
                 device.close()
-                fail("Camera error $error")
+                fail("Camera error $error", "camera_lost")
             }
         }, handler)
     }
@@ -500,8 +798,30 @@ class StreamSession(
                     val camera = cameraFrames.get()
                     val bytes = bytesSent.get()
                     val cfg = activeConfig
-                    val mbps = (bytes - lastBytes) * 8 / 1_000_000.0
+                    val bitrate = (bytes - lastBytes) * 8
                     val cameraFps = camera - lastCameraFrames
+                    val sentFps = frames - lastFrames
+                    lastFrames = frames
+                    lastCameraFrames = camera
+                    lastBytes = bytes
+
+                    if (Protocol.Feature.STATS in shared) {
+                        runCatching {
+                            writer?.write(
+                                Message.Event(
+                                    "stats",
+                                    mapOf(
+                                        "camera_fps" to cameraFps.toLong(),
+                                        "sent_fps" to sentFps.toLong(),
+                                        "bitrate" to bitrate,
+                                        "dropped" to framesDropped.get().toLong(),
+                                        "queue" to queue.size.toLong(),
+                                    ),
+                                ),
+                            )
+                        }
+                    }
+
                     val captureFps = if (cfg.highSpeedFps > 0) cfg.highSpeedFps else cfg.fps
                     // After a warm-up, warn if the camera ignores the requested rate.
                     val warning = if (seconds >= 3 && cameraFps < captureFps * 0.85) {
@@ -509,14 +829,25 @@ class StreamSession(
                     } else {
                         ""
                     }
+                    val pc = hostStats?.let { h ->
+                        val decoded = h["decoded_fps"] as? Long
+                        val rtt = h["rtt_ms"]
+                        val rttText = when (rtt) {
+                            is Long -> "$rtt"
+                            is Double -> "%.1f".format(rtt)
+                            else -> null
+                        }
+                        buildString {
+                            append("\ncomputer: ")
+                            append(if (decoded != null) "$decoded fps shown" else "connected")
+                            if (rttText != null) append(" · round trip $rttText ms")
+                        }
+                    } ?: ""
                     status(
                         "Streaming ${cfg.width}x${cfg.height}\n" +
-                            "camera $cameraFps fps · sent ${frames - lastFrames} fps · ${"%.1f".format(mbps)} Mbit/s\n" +
-                            "dropped: ${framesDropped.get()}" + warning,
+                            "camera $cameraFps fps · sent $sentFps fps · ${"%.1f".format(bitrate / 1_000_000.0)} Mbit/s\n" +
+                            "dropped: ${framesDropped.get()}" + pc + warning,
                     )
-                    lastFrames = frames
-                    lastCameraFrames = camera
-                    lastBytes = bytes
                 }
             } catch (e: InterruptedException) {
                 // shutting down
@@ -526,8 +857,67 @@ class StreamSession(
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 3000
+        private const val HANDSHAKE_TIMEOUT_MS = 5000
+        private const val SILENCE_TIMEOUT_MS = 5000
+        private const val BYE_TIMEOUT_MS = 300L
         private const val DEQUEUE_TIMEOUT_US = 100_000L
         /** ~200 ms at 30 fps: beyond that we'd rather drop than add latency. */
         private const val QUEUE_CAPACITY = 6
+        private const val MIN_BITRATE = 100_000L
+        private const val MAX_BITRATE = 100_000_000L
+        private const val PREF_INSTALL_ID = "install_id"
+
+        private val OUR_FEATURES = listOf(
+            Protocol.Feature.VIDEO_H264,
+            Protocol.Feature.CLOCK,
+            Protocol.Feature.ORIENTATION,
+            Protocol.Feature.STATS,
+            Protocol.Feature.CONTROL_KEYFRAME,
+            Protocol.Feature.CONTROL_BITRATE,
+        )
+
+        /**
+         * Rounds a clockwise angle (0–359) to 0/90/180/270. Keeps [current] (or -1 for none)
+         * until the angle is more than 60° away from it, so the value doesn't flicker at 45°.
+         */
+        fun quantise(degrees: Int, current: Int): Int {
+            if (current >= 0) {
+                val diff = Math.abs(((degrees - current) % 360 + 540) % 360 - 180)
+                if (diff <= 60) return current
+            }
+            return ((degrees + 45) / 90 * 90) % 360
+        }
+
+        /** Colour description of the encoder output (§8.1); absent keys keep the defaults. */
+        private fun colorOf(format: MediaFormat?): Protocol.Color {
+            val d = Protocol.Color()
+            if (format == null || Build.VERSION.SDK_INT < 24) return d
+            fun int(key: String) = if (format.containsKey(key)) format.getInteger(key) else null
+            val standard = when (int(MediaFormat.KEY_COLOR_STANDARD)) {
+                MediaFormat.COLOR_STANDARD_BT709 -> "bt709"
+                MediaFormat.COLOR_STANDARD_BT601_PAL, MediaFormat.COLOR_STANDARD_BT601_NTSC -> "bt601"
+                MediaFormat.COLOR_STANDARD_BT2020 -> "bt2020"
+                null -> null
+                else -> "unknown"
+            }
+            val transfer = when (int(MediaFormat.KEY_COLOR_TRANSFER)) {
+                MediaFormat.COLOR_TRANSFER_SDR_VIDEO -> "bt709"
+                MediaFormat.COLOR_TRANSFER_ST2084 -> "pq"
+                MediaFormat.COLOR_TRANSFER_HLG -> "hlg"
+                null -> null
+                else -> "unknown"
+            }
+            val range = when (int(MediaFormat.KEY_COLOR_RANGE)) {
+                MediaFormat.COLOR_RANGE_FULL -> "full"
+                MediaFormat.COLOR_RANGE_LIMITED -> "limited"
+                else -> null
+            }
+            return Protocol.Color(
+                primaries = standard ?: d.primaries,
+                transfer = transfer ?: d.transfer,
+                matrix = standard ?: d.matrix,
+                range = range ?: d.range,
+            )
+        }
     }
 }
