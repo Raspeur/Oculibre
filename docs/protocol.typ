@@ -417,10 +417,10 @@ self-view themselves, and text stays readable for the other participants. `mirro
 setting, applied after the rotation.
 
 When `device_rotation` is `null`, the host keeps the previous value (or 0). The host SHOULD let the user
-fix the rotation (`0`, `90`, `180`, `270`), and SHOULD NOT reconfigure the virtual camera while apps may be
-reading it: when the picture turns between landscape and portrait during a stream, it is fitted into the
-current frame with black bars. The camera SHOULD send its first `orientation` event before its first frame, so
-the host can pick the right shape from the start.
+fix the rotation (`0`, `90`, `180`, `270`). The rotation does not change the shape of the host's output
+(apps cannot follow a size change of a webcam): a picture of the other shape is fitted with black bars.
+The camera SHOULD send its first `orientation` event before its first frame, so that the first frames
+are already upright.
 
 = Clock and latency <clock>
 

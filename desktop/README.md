@@ -27,6 +27,12 @@ in Firefox, Chrome, Discord, Zoom, OBS… (it shows up once the first frame has 
   encryption arrive ([#5](https://github.com/Raspeur/Oculibre/issues/5)). Without this option, only USB
   (loopback) connections are accepted.
 - The phone can Stop/Start: the program keeps waiting for it.
+- Rotation: by default (`--rotate auto`) the picture is upright however you hold the phone.
+  The virtual camera stays landscape, like every webcam: a portrait picture gets black bars on the
+  sides. `--portrait` makes it portrait instead. `--rotate 0|90|180|270` fixes the rotation;
+  `--mirror` flips left ↔ right.
+- An app that has the virtual camera open (OBS, ffplay, a browser tab) locks its size: close it
+  before changing the quality on the phone.
 - `cargo run --release -- --help` for all options.
 
 ## Develop

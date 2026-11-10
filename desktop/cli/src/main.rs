@@ -13,7 +13,6 @@ use std::fs;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, Instant};
 
 use openh264::decoder::DecodedYUV;
 use openh264::formats::YUVSource;
@@ -34,6 +33,8 @@ OPTIONS:
                             auto: upright whatever the way you hold the phone.
                             A number: fixed, the picture never turns.
     -m, --mirror            Flip the picture horizontally (left ↔ right)
+        --portrait          Portrait virtual camera (default: landscape, like every webcam;
+                            a portrait picture then gets black bars on the sides)
     -h, --help              Show this help
 
 Several phones plugged in? Choose one with ANDROID_SERIAL=<serial> oculibre
@@ -45,6 +46,7 @@ struct Args {
     adb: bool,
     insecure_lan: bool,
     view: session::View,
+    portrait: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -54,6 +56,7 @@ fn parse_args() -> Result<Args, String> {
         adb: true,
         insecure_lan: false,
         view: session::View::default(),
+        portrait: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -76,6 +79,7 @@ fn parse_args() -> Result<Args, String> {
                 };
             }
             "-m" | "--mirror" => args.view.mirror = true,
+            "--portrait" => args.portrait = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -146,7 +150,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             continue;
         }
         println!("Phone connected ({peer})");
-        let mut sink = VirtualCamera::new(&device_path);
+        let mut sink = VirtualCamera::new(&device_path, args.portrait);
         match session::run(stream, &hello, args.view, &mut sink, false) {
             Ok(session::End::Bye { reason, message }) => println!(
                 "\nPhone stopped ({reason}{}) — waiting for it…",
@@ -159,35 +163,27 @@ fn run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// The v4l2loopback device, opened at the first picture (when the size and the rotation are
-/// known) and closed with the session, so the next session can use another size.
+/// The v4l2loopback device, opened at the first picture and closed with the session.
 ///
-/// During a session the size stays fixed: closing the device would make apps lose the camera.
-/// If the picture turns (landscape ↔ portrait) it is fitted with black bars; Stop/Start on the
-/// phone gives the virtual camera the new shape.
+/// Its shape never follows the phone: landscape by default, like every webcam (apps expect it,
+/// and v4l2loopback cannot change the size while an app has the camera open anyway). A portrait
+/// picture gets black bars on the sides; `--portrait` gives a portrait virtual camera instead.
 struct VirtualCamera<'a> {
     path: &'a Path,
+    portrait: bool,
     device: Option<v4l2::OutputDevice>,
-    /// Size asked for when the device was opened, and when.
+    /// Size asked for when the device was opened.
     requested: (usize, usize),
-    opened: Option<Instant>,
-    /// Whether the last picture had to be fitted with bars (to say it once).
-    fitted: bool,
     frame: Vec<u8>,
 }
 
-/// Right after the start, the phone may still be reporting its rotation: the device can be
-/// reopened at the right shape without disturbing any app yet.
-const SETTLE: Duration = Duration::from_millis(1500);
-
 impl<'a> VirtualCamera<'a> {
-    fn new(path: &'a Path) -> Self {
+    fn new(path: &'a Path, portrait: bool) -> Self {
         Self {
             path,
+            portrait,
             device: None,
             requested: (0, 0),
-            opened: None,
-            fitted: false,
             frame: Vec::new(),
         }
     }
@@ -200,40 +196,34 @@ impl session::Sink for VirtualCamera<'_> {
         transform: yuv::Transform,
     ) -> Result<(), Box<dyn Error>> {
         let (pw, ph) = picture.dimensions();
-        let (w, h) = transform.output_size(pw, ph);
-        let w = w & !1; // YUYV: even width
-        if (w, h) != self.requested && self.opened.is_some_and(|t| t.elapsed() < SETTLE) {
-            self.device = None; // still settling: reopen at the final shape
+        let (long, short) = (pw.max(ph), pw.min(ph));
+        let (w, h) = if self.portrait {
+            (short & !1, long)
+        } else {
+            (long & !1, short)
+        };
+        if (w, h) != self.requested {
+            self.device = None; // close before reopening at the new size
         }
         let device = match self.device.as_mut() {
             Some(d) => d,
             None => {
                 let d = v4l2::OutputDevice::open(self.path, w, h)?;
                 self.requested = (w, h);
-                self.opened = Some(Instant::now());
-                self.fitted = false;
                 let (cw, ch) = d.size();
                 if (cw, ch) == (w, h) {
                     println!("Virtual camera set to {cw}x{ch}");
                 } else {
                     println!(
-                        "Virtual camera is locked at {cw}x{ch} by an app reading it: \
-                         fitting {w}x{h} into it.\n\
-                         Close the apps using the camera, then Stop/Start, to get {w}x{h}."
+                        "Virtual camera is locked at {cw}x{ch} by an app that has it open \
+                         (OBS, ffplay, a browser tab…): fitting the picture into it.\n\
+                         Close those apps, then Stop/Start on the phone, to get {w}x{h}."
                     );
                 }
                 self.device.insert(d)
             }
         };
         let (cw, ch) = device.size();
-        let fitted = (cw, ch) != (w, h);
-        if fitted && !self.fitted && (w, h) != self.requested {
-            println!(
-                "\nThe picture is now {w}x{h}, the virtual camera stays {cw}x{ch} (black bars). \
-                 Stop/Start on the phone to change its shape, or use --rotate to fix the rotation."
-            );
-        }
-        self.fitted = fitted;
         yuv::convert(picture, transform, cw, ch, &mut self.frame);
         device.write_frame(&self.frame)?;
         Ok(())
