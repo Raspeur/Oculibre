@@ -9,10 +9,11 @@ Estimates are for one person at ~8–10 h/week (side project).
 
 ## Phase 1 — Linux MVP (USB)
 - [ ] `docs/protocol.md` frozen as v0
-- [ ] Android: Camera2 → MediaCodec (input Surface) → TCP, foreground service
+- [x] Android: Camera2 → MediaCodec (input Surface) → TCP
+- [ ] Android: foreground service (keep streaming screen off)
 - [ ] Rust `protocol` crate + `cargo-fuzz` target
-- [ ] Rust CLI: TCP → FFmpeg decode → v4l2loopback
-- [ ] Transport via `adb reverse`
+- [x] Rust CLI: TCP → H.264 decode (OpenH264) → v4l2loopback
+- [x] Transport via `adb reverse`
 - [ ] Glass-to-glass latency measurement documented
 - 🎯 *Usable on Linux*
 

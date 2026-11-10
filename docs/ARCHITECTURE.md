@@ -56,7 +56,7 @@ Single Rust binary.
 | Async network | `tokio` |
 | Discovery | `mdns-sd` |
 | Encryption | `snow` (Noise) |
-| Decoding | `ffmpeg-next` (libavcodec, LGPL build — **do not enable GPL components**). Optional HW decode (VAAPI, D3D11VA, VideoToolbox) |
+| Decoding | `openh264` (Cisco OpenH264, BSD, built from source — no system dependency). FFmpeg (LGPL build) or hardware decode (VAAPI, D3D11VA, VideoToolbox) later if needed |
 | GUI | Tauri, tray icon: QR code, device list, settings, preview |
 | CLI | For Linux users and headless setups |
 
