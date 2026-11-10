@@ -12,6 +12,7 @@ import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
@@ -113,8 +114,10 @@ class StreamSession(
         fun onStopped(session: StreamSession, error: String?)
     }
 
-    /** An encoded message ready to send; [isFrame] for the stats. */
-    private class Packet(val bytes: ByteArray, val isFrame: Boolean)
+    /** An encoded message ready to send; [ptsUs] = capture time of a frame, -1 otherwise. */
+    private class Packet(val bytes: ByteArray, val ptsUs: Long = -1) {
+        val isFrame get() = ptsUs >= 0
+    }
 
     private val appContext = context.applicationContext
     private val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -152,6 +155,12 @@ class StreamSession(
     /** Clock of the camera timestamps (§11): frames and PONG times must use the same one. */
     @Volatile private var realtimeClock = false
 
+    /**
+     * Set once the clock has been checked against a real frame timestamp. Until then PINGs are
+     * not answered, so the computer never mixes samples from two clocks.
+     */
+    private val clockChecked = AtomicBoolean(false)
+
     // Only touched by the drain thread.
     private var waitingForKeyframe = false
     private var pendingDiscontinuity = false
@@ -163,6 +172,8 @@ class StreamSession(
     private val framesDropped = AtomicInteger()
     private val cameraFrames = AtomicInteger()
     private val bytesSent = AtomicLong()
+    private val phoneDelaySum = AtomicLong()
+    private val phoneDelayCount = AtomicInteger()
 
     // What the computer reports (its `stats` event).
     @Volatile private var hostStats: Map<*, *>? = null
@@ -345,7 +356,7 @@ class StreamSession(
             try {
                 while (running.get()) {
                     when (val m = r.readMessage()) {
-                        is Message.Ping -> {
+                        is Message.Ping -> if (clockChecked.get()) {
                             val t2 = nowUs()
                             writer?.write(Message.Pong(m.seq, m.t1, t2, nowUs()))
                         }
@@ -572,7 +583,7 @@ class StreamSession(
         )
         val bytes = Protocol.encode(Message.StreamConfig(Protocol.STREAM_VIDEO, config))
         // Never dropped: wait for room (the frames behind it are useless without it).
-        if (!queue.offer(Packet(bytes, false), 1, TimeUnit.SECONDS)) {
+        if (!queue.offer(Packet(bytes), 1, TimeUnit.SECONDS)) {
             fail("Network too slow: cannot even send the stream configuration")
         }
         waitingForKeyframe = false
@@ -595,7 +606,7 @@ class StreamSession(
         val bytes = Protocol.encodeVideoFrame(
             Protocol.STREAM_VIDEO, ptsUs, isKey, pendingDiscontinuity, number, configId, data, 0, size,
         )
-        if (queue.offer(Packet(bytes, true))) {
+        if (queue.offer(Packet(bytes, ptsUs))) {
             pendingDiscontinuity = false
         } else {
             framesDropped.incrementAndGet()
@@ -621,7 +632,17 @@ class StreamSession(
                     val packet = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
                     w.writeRaw(packet.bytes)
                     bytesSent.addAndGet(packet.bytes.size.toLong())
-                    if (packet.isFrame) framesSent.incrementAndGet()
+                    if (packet.isFrame) {
+                        framesSent.incrementAndGet()
+                        // Capture → handed to the network: camera, encoder and queue.
+                        if (clockChecked.get()) {
+                            val delay = nowUs() - packet.ptsUs
+                            if (delay in 0..10_000_000) {
+                                phoneDelaySum.addAndGet(delay)
+                                phoneDelayCount.incrementAndGet()
+                            }
+                        }
+                    }
                 }
             } catch (e: IOException) {
                 if (running.get()) fail("Connection lost: ${e.message}")
@@ -782,7 +803,23 @@ class StreamSession(
             result: TotalCaptureResult,
         ) {
             cameraFrames.incrementAndGet()
+            if (!clockChecked.get()) {
+                result.get(CaptureResult.SENSOR_TIMESTAMP)?.let { checkClock(it) }
+            }
         }
+    }
+
+    /**
+     * Which clock the camera timestamps really use: the characteristics are not always right
+     * (SENSOR_INFO_TIMESTAMP_SOURCE can be UNKNOWN and still be boot time). A frame captured a few
+     * milliseconds ago is close to one clock and far from the other (they differ by the time the
+     * phone has spent asleep).
+     */
+    private fun checkClock(sensorNs: Long) {
+        val monotonic = Math.abs(System.nanoTime() - sensorNs)
+        val boot = Math.abs(SystemClock.elapsedRealtimeNanos() - sensorNs)
+        realtimeClock = boot < monotonic
+        clockChecked.set(true)
     }
 
     private fun startStats() {
@@ -806,21 +843,21 @@ class StreamSession(
                     lastCameraFrames = camera
                     lastBytes = bytes
 
+                    val delayCount = phoneDelayCount.getAndSet(0)
+                    val delaySum = phoneDelaySum.getAndSet(0)
                     if (Protocol.Feature.STATS in shared) {
-                        runCatching {
-                            writer?.write(
-                                Message.Event(
-                                    "stats",
-                                    mapOf(
-                                        "camera_fps" to cameraFps.toLong(),
-                                        "sent_fps" to sentFps.toLong(),
-                                        "bitrate" to bitrate,
-                                        "dropped" to framesDropped.get().toLong(),
-                                        "queue" to queue.size.toLong(),
-                                    ),
-                                ),
-                            )
+                        val data = linkedMapOf<String, Any?>(
+                            "camera_fps" to cameraFps.toLong(),
+                            "sent_fps" to sentFps.toLong(),
+                            "bitrate" to bitrate,
+                            "dropped" to framesDropped.get().toLong(),
+                            "queue" to queue.size.toLong(),
+                        )
+                        if (delayCount > 0) {
+                            // Average capture → network delay of the last second, 0.1 ms steps.
+                            data["latency_ms"] = Math.round(delaySum / delayCount / 100.0) / 10.0
                         }
+                        runCatching { writer?.write(Message.Event("stats", data)) }
                     }
 
                     val captureFps = if (cfg.highSpeedFps > 0) cfg.highSpeedFps else cfg.fps
@@ -832,16 +869,15 @@ class StreamSession(
                     }
                     val pc = hostStats?.let { h ->
                         val decoded = h["decoded_fps"] as? Long
-                        val rtt = h["rtt_ms"]
-                        val rttText = when (rtt) {
-                            is Long -> "$rtt"
-                            is Double -> "%.1f".format(rtt)
+                        fun ms(v: Any?) = when (v) {
+                            is Long -> "$v"
+                            is Double -> "%.0f".format(v)
                             else -> null
                         }
                         buildString {
                             append("\ncomputer: ")
                             append(if (decoded != null) "$decoded fps shown" else "connected")
-                            if (rttText != null) append(" · round trip $rttText ms")
+                            ms(h["latency_ms"])?.let { append(" · latency $it ms") }
                         }
                     } ?: ""
                     status(

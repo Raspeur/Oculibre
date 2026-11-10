@@ -107,6 +107,17 @@ pub enum End {
     Closed,
 }
 
+/// Latency of the frames shown during the last second, µs.
+#[derive(Debug, Default)]
+struct Latency {
+    /// Capture on the phone → written to the virtual camera.
+    total_sum: i64,
+    total_max: i64,
+    /// Fully received → written to the virtual camera (decode, rotation, conversion, write).
+    pc_sum: i64,
+    count: u32,
+}
+
 /// State shared with the ticker thread.
 struct Shared {
     writer: Mutex<TcpStream>,
@@ -119,7 +130,7 @@ struct Shared {
     decoded: AtomicU32,
     errors_total: AtomicU32,
     bytes: AtomicU32,
-    latency_sum_us: Mutex<(i64, u32)>,
+    latency: Mutex<Latency>,
     phone_stats: Mutex<Option<Value>>,
     stats_enabled: AtomicBool,
     quiet: bool,
@@ -183,7 +194,7 @@ pub fn run(
         decoded: AtomicU32::new(0),
         errors_total: AtomicU32::new(0),
         bytes: AtomicU32::new(0),
-        latency_sum_us: Mutex::new((0, 0)),
+        latency: Mutex::new(Latency::default()),
         phone_stats: Mutex::new(None),
         stats_enabled: AtomicBool::new(false),
         quiet,
@@ -357,6 +368,7 @@ fn receive(
                 need_key = true;
             }
             Message::VideoFrame(frame) if frame.stream == streams::VIDEO => {
+                let arrival_us = shared.now_us();
                 shared.received.fetch_add(1, Ordering::Relaxed);
                 shared
                     .bytes
@@ -383,7 +395,7 @@ fn receive(
                         sink.show(&picture, transform)?;
                         shared.decoded.fetch_add(1, Ordering::Relaxed);
                         if clock_enabled {
-                            record_latency(shared, frame.timestamp);
+                            record_latency(shared, frame.timestamp, arrival_us);
                         }
                     }
                     Ok(None) => {}
@@ -464,17 +476,74 @@ fn describe(t: Transform, view: View) -> String {
 }
 
 /// Capture-to-display latency (§11): the phone's capture time brought to our clock.
-fn record_latency(shared: &Shared, capture_us: u64) {
+fn record_latency(shared: &Shared, capture_us: u64, arrival_us: u64) {
     let Some(best) = shared.clock.lock().unwrap().best() else {
-        return;
+        return; // no PONG yet: the clocks are not synchronised
     };
+    let shown_us = shared.now_us() as i64;
     // offset = phone clock - host clock (the phone answered our PING).
     let capture_host = capture_us as i64 - best.offset_us;
-    let latency = shared.now_us() as i64 - capture_host;
-    if (0..10_000_000).contains(&latency) {
-        let mut l = shared.latency_sum_us.lock().unwrap();
-        l.0 += latency;
-        l.1 += 1;
+    let total = shown_us - capture_host;
+    if (0..10_000_000).contains(&total) {
+        let mut l = shared.latency.lock().unwrap();
+        l.total_sum += total;
+        l.total_max = l.total_max.max(total);
+        l.pc_sum += shown_us - arrival_us as i64;
+        l.count += 1;
+    }
+}
+
+/// One line of the console status.
+#[derive(Debug, Default, PartialEq)]
+struct Status {
+    shown_fps: f64,
+    camera_fps: Option<u64>,
+    mbits: f64,
+    /// Averages over the last second, ms.
+    latency: Option<f64>,
+    latency_max: Option<f64>,
+    phone: Option<f64>,
+    pc: Option<f64>,
+    rtt: Option<f64>,
+    dropped: Option<u64>,
+    errors: u32,
+}
+
+impl Status {
+    /// `60 fps (camera 60) · 11.8 Mbit/s · latency 48 ms (phone 30 + network 6 + PC 12, max 61) · …`
+    fn line(&self) -> String {
+        let mut line = format!("{:>3.0} fps", self.shown_fps);
+        if let Some(c) = self.camera_fps {
+            line += &format!(" (camera {c})");
+        }
+        line += &format!(" · {:>4.1} Mbit/s", self.mbits);
+        match self.latency {
+            Some(total) => {
+                line += &format!(" · latency {total:.0} ms");
+                if let (Some(phone), Some(pc)) = (self.phone, self.pc) {
+                    // The network share is what remains: transfer, waiting in buffers, clock error.
+                    let network = (total - phone - pc).max(0.0);
+                    line += &format!(" (phone {phone:.0} + network {network:.0} + PC {pc:.0}");
+                    if let Some(max) = self.latency_max {
+                        line += &format!(", max {max:.0}");
+                    }
+                    line += ")";
+                } else if let Some(max) = self.latency_max {
+                    line += &format!(" (max {max:.0})");
+                }
+            }
+            None => line += " · latency: syncing clocks…",
+        }
+        if let Some(rtt) = self.rtt {
+            line += &format!(" · rtt {rtt:.1} ms");
+        }
+        if let Some(d) = self.dropped.filter(|&d| d > 0) {
+            line += &format!(" · dropped by phone {d}");
+        }
+        if self.errors > 0 {
+            line += &format!(" · decode errors {}", self.errors);
+        }
+        line
     }
 }
 
@@ -495,7 +564,10 @@ fn ticker(shared: &Shared) {
         let decoded = shared.decoded.swap(0, Ordering::Relaxed);
         let bytes = shared.bytes.swap(0, Ordering::Relaxed);
         let errors = shared.errors_total.load(Ordering::Relaxed);
-        let (lat_sum, lat_n) = std::mem::take(&mut *shared.latency_sum_us.lock().unwrap());
+        let latency = std::mem::take(&mut *shared.latency.lock().unwrap());
+        let avg_ms =
+            |sum: i64| (latency.count > 0).then(|| sum as f64 / latency.count as f64 / 1000.0);
+        let latency_ms = avg_ms(latency.total_sum);
         let rtt_ms = shared
             .clock
             .lock()
@@ -517,6 +589,9 @@ fn ticker(shared: &Shared) {
             if let Some(rtt) = rtt_ms {
                 data["rtt_ms"] = json!((rtt * 10.0).round() / 10.0);
             }
+            if let Some(l) = latency_ms {
+                data["latency_ms"] = json!((l * 10.0).round() / 10.0);
+            }
             ok = shared
                 .send(&Message::Event(Event {
                     event: "stats".into(),
@@ -533,28 +608,67 @@ fn ticker(shared: &Shared) {
         }
 
         if !shared.quiet {
-            let mut line = format!(
-                "\r{:>3.0} fps · {:>4.1} Mbit/s",
-                decoded as f64 / secs,
-                bytes as f64 * 8.0 / secs / 1e6
-            );
-            if lat_n > 0 {
-                line += &format!(
-                    " · latency {:>3.0} ms",
-                    lat_sum as f64 / lat_n as f64 / 1000.0
-                );
-            }
-            if let Some(rtt) = rtt_ms {
-                line += &format!(" · rtt {rtt:.1} ms");
-            }
-            if let Some(p) = shared.phone_stats.lock().unwrap().as_ref() {
-                if let Some(d) = p.get("dropped").and_then(Value::as_u64) {
-                    line += &format!(" · dropped by phone {d}");
-                }
-            }
-            line += &format!(" · decode errors {errors}   ");
+            let phone = shared
+                .phone_stats
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or_default();
+            let status = Status {
+                shown_fps: decoded as f64 / secs,
+                camera_fps: phone.get("camera_fps").and_then(Value::as_u64),
+                mbits: bytes as f64 * 8.0 / secs / 1e6,
+                latency: latency_ms,
+                latency_max: latency_ms.map(|_| latency.total_max as f64 / 1000.0),
+                phone: phone.get("latency_ms").and_then(Value::as_f64),
+                pc: avg_ms(latency.pc_sum),
+                rtt: rtt_ms,
+                dropped: phone.get("dropped").and_then(Value::as_u64),
+                errors,
+            };
+            // Clear the rest of the previous line (it may have been longer).
+            let line = format!("\r{}\x1b[K", status.line());
             print!("{line}");
             let _ = io::stdout().flush();
         }
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::Status;
+
+    #[test]
+    fn full_line() {
+        let s = Status {
+            shown_fps: 59.6,
+            camera_fps: Some(60),
+            mbits: 11.84,
+            latency: Some(48.2),
+            latency_max: Some(61.0),
+            phone: Some(30.4),
+            pc: Some(11.9),
+            rtt: Some(1.23),
+            dropped: Some(0),
+            errors: 0,
+        };
+        assert_eq!(
+            s.line(),
+            " 60 fps (camera 60) · 11.8 Mbit/s · latency 48 ms \
+             (phone 30 + network 6 + PC 12, max 61) · rtt 1.2 ms"
+        );
+    }
+
+    #[test]
+    fn before_clock_sync() {
+        let s = Status {
+            shown_fps: 30.0,
+            errors: 2,
+            ..Default::default()
+        };
+        assert_eq!(
+            s.line(),
+            " 30 fps ·  0.0 Mbit/s · latency: syncing clocks… · decode errors 2"
+        );
     }
 }

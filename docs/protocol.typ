@@ -387,8 +387,8 @@ Unsolicited notifications, no response.
   columns: (auto, auto, 1fr, auto),
   table.header([`event`], [Direction], [`data`], [Since]),
   [`orientation`], [camera → host], [`{"device_rotation"}`: `0`, `90`, `180`, `270` or `null` (@orientation)], [0.1],
-  [`stats`], [camera → host, every 1 s], [`{"camera_fps", "sent_fps", "bitrate", "dropped", "queue"}`], [0.1],
-  [`stats`], [host → camera, every 1 s], [`{"received_fps", "decoded_fps", "decode_errors", "rtt_ms"}`], [0.1],
+  [`stats`], [camera → host, every 1 s], [`{"camera_fps", "sent_fps", "bitrate", "dropped", "queue", "latency_ms"?}`; `latency_ms`: average delay from capture to handing the frame to the network (camera, encoder, queue)], [0.1],
+  [`stats`], [host → camera, every 1 s], [`{"received_fps", "decoded_fps", "decode_errors", "rtt_ms"?, "latency_ms"?}`; `latency_ms`: average capture-to-output latency (§11)], [0.1],
   [`thermal`], [camera → host], [`{"status", "battery_temp_c"?, "battery_pct"?, "charging"?}`; `status` is one of `none`, `light`, `moderate`, `severe`, `critical`, `emergency`, `shutdown` (Android thermal status)], [reserved],
   [`mode_changed`], [camera → host], [`{"reason": "thermal"|"user"|"camera", …}`, followed by a new `STREAM_CONFIG`], [reserved],
 )
@@ -435,6 +435,14 @@ $ "rtt" = (t_4 - t_1) - (t_3 - t_2) quad quad "offset" = ((t_2 - t_1) + (t_3 - t
 - The host keeps the offset with the lowest `rtt` over the last few seconds and computes the
   *capture-to-display latency* of each frame as $"display_time" - ("frame.timestamp" - "offset")$, with
   `offset` measured by the host's own `PING`s (camera clock minus host clock).
+- The camera MUST answer `PING`s with the clock of its frame timestamps. On Android this is either
+  `CLOCK_MONOTONIC` or `CLOCK_BOOTTIME`, and `SENSOR_INFO_TIMESTAMP_SOURCE` is not always right: the app
+  compares the first frame's `SENSOR_TIMESTAMP` with both clocks, keeps the closest, and does not answer
+  `PING`s before that (the host must tolerate unanswered `PING`s).
+- With the camera's `latency_ms` (capture → network) and its own processing time (received → output),
+  the host splits the latency into *phone + network + host*; the network share is what remains.
+  The time an application takes to display the virtual camera is not included (see the glass-to-glass
+  measurement in the roadmap).
 
 = Flow control <flow>
 
