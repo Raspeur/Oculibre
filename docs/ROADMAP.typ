@@ -29,8 +29,8 @@ Estimates are for one person at about 8–10 h/week (side project). #done done �
 - #done Rust CLI: TCP → H.264 decode (OpenH264) → v4l2loopback, resolution read back from the driver
 - #done Transport via `adb reverse`
 - #done #link("protocol.typ")[`protocol.typ`] v0.1 written
-- #open Protocol v0.1 implemented: Rust `protocol` crate + test vectors + `cargo-fuzz` target, Android, CLI
-- #open Host: `--rotate 0|90|180|270|auto` and `--mirror`
+- #done Protocol v0.1 implemented: Rust `protocol` crate + test vectors + `cargo-fuzz` target, Android, CLI
+- #done Host: `--rotate 0|90|180|270|auto` and `--mirror`
 - #open Glass-to-glass latency measured and documented (30 and 60 fps)
 - 🎯 _Usable on Linux_
 

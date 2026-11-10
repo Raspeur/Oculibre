@@ -205,10 +205,11 @@ class StreamSession(
                 activeConfig = cfg
 
                 startReader(reader)
+                // Before the camera: the computer should know the rotation before the first frame.
+                startOrientation()
                 startEncoder(cfg)
                 startSender()
                 openCamera(cameraId, chars, cfg)
-                startOrientation()
                 startStats()
             } catch (e: Protocol.ProtocolException) {
                 fail(e.message ?: e.kind, if (e.kind == "incompatible_major") "version" else "protocol_error")

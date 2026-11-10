@@ -15,6 +15,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use oculibre_protocol::clock::{self, ClockSync};
+use oculibre_protocol::orientation::auto_rotation;
 use oculibre_protocol::{
     bye_reasons, error_codes, features, streams, write_message, Bye, Event, Hello, Message,
     MessageReader, Preamble, Request, Response, Role,
@@ -22,9 +23,63 @@ use oculibre_protocol::{
 use openh264::decoder::{DecodedYUV, Decoder};
 use serde_json::{json, Value};
 
+use crate::yuv::Transform;
+
 /// Where decoded pictures go (the virtual camera, or a test).
 pub trait Sink {
-    fn show(&mut self, picture: &DecodedYUV<'_>) -> Result<(), Box<dyn Error>>;
+    /// `transform`: rotation and mirror to apply (it can change from one picture to the next).
+    fn show(
+        &mut self,
+        picture: &DecodedYUV<'_>,
+        transform: Transform,
+    ) -> Result<(), Box<dyn Error>>;
+}
+
+/// `--rotate`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rotate {
+    /// Always this clockwise rotation (0, 90, 180, 270): the picture never turns.
+    Fixed(u16),
+    /// From the camera's sensor orientation and the phone's rotation (§10).
+    Auto,
+}
+
+/// How the user wants the picture: `--rotate` and `--mirror`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct View {
+    pub rotate: Rotate,
+    pub mirror: bool,
+}
+
+impl Default for View {
+    fn default() -> Self {
+        Self {
+            rotate: Rotate::Auto,
+            mirror: false,
+        }
+    }
+}
+
+/// What `auto` knows about the camera and the phone.
+#[derive(Debug, Default)]
+struct Orientation {
+    sensor: u16,
+    front: bool,
+    /// Last known phone rotation (counter-clockwise); kept while the phone lies flat (§10).
+    device: u16,
+}
+
+impl Orientation {
+    fn transform(&self, view: View) -> Transform {
+        let rotation = match view.rotate {
+            Rotate::Fixed(r) => r % 360,
+            Rotate::Auto => auto_rotation(self.sensor, self.front, self.device),
+        };
+        Transform {
+            rotation,
+            mirror: view.mirror,
+        }
+    }
 }
 
 /// Silence after which the phone is considered gone (§7.3, §14).
@@ -112,6 +167,7 @@ pub fn host_hello(id: String, name: String, os_version: Option<String>) -> Hello
 pub fn run(
     stream: TcpStream,
     hello: &Hello,
+    view: View,
     sink: &mut dyn Sink,
     quiet: bool,
 ) -> Result<End, Box<dyn Error>> {
@@ -210,7 +266,7 @@ pub fn run(
             .spawn(move || ticker(&shared))?
     };
 
-    let result = receive(&mut reader, &shared, sink, clock_enabled);
+    let result = receive(&mut reader, &shared, view, sink, clock_enabled);
 
     // Polite goodbye on our own errors; the phone may already be gone.
     if let Err(e) = &result {
@@ -232,10 +288,14 @@ pub fn run(
 fn receive(
     reader: &mut MessageReader<io::BufReader<TcpStream>>,
     shared: &Shared,
+    view: View,
     sink: &mut dyn Sink,
     clock_enabled: bool,
 ) -> Result<End, Box<dyn Error>> {
     let mut decoder = Decoder::new()?;
+    let mut orientation = Orientation::default();
+    let mut transform = orientation.transform(view);
+    let mut announced: Option<Transform> = None;
     let mut config_id: Option<u16> = None;
     let mut need_key = true;
     let mut last_key_request: Option<Instant> = None;
@@ -288,6 +348,11 @@ fn receive(
                     // SPS + PPS: no picture expected; errors show up on the next frame anyway.
                     let _ = decoder.decode(&codec_data);
                 }
+                if let Some(c) = &config.camera {
+                    orientation.sensor = c.sensor_orientation % 360;
+                    orientation.front = c.facing == "front";
+                }
+                transform = orientation.transform(view);
                 config_id = Some(config.config_id);
                 need_key = true;
             }
@@ -311,7 +376,11 @@ fn receive(
                 match decoder.decode(&frame.data) {
                     Ok(Some(picture)) => {
                         need_key = false;
-                        sink.show(&picture)?;
+                        if announced != Some(transform) && !shared.quiet {
+                            announced = Some(transform);
+                            println!("\n{}", describe(transform, view));
+                        }
+                        sink.show(&picture, transform)?;
                         shared.decoded.fetch_add(1, Ordering::Relaxed);
                         if clock_enabled {
                             record_latency(shared, frame.timestamp);
@@ -340,11 +409,15 @@ fn receive(
             }
             Message::Event(Event { event, data }) => match event.as_str() {
                 "stats" => *shared.phone_stats.lock().unwrap() = Some(data),
-                "orientation" if !shared.quiet => {
-                    // Applied by the rotation work of issue #3; shown for now.
-                    match data.get("device_rotation").and_then(Value::as_u64) {
-                        Some(r) => println!("\nPhone rotation: {r}°"),
-                        None => println!("\nPhone rotation: flat / unknown"),
+                "orientation" => {
+                    // null (flat, unknown) or an invalid value: keep the previous one (§10).
+                    if let Some(r) = data
+                        .get("device_rotation")
+                        .and_then(Value::as_u64)
+                        .filter(|r| [0, 90, 180, 270].contains(r))
+                    {
+                        orientation.device = r as u16;
+                        transform = orientation.transform(view);
                     }
                 }
                 _ => {}
@@ -378,6 +451,16 @@ fn receive(
             _ => {}
         }
     }
+}
+
+/// "Rotation: 90° (auto)" for the console.
+fn describe(t: Transform, view: View) -> String {
+    let mode = match view.rotate {
+        Rotate::Auto => " (auto: follows the phone)",
+        Rotate::Fixed(_) => "",
+    };
+    let mirror = if t.mirror { ", mirrored" } else { "" };
+    format!("Rotation: {}°{mode}{mirror}", t.rotation)
 }
 
 /// Capture-to-display latency (§11): the phone's capture time brought to our clock.

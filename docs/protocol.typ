@@ -406,14 +406,21 @@ The camera provides what `auto` needs:
   `null` when the phone lies flat or the value is unknown. Sent at stream start and on every change.
   Android's `OrientationEventListener` counts clockwise: the camera sends `(360 - angle) mod 360`.
 
-`auto` rotation applied by the host (clockwise), as Android does:
+`auto` rotation applied by the host (clockwise), as Android computes `JPEG_ORIENTATION`:
 
 $ "back:" quad r = ("sensor_orientation" - "device_rotation" + 360) mod 360 $
-$ "front:" quad r = ("sensor_orientation" + "device_rotation") mod 360, "then mirror horizontally" $
+$ "front:" quad r = ("sensor_orientation" + "device_rotation") mod 360 $
+
+`auto` never mirrors. Camera frames are not mirrored (only Android's on-screen preview of a front
+camera is), so the result is the true picture, as a real webcam sends it: video-call apps mirror the
+self-view themselves, and text stays readable for the other participants. `mirror` is a separate user
+setting, applied after the rotation.
 
 When `device_rotation` is `null`, the host keeps the previous value (or 0). The host SHOULD let the user
-freeze the rotation, because a rotation that changes the output size (landscape ↔ portrait) reconfigures
-the virtual camera.
+fix the rotation (`0`, `90`, `180`, `270`), and SHOULD NOT reconfigure the virtual camera while apps may be
+reading it: when the picture turns between landscape and portrait during a stream, it is fitted into the
+current frame with black bars. The camera SHOULD send its first `orientation` event before its first frame, so
+the host can pick the right shape from the start.
 
 = Clock and latency <clock>
 

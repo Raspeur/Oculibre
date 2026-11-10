@@ -14,7 +14,8 @@ use openh264::encoder::Encoder;
 use openh264::formats::{YUVBuffer, YUVSource};
 use openh264::nal_units;
 
-use crate::session::{self, End, Sink};
+use crate::session::{self, End, Rotate, Sink, View};
+use crate::yuv::Transform;
 
 const W: usize = 320;
 const H: usize = 240;
@@ -23,14 +24,21 @@ const H: usize = 240;
 struct Counter {
     pictures: usize,
     yuyv: Vec<u8>,
+    transforms: Vec<Transform>,
 }
 
 impl Sink for Counter {
-    fn show(&mut self, picture: &DecodedYUV<'_>) -> Result<(), Box<dyn std::error::Error>> {
+    fn show(
+        &mut self,
+        picture: &DecodedYUV<'_>,
+        transform: Transform,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(picture.dimensions(), (W, H));
-        crate::yuv::i420_to_yuyv(picture, W, H, &mut self.yuyv);
+        let (w, h) = transform.output_size(W, H);
+        crate::yuv::convert(picture, transform, w, h, &mut self.yuyv);
         assert_eq!(self.yuyv.len(), W * H * 2);
         self.pictures += 1;
+        self.transforms.push(transform);
         Ok(())
     }
 }
@@ -77,15 +85,23 @@ fn phone_hello() -> Hello {
 
 /// Runs the host session on one side of a socket and `phone` on the other.
 fn with_phone(phone: impl FnOnce(TcpStream) + Send + 'static) -> (Result<End, String>, usize) {
+    let (result, sink) = with_phone_view(View::default(), phone);
+    (result, sink.pictures)
+}
+
+fn with_phone_view(
+    view: View,
+    phone: impl FnOnce(TcpStream) + Send + 'static,
+) -> (Result<End, String>, Counter) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let phone = thread::spawn(move || phone(TcpStream::connect(addr).unwrap()));
     let (stream, _) = listener.accept().unwrap();
     let hello = session::host_hello("host-id".into(), "test-host".into(), None);
     let mut sink = Counter::default();
-    let result = session::run(stream, &hello, &mut sink, true).map_err(|e| e.to_string());
+    let result = session::run(stream, &hello, view, &mut sink, true).map_err(|e| e.to_string());
     phone.join().unwrap();
-    (result, sink.pictures)
+    (result, sink)
 }
 
 /// Preambles and HELLOs from the phone side; returns a reader of host messages.
@@ -115,6 +131,27 @@ fn config(id: u16, codec_data: &[u8]) -> Message {
         stream: streams::VIDEO,
         config: c,
     }
+}
+
+/// STREAM_CONFIG of a back camera whose sensor is mounted at 90°, as on most phones.
+fn config_back90(id: u16, codec_data: &[u8]) -> Message {
+    let Message::StreamConfig { stream, mut config } = config(id, codec_data) else {
+        unreachable!()
+    };
+    config.camera = Some(oculibre_protocol::CameraInfo {
+        id: "0".into(),
+        facing: "back".into(),
+        sensor_orientation: 90,
+        mirrored: false,
+    });
+    Message::StreamConfig { stream, config }
+}
+
+fn rotation_event(device_rotation: serde_json::Value) -> Message {
+    Message::Event(oculibre_protocol::Event {
+        event: "orientation".into(),
+        data: serde_json::json!({ "device_rotation": device_rotation }),
+    })
 }
 
 fn frame(n: u32, config_id: u16, data: &[u8], key: bool, discontinuity: bool) -> Message {
@@ -214,4 +251,52 @@ fn not_an_oculibre_peer() {
         let _ = std::io::Read::read(&mut s, &mut [0; 64]);
     });
     assert!(result.unwrap_err().contains("not an Oculibre peer"));
+}
+
+/// The phone turns: upright, top edge on the left, flat on the table, top edge on the right.
+fn turning_phone(mut s: TcpStream, frames: Vec<Vec<u8>>, codec_data: Vec<u8>) {
+    let _r = handshake(&mut s);
+    write_message(&mut s, &config_back90(1, &codec_data)).unwrap();
+    let rotations = [
+        None,
+        Some(serde_json::json!(90)),
+        Some(serde_json::Value::Null),
+        Some(serde_json::json!(270)),
+        Some(serde_json::json!(45)), // invalid: ignored
+    ];
+    for (i, r) in rotations.into_iter().enumerate() {
+        if let Some(r) = r {
+            write_message(&mut s, &rotation_event(r)).unwrap();
+        }
+        write_message(&mut s, &frame(i as u32, 1, &frames[i], i == 0, false)).unwrap();
+    }
+}
+
+#[test]
+fn auto_rotation_follows_the_phone() {
+    let (codec_data, frames) = encode(5);
+    let (result, sink) = with_phone_view(View::default(), move |s| {
+        turning_phone(s, frames, codec_data)
+    });
+    assert_eq!(result.unwrap(), End::Closed);
+    let rotations: Vec<u16> = sink.transforms.iter().map(|t| t.rotation).collect();
+    // upright → 90, top left → 0, flat → unchanged, top right → 180, invalid → unchanged
+    assert_eq!(rotations, vec![90, 0, 0, 180, 180]);
+    assert!(sink.transforms.iter().all(|t| !t.mirror));
+}
+
+#[test]
+fn fixed_rotation_ignores_the_phone() {
+    let (codec_data, frames) = encode(5);
+    let view = View {
+        rotate: Rotate::Fixed(270),
+        mirror: true,
+    };
+    let (result, sink) = with_phone_view(view, move |s| turning_phone(s, frames, codec_data));
+    assert_eq!(result.unwrap(), End::Closed);
+    let expected = Transform {
+        rotation: 270,
+        mirror: true,
+    };
+    assert_eq!(sink.transforms, vec![expected; 5]);
 }
