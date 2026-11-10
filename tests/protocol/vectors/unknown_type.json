@@ -1,0 +1,15 @@
+{
+  "description": "Type 0x60 (reserved for future versions) with a 4-byte payload: must be skipped",
+  "fields": {
+    "skipped_length": 4
+  },
+  "header": {
+    "flags": 0,
+    "length": 4,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 96
+  },
+  "kind": "message",
+  "type": "UNKNOWN"
+}

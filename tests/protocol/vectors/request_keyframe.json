@@ -1,0 +1,16 @@
+{
+  "description": "REQUEST request_keyframe (no args)",
+  "fields": {
+    "cmd": "request_keyframe",
+    "id": 1
+  },
+  "header": {
+    "flags": 0,
+    "length": 33,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 64
+  },
+  "kind": "message",
+  "type": "REQUEST"
+}

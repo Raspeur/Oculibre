@@ -1,0 +1,28 @@
+{
+  "description": "HELLO from a host",
+  "fields": {
+    "app": "oculibre-desktop",
+    "app_version": "0.2.0",
+    "device": {
+      "os": "linux",
+      "os_version": "6.8"
+    },
+    "features": [
+      "video.h264",
+      "clock",
+      "orientation",
+      "stats"
+    ],
+    "id": "c1f04a7e-9b2d-4f60-8a1e-2d9c5b7e3f40",
+    "name": "my-computer"
+  },
+  "header": {
+    "flags": 0,
+    "length": 212,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 1
+  },
+  "kind": "message",
+  "type": "HELLO"
+}

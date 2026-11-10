@@ -1,0 +1,19 @@
+{
+  "description": "First VIDEO_FRAME: keyframe of config 1",
+  "fields": {
+    "config_id": 1,
+    "data_hex": "000000016588840033ff",
+    "discontinuity": false,
+    "frame_number": 0,
+    "key": true
+  },
+  "header": {
+    "flags": 1,
+    "length": 18,
+    "stream": 1,
+    "timestamp": 123456789,
+    "type": 33
+  },
+  "kind": "message",
+  "type": "VIDEO_FRAME"
+}

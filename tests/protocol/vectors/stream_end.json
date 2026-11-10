@@ -1,0 +1,15 @@
+{
+  "description": "STREAM_END while switching camera",
+  "fields": {
+    "reason": "camera_switch"
+  },
+  "header": {
+    "flags": 0,
+    "length": 26,
+    "stream": 1,
+    "timestamp": 0,
+    "type": 35
+  },
+  "kind": "message",
+  "type": "STREAM_END"
+}

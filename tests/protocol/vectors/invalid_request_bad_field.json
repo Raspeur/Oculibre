@@ -1,0 +1,6 @@
+{
+  "description": "REQUEST whose id is a string",
+  "expect_error": "json",
+  "kind": "error",
+  "stage": "message"
+}

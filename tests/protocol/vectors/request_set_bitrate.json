@@ -1,0 +1,19 @@
+{
+  "description": "REQUEST set_bitrate",
+  "fields": {
+    "args": {
+      "bitrate": 8000000
+    },
+    "cmd": "set_bitrate",
+    "id": 2
+  },
+  "header": {
+    "flags": 0,
+    "length": 55,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 64
+  },
+  "kind": "message",
+  "type": "REQUEST"
+}

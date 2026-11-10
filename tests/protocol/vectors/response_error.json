@@ -1,0 +1,20 @@
+{
+  "description": "RESPONSE error unsupported",
+  "fields": {
+    "error": {
+      "code": "unsupported",
+      "message": "no torch on this camera"
+    },
+    "id": 3,
+    "ok": false
+  },
+  "header": {
+    "flags": 0,
+    "length": 86,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 65
+  },
+  "kind": "message",
+  "type": "RESPONSE"
+}

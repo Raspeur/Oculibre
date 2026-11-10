@@ -1,0 +1,18 @@
+{
+  "description": "PONG answering ping, responder clock 5 s ahead",
+  "fields": {
+    "seq": 1,
+    "t1": 1000000,
+    "t2": 6000400,
+    "t3": 6000450
+  },
+  "header": {
+    "flags": 0,
+    "length": 32,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 4
+  },
+  "kind": "message",
+  "type": "PONG"
+}

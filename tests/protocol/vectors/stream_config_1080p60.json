@@ -1,0 +1,36 @@
+{
+  "description": "STREAM_CONFIG for 1080p60 H.264 from the back camera",
+  "fields": {
+    "bitrate": 12000000,
+    "camera": {
+      "facing": "back",
+      "id": "0",
+      "mirrored": false,
+      "sensor_orientation": 90
+    },
+    "capture_fps": 60,
+    "codec": "h264",
+    "codec_data": "AAAAAWdCwCqVoB4AiflQAAAAAWjOPIA=",
+    "color": {
+      "matrix": "bt709",
+      "primaries": "bt709",
+      "range": "limited",
+      "transfer": "bt709"
+    },
+    "config_id": 1,
+    "fps": 60,
+    "height": 1080,
+    "kind": "video",
+    "path": "unlisted",
+    "width": 1920
+  },
+  "header": {
+    "flags": 0,
+    "length": 344,
+    "stream": 1,
+    "timestamp": 0,
+    "type": 32
+  },
+  "kind": "message",
+  "type": "STREAM_CONFIG"
+}

@@ -1,0 +1,21 @@
+{
+  "description": "HELLO with keys unknown to 0.1: they must be ignored",
+  "fields": {
+    "app": "x",
+    "app_version": "",
+    "features": [
+      "clock"
+    ],
+    "id": "",
+    "name": ""
+  },
+  "header": {
+    "flags": 0,
+    "length": 61,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 1
+  },
+  "kind": "message",
+  "type": "HELLO"
+}

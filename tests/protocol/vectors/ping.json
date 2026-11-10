@@ -1,0 +1,16 @@
+{
+  "description": "PING, seq 1, t1 = 1 000 000 µs",
+  "fields": {
+    "seq": 1,
+    "t1": 1000000
+  },
+  "header": {
+    "flags": 0,
+    "length": 16,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 3
+  },
+  "kind": "message",
+  "type": "PING"
+}

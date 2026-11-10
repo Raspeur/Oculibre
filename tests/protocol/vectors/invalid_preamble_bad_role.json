@@ -1,0 +1,6 @@
+{
+  "description": "Role 3 does not exist",
+  "expect_error": "bad_role",
+  "kind": "error",
+  "stage": "preamble"
+}

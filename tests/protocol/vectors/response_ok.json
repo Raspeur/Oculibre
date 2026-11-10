@@ -1,0 +1,17 @@
+{
+  "description": "RESPONSE ok to request 1",
+  "fields": {
+    "id": 1,
+    "ok": true,
+    "result": {}
+  },
+  "header": {
+    "flags": 0,
+    "length": 30,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 65
+  },
+  "kind": "message",
+  "type": "RESPONSE"
+}

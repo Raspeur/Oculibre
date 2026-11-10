@@ -1,0 +1,6 @@
+{
+  "description": "HELLO whose payload is not JSON",
+  "expect_error": "json",
+  "kind": "error",
+  "stage": "message"
+}

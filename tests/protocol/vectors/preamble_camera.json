@@ -1,0 +1,7 @@
+{
+  "description": "Preamble sent by a camera speaking 0.1",
+  "kind": "preamble",
+  "major": 0,
+  "minor": 1,
+  "role": "camera"
+}

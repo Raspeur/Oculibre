@@ -1,0 +1,18 @@
+{
+  "description": "EVENT orientation, phone lying flat",
+  "fields": {
+    "data": {
+      "device_rotation": null
+    },
+    "event": "orientation"
+  },
+  "header": {
+    "flags": 0,
+    "length": 55,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 66
+  },
+  "kind": "message",
+  "type": "EVENT"
+}

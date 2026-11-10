@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["cli"]
+members = ["cli", "protocol"]
+# cargo-fuzz crate, needs a nightly toolchain: cd protocol && cargo +nightly fuzz run decode
+exclude = ["protocol/fuzz"]
 
 [workspace.package]
 version = "0.0.1"

@@ -1,0 +1,6 @@
+{
+  "description": "length = 16 MiB + 1: rejected from the header, before reading the payload",
+  "expect_error": "too_large",
+  "kind": "error",
+  "stage": "message"
+}

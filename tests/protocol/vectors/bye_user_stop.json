@@ -1,0 +1,15 @@
+{
+  "description": "BYE after the user stopped streaming",
+  "fields": {
+    "reason": "user_stop"
+  },
+  "header": {
+    "flags": 0,
+    "length": 22,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 2
+  },
+  "kind": "message",
+  "type": "BYE"
+}

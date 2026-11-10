@@ -1,0 +1,6 @@
+{
+  "description": "VIDEO_FRAME shorter than its 8-byte sub-header",
+  "expect_error": "truncated",
+  "kind": "error",
+  "stage": "message"
+}

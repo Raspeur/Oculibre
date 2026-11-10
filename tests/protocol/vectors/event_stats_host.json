@@ -1,0 +1,21 @@
+{
+  "description": "EVENT stats from the host",
+  "fields": {
+    "data": {
+      "decode_errors": 0,
+      "decoded_fps": 60,
+      "received_fps": 60,
+      "rtt_ms": 3
+    },
+    "event": "stats"
+  },
+  "header": {
+    "flags": 0,
+    "length": 90,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 66
+  },
+  "kind": "message",
+  "type": "EVENT"
+}

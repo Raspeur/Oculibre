@@ -1,0 +1,33 @@
+{
+  "description": "HELLO from a camera",
+  "fields": {
+    "app": "oculibre-android",
+    "app_version": "0.2.0",
+    "device": {
+      "manufacturer": "Xiaomi",
+      "model": "Redmi Note 9 Pro",
+      "os": "android",
+      "os_version": "12",
+      "sdk": 31
+    },
+    "features": [
+      "video.h264",
+      "clock",
+      "orientation",
+      "stats",
+      "control.keyframe",
+      "control.bitrate"
+    ],
+    "id": "5b0d7f0e-3f1c-4a8e-9f7d-0c2b2f6f1a11",
+    "name": "Redmi Note 9 Pro"
+  },
+  "header": {
+    "flags": 0,
+    "length": 315,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 1
+  },
+  "kind": "message",
+  "type": "HELLO"
+}

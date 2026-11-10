@@ -1,0 +1,6 @@
+{
+  "description": "HELLO announcing 64 KiB + 1: rejected from the header, before reading the payload",
+  "expect_error": "json_too_large",
+  "kind": "error",
+  "stage": "message"
+}

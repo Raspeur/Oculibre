@@ -1,0 +1,6 @@
+{
+  "description": "PING with a 12-byte payload (needs 16)",
+  "expect_error": "truncated",
+  "kind": "error",
+  "stage": "message"
+}

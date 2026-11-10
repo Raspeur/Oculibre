@@ -1,0 +1,18 @@
+{
+  "description": "EVENT orientation, phone turned 90° clockwise",
+  "fields": {
+    "data": {
+      "device_rotation": 90
+    },
+    "event": "orientation"
+  },
+  "header": {
+    "flags": 0,
+    "length": 53,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 66
+  },
+  "kind": "message",
+  "type": "EVENT"
+}

@@ -1,0 +1,19 @@
+{
+  "description": "VIDEO_FRAME after dropped frames (frame numbers 1-4 missing)",
+  "fields": {
+    "config_id": 1,
+    "data_hex": "00000001419a0204",
+    "discontinuity": true,
+    "frame_number": 5,
+    "key": false
+  },
+  "header": {
+    "flags": 2,
+    "length": 16,
+    "stream": 1,
+    "timestamp": 123540122,
+    "type": 33
+  },
+  "kind": "message",
+  "type": "VIDEO_FRAME"
+}

@@ -5,7 +5,8 @@ Rust workspace.
 | Crate | State |
 |---|---|
 | `cli` → binary `oculibre` | **Phase 1, works on Linux**: TCP → H.264 decode (OpenH264) → v4l2loopback |
-| `protocol`, `core`, `app-tauri` | Planned |
+| `protocol` | **Protocol v0.1** ([`docs/protocol.typ`](../docs/protocol.typ)): preamble, header, messages, reader with the §14 limits, clock sync, `auto` rotation. Shared test vectors in [`tests/protocol/vectors`](../tests/protocol/vectors), fuzz target in `protocol/fuzz` |
+| `core`, `app-tauri` | Planned |
 
 No system library needed: OpenH264 (BSD-2-Clause) is compiled from source by Cargo
 (needs a C/C++ compiler: `sudo apt install build-essential`).
@@ -33,4 +34,9 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt
 ```
 
-`cargo test` includes an encode → split → decode round-trip, no phone needed.
+`cargo test` includes an encode → split → decode round-trip and the protocol test vectors, no phone needed.
+
+After a deliberate wire-format change, regenerate the shared vectors:
+`cargo run -p oculibre-protocol --example gen_vectors`.
+
+Fuzzing (nightly toolchain): `cargo install cargo-fuzz`, then `cd protocol && cargo +nightly fuzz run decode`.

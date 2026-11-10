@@ -1,0 +1,6 @@
+{
+  "description": "Not an Oculibre peer (an HTTP request)",
+  "expect_error": "bad_magic",
+  "kind": "error",
+  "stage": "preamble"
+}

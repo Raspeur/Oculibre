@@ -1,0 +1,22 @@
+{
+  "description": "EVENT stats from the camera",
+  "fields": {
+    "data": {
+      "bitrate": 11800000,
+      "camera_fps": 60,
+      "dropped": 0,
+      "queue": 1,
+      "sent_fps": 60
+    },
+    "event": "stats"
+  },
+  "header": {
+    "flags": 0,
+    "length": 97,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 66
+  },
+  "kind": "message",
+  "type": "EVENT"
+}
