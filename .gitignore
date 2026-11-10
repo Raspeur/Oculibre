@@ -1,0 +1,55 @@
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.iml
+
+# --- Android / Gradle ---
+.gradle/
+android/**/build/
+android/local.properties
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# --- Rust ---
+desktop/target/
+**/*.rs.bk
+
+# --- Tauri / Node ---
+node_modules/
+dist/
+desktop/**/src-tauri/target/
+desktop/**/src-tauri/gen/
+
+# --- C++ / Visual Studio ---
+vcam/windows-*/build/
+vcam/windows-*/out/
+.vs/
+*.user
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+
+# --- Xcode / Swift ---
+vcam/macos/build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.swiftpm/
+
+# --- Secrets / local config ---
+.env
+*.pem
+*.p12
