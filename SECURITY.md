@@ -10,7 +10,7 @@ You can expect a first answer within 7 days.
 
 ## Scope
 
-- The wire protocol and its parser (`docs/protocol.md`, `desktop/`)
+- The wire protocol and its parser (`docs/protocol.typ`, `desktop/`)
 - Pairing and Noise handshake
 - The Android app (permissions, exposed services)
 - Virtual camera drivers/extensions

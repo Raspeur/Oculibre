@@ -3,7 +3,7 @@
 //!
 //! A NAL is known to be complete only when the next start code arrives, so the last NAL
 //! of a frame waits for the next frame (~1 frame of extra latency). The Oculibre framing
-//! (length-prefixed messages, see docs/protocol.md) will remove that delay.
+//! (length-prefixed messages, see docs/protocol.typ) will remove that delay.
 
 #[derive(Default)]
 pub struct Splitter {

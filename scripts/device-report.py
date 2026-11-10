@@ -317,7 +317,7 @@ def main() -> None:
 
 Generated from [`{dump_file.name}`]({dump_file.name}). "Max normal fps" is the highest frame
 rate an app can request in a regular session; "high-speed" modes are slow-motion sessions
-(darker, see [docs/research/60fps.md](../../../docs/research/60fps.md)).
+(darker, see [docs/research/60fps.typ](../../../docs/research/60fps.typ)).
 
 {table}
 

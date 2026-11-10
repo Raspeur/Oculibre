@@ -44,7 +44,7 @@ import kotlin.concurrent.thread
 
 /**
  * Lab: tries several ways of getting a *real* 60 fps out of the back camera, and measures
- * what the camera actually delivers (frame timestamps, exposure, ISO), see docs/research/60fps.md.
+ * what the camera actually delivers (frame timestamps, exposure, ISO), see docs/research/60fps.typ.
  *
  * The camera feeds a real H.264 encoder (output discarded), like the streaming pipeline,
  * because some HALs pick their sensor mode from the stream types.

@@ -5,7 +5,7 @@ Thanks for your interest! English and French are both welcome in issues and pull
 ## Ways to help
 
 - **Test on old phones.** Open a [device report](.github/ISSUE_TEMPLATE/device_report.md) with your model, Android version and results. This is the most valuable contribution right now.
-- **Review the protocol draft** ([`docs/protocol.md`](docs/protocol.md)), especially the security part.
+- **Review the protocol draft** ([`docs/protocol.typ`](docs/protocol.typ)), especially the security part.
 - **Code**: Android (Kotlin), desktop (Rust), virtual cameras (C++ / Swift).
 
 ## Workflow
@@ -14,6 +14,13 @@ Thanks for your interest! English and French are both welcome in issues and pull
 2. Fork, create a branch (`feat/…`, `fix/…`, `docs/…`).
 3. Keep pull requests focused; describe how you tested.
 4. Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `refactor:`…).
+
+## Documentation
+
+Docs in `docs/` are written in [Typst](https://typst.app) with the shared layout `docs/oculibre.typ`
+(template `isc-hei-document`, needs its fonts: Source Sans 3, Fira Code, Inria Sans). Build them with
+`bash scripts/build-docs.sh`. Files that GitHub renders (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+`devices/**`) stay in Markdown.
 
 ## Code style
 
@@ -25,7 +32,7 @@ Thanks for your interest! English and French are both welcome in issues and pull
 ## Rules for any change touching the network
 
 - Never trust a length or a field coming from the network.
-- Any change to the wire format updates `docs/protocol.md` in the same pull request.
+- Any change to the wire format updates `docs/protocol.typ` in the same pull request.
 - Parser changes must keep the fuzz target passing.
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).

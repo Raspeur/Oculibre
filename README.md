@@ -38,7 +38,9 @@ If your phone runs Android 14+ and supports the native USB webcam mode, Oculibre
                                                └──────────────────────────────┘
 ```
 
-Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the wire format in [`docs/protocol.md`](docs/protocol.md).
+Details in [`docs/ARCHITECTURE.typ`](docs/ARCHITECTURE.typ) and the wire format in [`docs/protocol.typ`](docs/protocol.typ).
+
+The documentation is written in [Typst](https://typst.app). Build the PDFs with `bash scripts/build-docs.sh` (they land in `docs/build/`).
 
 ## Repository layout
 
@@ -49,7 +51,7 @@ Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the wire format in
 | [`vcam/windows-dshow/`](vcam/windows-dshow/) | DirectShow virtual camera (Windows 10) | C++ |
 | [`vcam/windows-mf/`](vcam/windows-mf/) | Media Foundation virtual camera (Windows 11) | C++ |
 | [`vcam/macos/`](vcam/macos/) | CoreMediaIO Camera Extension | Swift |
-| [`docs/`](docs/) | Architecture, protocol spec, roadmap | — |
+| [`docs/`](docs/) | Architecture, protocol spec, roadmap, research (Typst) | — |
 
 ## Roadmap
 
@@ -59,7 +61,7 @@ Details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the wire format in
 4. **Phase 4** — Station mode, thermal management, test campaign on old devices.
 5. **Phase 5** — macOS, audio (virtual microphone), advanced camera controls.
 
-Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Full roadmap: [`docs/ROADMAP.typ`](docs/ROADMAP.typ).
 
 ## Contributing
 

@@ -388,7 +388,7 @@ class StreamSession(
                             set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
                             val ranges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
                             // Above 30 fps, ask for [fps, fps] even when it is not listed: many HALs
-                            // (Xiaomi, Samsung…) honour it although they hide it (docs/research/60fps.md).
+                            // (Xiaomi, Samsung…) honour it although they hide it (docs/research/60fps.typ).
                             // The real rate is measured by cameraCallback and shown in the stats.
                             val range = fpsRangeFor(ranges, cfg.fps)
                                 ?: if (cfg.fps > 30) Range(cfg.fps, cfg.fps) else null

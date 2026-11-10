@@ -1,7 +1,7 @@
 # Device database
 
 What each phone's cameras really expose to apps, and how Oculibre behaves on it.
-Manufacturers often hide features from third-party apps (see [docs/research/60fps.md](../docs/research/60fps.md)),
+Manufacturers often hide features from third-party apps (see [docs/research/60fps.typ](../docs/research/60fps.typ)),
 so real data from real phones is the only way to know what Oculibre can do.
 
 ```

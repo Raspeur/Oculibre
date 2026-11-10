@@ -57,3 +57,7 @@ xcuserdata/
 # --- Raw camera dumps (personal data): use scripts/device-report.py ---
 camera-dump*.txt
 *.dumpsys.txt
+
+# --- Generated documentation ---
+docs/build/
+__pycache__/

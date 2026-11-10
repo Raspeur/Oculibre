@@ -10,7 +10,7 @@
 
 Generated from [`camera-android12-skq1-211019-001.txt`](camera-android12-skq1-211019-001.txt). "Max normal fps" is the highest frame
 rate an app can request in a regular session; "high-speed" modes are slow-motion sessions
-(darker, see [docs/research/60fps.md](../../../docs/research/60fps.md)).
+(darker, see [docs/research/60fps.typ](../../../docs/research/60fps.typ)).
 
 | Camera ID | Facing | HW level | Max normal fps | Fixed-rate ranges | High-speed (fixed) |
 |---|---|---|---|---|---|
