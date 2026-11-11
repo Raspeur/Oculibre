@@ -116,6 +116,8 @@ struct Latency {
     /// Fully received → written to the virtual camera (decode, rotation, conversion, write).
     pc_sum: i64,
     count: u32,
+    /// Frames whose latency came out absurd (< 0 or ≥ 10 s): the phone's clocks disagree.
+    rejected: u32,
 }
 
 /// State shared with the ticker thread.
@@ -490,6 +492,8 @@ fn record_latency(shared: &Shared, capture_us: u64, arrival_us: u64) {
         l.total_max = l.total_max.max(total);
         l.pc_sum += shown_us - arrival_us as i64;
         l.count += 1;
+    } else {
+        shared.latency.lock().unwrap().rejected += 1;
     }
 }
 
@@ -507,6 +511,8 @@ struct Status {
     rtt: Option<f64>,
     dropped: Option<u64>,
     errors: u32,
+    /// Latency samples were thrown away as absurd.
+    clock_mismatch: bool,
 }
 
 impl Status {
@@ -531,6 +537,9 @@ impl Status {
                 } else if let Some(max) = self.latency_max {
                     line += &format!(" (max {max:.0})");
                 }
+            }
+            None if self.clock_mismatch => {
+                line += " · latency: unavailable (the phone's frame times don't match its clock)"
             }
             None => line += " · latency: syncing clocks…",
         }
@@ -625,6 +634,7 @@ fn ticker(shared: &Shared) {
                 rtt: rtt_ms,
                 dropped: phone.get("dropped").and_then(Value::as_u64),
                 errors,
+                clock_mismatch: latency.rejected > 0,
             };
             // Clear the rest of the previous line (it may have been longer).
             let line = format!("\r{}\x1b[K", status.line());
@@ -651,6 +661,7 @@ mod status_tests {
             rtt: Some(1.23),
             dropped: Some(0),
             errors: 0,
+            clock_mismatch: false,
         };
         assert_eq!(
             s.line(),

@@ -435,10 +435,12 @@ $ "rtt" = (t_4 - t_1) - (t_3 - t_2) quad quad "offset" = ((t_2 - t_1) + (t_3 - t
 - The host keeps the offset with the lowest `rtt` over the last few seconds and computes the
   *capture-to-display latency* of each frame as $"display_time" - ("frame.timestamp" - "offset")$, with
   `offset` measured by the host's own `PING`s (camera clock minus host clock).
-- The camera MUST answer `PING`s with the clock of its frame timestamps. On Android this is either
-  `CLOCK_MONOTONIC` or `CLOCK_BOOTTIME`, and `SENSOR_INFO_TIMESTAMP_SOURCE` is not always right: the app
-  compares the first frame's `SENSOR_TIMESTAMP` with both clocks, keeps the closest, and does not answer
-  `PING`s before that (the host must tolerate unanswered `PING`s).
+- The camera MUST answer `PING`s with the clock of its frame timestamps. On Android the timestamps of
+  the *encoder* output count either in `CLOCK_MONOTONIC` or in `CLOCK_BOOTTIME`, and neither
+  `SENSOR_INFO_TIMESTAMP_SOURCE` nor `SENSOR_TIMESTAMP` tells which (the camera service may convert boot
+  time to monotonic for video encoders): the app compares the first encoded frame with both clocks,
+  keeps the closest, and does not answer `PING`s before that (the host must tolerate unanswered
+  `PING`s). If the encoder uses neither clock, its timestamps are shifted onto the sensor's.
 - With the camera's `latency_ms` (capture → network) and its own processing time (received → output),
   the host splits the latency into *phone + network + host*; the network share is what remains.
   The time an application takes to display the virtual camera is not included (see the glass-to-glass

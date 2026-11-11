@@ -156,10 +156,16 @@ class StreamSession(
     @Volatile private var realtimeClock = false
 
     /**
-     * Set once the clock has been checked against a real frame timestamp. Until then PINGs are
+     * Set once the clock has been checked against the first encoded frame. Until then PINGs are
      * not answered, so the computer never mixes samples from two clocks.
      */
     private val clockChecked = AtomicBoolean(false)
+
+    /** Sensor timestamp of the first captured frame (ns), for encoders with their own time base. */
+    @Volatile private var firstSensorNs = -1L
+
+    /** Encoder timestamp minus sent timestamp (µs). Drain thread only. */
+    private var timestampShiftUs = 0L
 
     // Only touched by the drain thread.
     private var waitingForKeyframe = false
@@ -603,10 +609,12 @@ class StreamSession(
             framesDropped.incrementAndGet()
             return
         }
+        if (!clockChecked.get()) checkClock(ptsUs)
+        val timestampUs = ptsUs - timestampShiftUs
         val bytes = Protocol.encodeVideoFrame(
-            Protocol.STREAM_VIDEO, ptsUs, isKey, pendingDiscontinuity, number, configId, data, 0, size,
+            Protocol.STREAM_VIDEO, timestampUs, isKey, pendingDiscontinuity, number, configId, data, 0, size,
         )
-        if (queue.offer(Packet(bytes, ptsUs))) {
+        if (queue.offer(Packet(bytes, timestampUs))) {
             pendingDiscontinuity = false
         } else {
             framesDropped.incrementAndGet()
@@ -803,22 +811,41 @@ class StreamSession(
             result: TotalCaptureResult,
         ) {
             cameraFrames.incrementAndGet()
-            if (!clockChecked.get()) {
-                result.get(CaptureResult.SENSOR_TIMESTAMP)?.let { checkClock(it) }
+            if (firstSensorNs < 0) {
+                result.get(CaptureResult.SENSOR_TIMESTAMP)?.let { firstSensorNs = it }
             }
         }
     }
 
     /**
-     * Which clock the camera timestamps really use: the characteristics are not always right
-     * (SENSOR_INFO_TIMESTAMP_SOURCE can be UNKNOWN and still be boot time). A frame captured a few
-     * milliseconds ago is close to one clock and far from the other (they differ by the time the
-     * phone has spent asleep).
+     * Which clock the frame timestamps really use, decided on the first encoded frame (it left the
+     * camera a few tens of milliseconds ago, so it is close to its clock and far from the other one:
+     * the two differ by the time the phone has spent asleep).
+     *
+     * The *encoder* timestamps matter, not the sensor's: on many phones (Galaxy S23 among them) the
+     * sensor counts in boot time but the camera service converts the frames it sends to a video
+     * encoder to the monotonic clock, and SENSOR_INFO_TIMESTAMP_SOURCE says nothing about that.
+     * If the encoder uses neither clock, its timestamps are shifted onto the sensor's.
      */
-    private fun checkClock(sensorNs: Long) {
-        val monotonic = Math.abs(System.nanoTime() - sensorNs)
-        val boot = Math.abs(SystemClock.elapsedRealtimeNanos() - sensorNs)
-        realtimeClock = boot < monotonic
+    private fun checkClock(ptsUs: Long) {
+        val monotonicUs = System.nanoTime() / 1000
+        val bootUs = SystemClock.elapsedRealtimeNanos() / 1000
+        val toMonotonic = Math.abs(monotonicUs - ptsUs)
+        val toBoot = Math.abs(bootUs - ptsUs)
+        if (minOf(toMonotonic, toBoot) <= CLOCK_MATCH_US) {
+            realtimeClock = toBoot < toMonotonic
+            timestampShiftUs = 0
+        } else {
+            val sensorUs = firstSensorNs / 1000
+            if (sensorUs > 0) {
+                realtimeClock = Math.abs(bootUs - sensorUs) < Math.abs(monotonicUs - sensorUs)
+                timestampShiftUs = ptsUs - sensorUs
+            } else {
+                // No reference at all: the encoder's own delay is not counted.
+                realtimeClock = false
+                timestampShiftUs = ptsUs - monotonicUs
+            }
+        }
         clockChecked.set(true)
     }
 
@@ -903,6 +930,8 @@ class StreamSession(
         private const val MIN_BITRATE = 100_000L
         private const val MAX_BITRATE = 100_000_000L
         private const val PREF_INSTALL_ID = "install_id"
+        /** A first frame closer than this to a clock uses that clock. */
+        private const val CLOCK_MATCH_US = 2_000_000L
 
         private val OUR_FEATURES = listOf(
             Protocol.Feature.VIDEO_H264,
