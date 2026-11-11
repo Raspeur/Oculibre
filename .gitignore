@@ -61,3 +61,4 @@ camera-dump*.txt
 # --- Generated documentation ---
 docs/build/
 __pycache__/
+CLAUDE.md

@@ -32,7 +32,7 @@ Estimates are for one person at about 8–10 h/week (side project). #done done �
 - #done Protocol v0.1 implemented: Rust `protocol` crate + test vectors + `cargo-fuzz` target, Android, CLI
 - #done Host: `--rotate 0|90|180|270|auto` and `--mirror`
 - #done Live latency in the console: phone + network + PC, camera vs shown frame rate
-- #open Glass-to-glass latency measured and documented (30 and 60 fps)
+- #done Glass-to-glass latency measured and documented (30 and 60 fps)
 - 🎯 _Usable on Linux_
 
 = Phase 2 — Wi-Fi and security
