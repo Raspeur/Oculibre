@@ -5,7 +5,9 @@ Free, open source, private by default. No ads, no watermark, no paid "Pro" tier.
 
 > 🇫🇷 *Oculibre transforme un smartphone Android, même ancien, en webcam pour PC. Gratuit, open source, chiffré par défaut. Les contributions en français sont bienvenues.*
 
-> ⚠️ **Status: early design phase.** Nothing is usable yet. The protocol and architecture are being specified — see [`docs/`](docs/).
+> ⚠️ **Status: early, Linux + USB only.** The phone streams up to 4K or 1080p60 over USB to a Linux
+> virtual webcam, with about 60–110 ms of latency. Wi-Fi works but is **not encrypted yet** (pairing and
+> encryption come next), Windows and macOS are planned. See [Try it](#try-it-linux-usb).
 
 ---
 
@@ -30,15 +32,26 @@ If your phone runs Android 14+ and supports the native USB webcam mode, Oculibre
 ```
  Android phone                                     Computer
 ┌──────────────────────────┐                   ┌──────────────────────────────┐
-│ Camera2 ──► MediaCodec   │   H.264 over TCP  │ Rust core: decode (FFmpeg)   │
+│ Camera2 ──► MediaCodec   │   H.264 over TCP  │ Rust: decode (OpenH264)      │
 │  (zero-copy Surface)     │ ════════════════► │        ──► virtual camera    │
-│ Noise encryption         │  Wi-Fi  or  USB   │ Linux   : v4l2loopback       │
+│ encryption (planned)     │  Wi-Fi  or  USB   │ Linux   : v4l2loopback       │
 │ mDNS + QR pairing        │                   │ Windows : DirectShow / MF    │
 └──────────────────────────┘                   │ macOS   : CMIO Extension     │
                                                └──────────────────────────────┘
 ```
 
 Details in [`docs/ARCHITECTURE.typ`](docs/ARCHITECTURE.typ) and the wire format in [`docs/protocol.typ`](docs/protocol.typ).
+
+## Try it (Linux, USB)
+
+1. Phone: enable **Developer options → USB debugging**, plug it in. Build and install the app:
+   `cd android && ./gradlew installDebug` (Android SDK needed).
+2. PC: `bash scripts/setup-dev.sh --vcam` once, then `bash scripts/vcam-load.sh` (v4l2loopback) and
+   `cd desktop && cargo run --release`.
+3. Press **Start** in the app (address `127.0.0.1`). The phone shows up as the **Oculibre** webcam
+   in Firefox, Chrome, OBS, Zoom…
+
+More options (rotation, mirror, Wi-Fi, `oculibre bench`) in [`desktop/README.md`](desktop/README.md).
 
 The documentation is written in [Typst](https://typst.app). Build the PDFs with `bash scripts/build-docs.sh` (they land in `docs/build/`).
 
@@ -55,8 +68,8 @@ The documentation is written in [Typst](https://typst.app). Build the PDFs with 
 
 ## Roadmap
 
-1. **Phase 1** — H.264 over TCP through ADB (USB), received by a Rust CLI writing to v4l2loopback (Linux).
-2. **Phase 2** — Wi-Fi, mDNS discovery, QR pairing, Noise encryption.
+1. **Phase 1** ✅ — H.264 over TCP through ADB (USB), received by a Rust CLI writing to v4l2loopback (Linux).
+2. **Phase 2** — Wi-Fi, mDNS discovery, QR pairing, encryption (Noise or TLS 1.3, to be decided).
 3. **Phase 3** — Tauri desktop app, then Windows (DirectShow, then Media Foundation).
 4. **Phase 4** — Station mode, thermal management, test campaign on old devices.
 5. **Phase 5** — macOS, audio (virtual microphone), advanced camera controls.

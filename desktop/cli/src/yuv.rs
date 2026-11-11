@@ -103,14 +103,14 @@ pub fn convert(src: &impl YUVSource, t: Transform, dst_w: usize, dst_h: usize, o
 
     let line = dst_w * 2;
     if (cw, ch) != (dst_w, dst_h) {
-        for px in out.chunks_exact_mut(4) {
-            px.copy_from_slice(&BLACK);
+        for px in out.as_chunks_mut::<4>().0 {
+            *px = BLACK;
         }
     }
     for (r, &(yr, cr)) in row_table.iter().enumerate() {
         let start = (oy + r) * line + ox * 2;
         let o = &mut out[start..start + cw * 2];
-        for (i, px) in o.chunks_exact_mut(4).enumerate() {
+        for (i, px) in o.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let (y0, c0) = col_table[2 * i];
             let (y1, _) = col_table[2 * i + 1];
             px[0] = y[yr + y0];
@@ -132,7 +132,7 @@ fn straight_copy(src: &impl YUVSource, out: &mut [u8]) {
         let ur = &u[(row / 2) * su..(row / 2) * su + pairs];
         let vr = &v[(row / 2) * sv..(row / 2) * sv + pairs];
         let o = &mut out[row * w * 2..(row + 1) * w * 2];
-        for (i, px) in o.chunks_exact_mut(4).enumerate() {
+        for (i, px) in o.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             px[0] = yr[2 * i];
             px[1] = ur[i];
             px[2] = yr[2 * i + 1];
@@ -152,7 +152,7 @@ mod tests {
 
     /// Luma plane of a YUYV frame.
     fn luma(out: &[u8]) -> Vec<u8> {
-        out.chunks_exact(2).map(|p| p[0]).collect()
+        out.as_chunks::<2>().0.iter().map(|p| p[0]).collect()
     }
 
     #[test]
