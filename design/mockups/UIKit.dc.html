@@ -27,7 +27,7 @@ body{margin:0}
     <section class="oc-stack" style="grid-column: 1 / -1">
       <h2 class="oc-label">Couleurs</h2>
       <div class="oc-card oc-card--padded" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px">
-        <sc-for list="{{colors}}" as="c" hint-placeholder-count="16">
+        <sc-for list="{{colors}}" as="c" hint-placeholder-count="18">
           <div style="display: flex; flex-direction: column; gap: 6px">
             <span style="{{c.swatch}}" aria-hidden="true"></span>
             <span style="font-size: 13px; font-weight: 600">{{c.name}}</span>
@@ -149,6 +149,24 @@ body{margin:0}
       </div>
     </section>
 
+    <section class="oc-stack" style="grid-column: 1 / -1">
+      <h2 class="oc-label">Alertes (quatre niveaux) et visite guidée</h2>
+      <div class="oc-card oc-card--padded" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; align-items: start">
+        <div class="oc-alert oc-alert--info"><span class="oc-alert__icon">i</span><div class="oc-alert__body"><span class="oc-alert__title">Information</span><span class="oc-alert__text">Rien à faire, Oculibre prévient.</span><span class="oc-alert__code">Code 302</span></div></div>
+        <div class="oc-alert"><span class="oc-alert__icon">!</span><div class="oc-alert__body"><span class="oc-alert__title">Attention</span><span class="oc-alert__text">Une action est conseillée.</span><div class="oc-alert__actions"><button type="button" class="oc-btn oc-btn--primary">Corriger</button><button type="button" class="oc-btn oc-btn--ghost">Ignorer</button></div><span class="oc-alert__code">Code 303</span></div></div>
+        <div class="oc-alert oc-alert--error"><span class="oc-alert__icon">×</span><div class="oc-alert__body"><span class="oc-alert__title">Erreur</span><span class="oc-alert__text">Bloqué tant que rien n'est fait.</span><div class="oc-alert__actions"><button type="button" class="oc-btn oc-btn--danger">Action risquée</button></div><span class="oc-alert__code">Code 204</span></div></div>
+        <div class="oc-alert oc-alert--progress"><span class="oc-alert__icon"><span class="oc-spinner" style="display: block"></span></span><div class="oc-alert__body"><span class="oc-alert__title">En cours</span><span class="oc-alert__text">Oculibre répare tout seul.</span><span class="oc-alert__code">Code 101</span></div></div>
+        <div style="position: relative; height: 200px">
+          <div class="oc-coach" style="position: static; width: 100%">
+            <span class="oc-coach__step">Étape 1 sur 5</span>
+            <h3 class="oc-coach__title">Bulle de visite</h3>
+            <p class="oc-coach__text">.oc-coach dans l'élément mis en avant (.oc-tour-target), côté --right, --left ou --above.</p>
+            <div class="oc-coach__actions"><button type="button" class="oc-btn oc-btn--ghost" style="padding: 0 4px">Passer la visite</button><button type="button" class="oc-btn oc-btn--primary">Suivant</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="oc-stack">
       <h2 class="oc-label">Logo et progression</h2>
       <div class="oc-card oc-card--padded oc-stack" style="gap: 16px">
@@ -169,7 +187,7 @@ body{margin:0}
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1500}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1800}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -183,7 +201,7 @@ class Component extends DCLogic {
       ['--oc-border', '#22314F', 'traits'], ['--oc-border-control', '#33476E', 'bord des contrôles'],
       ['--oc-text', '#E9EEF6', 'texte'], ['--oc-text-2', '#C9D3E3', 'texte secondaire'], ['--oc-text-muted', '#A3B1C7', 'aide'],
       ['--oc-accent', '#FE633C', 'action, actif'], ['--oc-accent-text', '#FE8A6A', 'orange sur fond sombre'],
-      ['--oc-live', '#3DDC97', 'en direct, OK'], ['--oc-off', '#5D6F90', 'hors ligne'], ['--oc-logo-tile', '#F3F5F9', 'pastille du logo'],
+      ['--oc-live', '#3DDC97', 'en direct, OK'], ['--oc-off', '#5D6F90', 'hors ligne'], ['--oc-danger', '#FF6B6B', 'erreur bloquante'], ['--oc-info', '#7FB2FF', 'information'], ['--oc-logo-tile', '#F3F5F9', 'pastille du logo'],
     ].map(([name, value, use]) => ({
       name, value, use,
       swatch: 'display: block; height: 44px; border-radius: 6px; border: 1px solid #33476E; background: ' + value,

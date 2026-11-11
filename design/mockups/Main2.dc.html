@@ -25,6 +25,7 @@ body{margin:0}
 
     <div class="oc-stack">
       <span class="oc-label">Téléphones</span>
+      <div class="{{tourPhones}}">
       <button type="button" class="oc-nav-item" aria-current="true">
         <span class="{{liveDot}}" aria-hidden="true"></span>
         <span class="oc-row__label">
@@ -32,6 +33,18 @@ body{margin:0}
           <span class="oc-small">{{phoneState}}</span>
         </span>
       </button>
+      <sc-if value="{{atPhones}}" hint-placeholder-val="{{false}}">
+        <div class="oc-coach oc-coach--right" role="dialog" aria-label="Visite guidée">
+          <span class="oc-coach__step">{{coachStep}}</span>
+          <h2 class="oc-coach__title">{{coachTitle}}</h2>
+          <p class="oc-coach__text">{{coachText}}</p>
+          <div class="oc-coach__actions">
+            <button type="button" class="oc-btn oc-btn--ghost" style="padding: 0 4px" onClick="{{endTour}}">Passer la visite</button>
+            <button type="button" class="oc-btn oc-btn--primary" onClick="{{nextStep}}">Suivant</button>
+          </div>
+        </div>
+      </sc-if>
+      </div>
       <button type="button" class="oc-nav-item">
         <span class="oc-dot oc-dot--lg oc-dot--off" aria-hidden="true"></span>
         <span class="oc-row__label">
@@ -39,10 +52,23 @@ body{margin:0}
           <span class="oc-small">Hors ligne · Wi-Fi</span>
         </span>
       </button>
+      <div class="{{tourAdd}}">
       <a href="Pairing-fts1.dc.html" class="oc-nav-add">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FE633C" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
         Ajouter un téléphone
       </a>
+      <sc-if value="{{atAdd}}" hint-placeholder-val="{{false}}">
+        <div class="oc-coach oc-coach--right" role="dialog" aria-label="Visite guidée">
+          <span class="oc-coach__step">{{coachStep}}</span>
+          <h2 class="oc-coach__title">{{coachTitle}}</h2>
+          <p class="oc-coach__text">{{coachText}}</p>
+          <div class="oc-coach__actions">
+            <button type="button" class="oc-btn oc-btn--ghost" style="padding: 0 4px" onClick="{{endTour}}">Passer la visite</button>
+            <button type="button" class="oc-btn oc-btn--primary" onClick="{{nextStep}}">Suivant</button>
+          </div>
+        </div>
+      </sc-if>
+      </div>
     </div>
 
     <div class="oc-stack" style="margin-top: auto; gap: 2px">
@@ -50,6 +76,10 @@ body{margin:0}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg>
         Réglages
       </a>
+      <button type="button" class="oc-nav-link" style="border: 0; background: transparent; cursor: pointer" onClick="{{startTour}}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"></path></svg>
+        Visite guidée
+      </button>
       <a href="Settings.dc.html" class="oc-nav-link">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
         À propos
@@ -82,7 +112,18 @@ body{margin:0}
     </section>
 
     <aside class="oc-panel" aria-label="Réglages de la caméra">
-      <div class="oc-panel__section" style="gap: 10px">
+      <div class="{{tourSource}}" style="gap: 10px">
+        <sc-if value="{{atSource}}" hint-placeholder-val="{{false}}">
+        <div class="oc-coach oc-coach--left" role="dialog" aria-label="Visite guidée">
+          <span class="oc-coach__step">{{coachStep}}</span>
+          <h2 class="oc-coach__title">{{coachTitle}}</h2>
+          <p class="oc-coach__text">{{coachText}}</p>
+          <div class="oc-coach__actions">
+            <button type="button" class="oc-btn oc-btn--ghost" style="padding: 0 4px" onClick="{{endTour}}">Passer la visite</button>
+            <button type="button" class="oc-btn oc-btn--primary" onClick="{{nextStep}}">Suivant</button>
+          </div>
+        </div>
+      </sc-if>
         <span class="oc-label">Source</span>
         <div class="oc-segmented" role="group" aria-label="Caméra du téléphone">
           <sc-for list="{{cameras}}" as="c" hint-placeholder-count="3">
@@ -115,7 +156,18 @@ body{margin:0}
         </div>
       </div>
 
-      <div class="oc-panel__section">
+      <div class="{{tourOutput}}">
+        <sc-if value="{{atOutput}}" hint-placeholder-val="{{false}}">
+        <div class="oc-coach oc-coach--left" role="dialog" aria-label="Visite guidée">
+          <span class="oc-coach__step">{{coachStep}}</span>
+          <h2 class="oc-coach__title">{{coachTitle}}</h2>
+          <p class="oc-coach__text">{{coachText}}</p>
+          <div class="oc-coach__actions">
+            <button type="button" class="oc-btn oc-btn--ghost" style="padding: 0 4px" onClick="{{endTour}}">Passer la visite</button>
+            <button type="button" class="oc-btn oc-btn--primary" onClick="{{nextStep}}">Suivant</button>
+          </div>
+        </div>
+      </sc-if>
         <span class="oc-label" style="padding-bottom: 6px">Sortie</span>
         <div class="oc-row oc-row--panel oc-row--info">
           <span class="oc-row__label">Nom dans les applications</span>
@@ -127,7 +179,18 @@ body{margin:0}
         </div>
       </div>
 
-      <div class="oc-panel__section" style="flex-direction: row">
+      <div class="{{tourStart}}" style="flex-direction: row">
+        <sc-if value="{{atStart}}" hint-placeholder-val="{{false}}">
+        <div class="oc-coach oc-coach--left" role="dialog" aria-label="Visite guidée">
+          <span class="oc-coach__step">{{coachStep}}</span>
+          <h2 class="oc-coach__title">{{coachTitle}}</h2>
+          <p class="oc-coach__text">{{coachText}}</p>
+          <div class="oc-coach__actions">
+            <button type="button" class="oc-btn oc-btn--ghost" style="padding: 0 4px" onClick="{{endTour}}">Passer la visite</button>
+            <button type="button" class="oc-btn oc-btn--primary" onClick="{{nextStep}}">Suivant</button>
+          </div>
+        </div>
+      </sc-if>
         <button type="button" class="{{liveButtonClass}}" onClick="{{toggleLive}}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{liveIcon}}"></path></svg>
           {{liveButtonText}}
@@ -135,13 +198,44 @@ body{margin:0}
       </div>
     </aside>
   </main>
+
+  <sc-if value="{{tourIntro}}" hint-placeholder-val="{{false}}">
+    <div class="oc-scrim">
+      <div class="oc-dialog" role="dialog" aria-labelledby="tour-title" style="align-items: center; text-align: center">
+        <div class="oc-logo oc-logo--xl"><img src="./oculibre_logo.svg" alt=""></div>
+        <h2 id="tour-title" class="oc-title oc-title--md">Bienvenue dans Oculibre</h2>
+        <p class="oc-text oc-muted">Votre téléphone devient la webcam de cet ordinateur. Une visite d'une minute pour savoir où cliquer ?</p>
+        <div class="oc-cluster" style="justify-content: center; padding-top: 6px">
+          <button type="button" class="oc-btn oc-btn--ghost" onClick="{{endTour}}">Plus tard</button>
+          <button type="button" class="oc-btn oc-btn--primary" onClick="{{nextStep}}">Commencer la visite</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{tourOutro}}" hint-placeholder-val="{{false}}">
+    <div class="oc-scrim">
+      <div class="oc-dialog" role="dialog" aria-labelledby="tour-end" style="align-items: center; text-align: center">
+        <div class="oc-hero-icon oc-hero-icon--ok" style="width: 64px; height: 64px">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3DDC97" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"></path></svg>
+        </div>
+        <h2 id="tour-end" class="oc-title oc-title--md">C'est tout !</h2>
+        <p class="oc-text oc-muted">Première chose à faire : relier votre téléphone. La visite reste disponible dans la barre de gauche.</p>
+        <div class="oc-cluster" style="justify-content: center; padding-top: 6px">
+          <button type="button" class="oc-btn oc-btn--ghost" onClick="{{endTour}}">Fermer</button>
+          <a href="Pairing-fts1.dc.html" class="oc-btn oc-btn--primary">Ajouter un téléphone</a>
+        </div>
+      </div>
+    </div>
+  </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+<script type="text/x-dc" data-dc-script data-props='{"tour":{"editor":"boolean","default":false},"$preview":{"width":1280,"height":800}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { camera: 'back', mirror: false, live: true };
+    // tour: -1 = off, 0 = welcome, 1..5 = highlighted steps, 6 = end. The Tweaks switch "tour"
+    // shows it as on the very first launch.
+    this.state = { camera: 'back', mirror: false, live: true, tour: props.tour ? 0 : -1 };
   }
   renderVals() {
     const s = this.state;
@@ -150,7 +244,31 @@ class Component extends DCLogic {
       pressed: s.camera === id ? 'true' : 'false',
       pick: () => this.setState({ camera: id }),
     }));
+    const steps = [
+      null,
+      ['add', 'Reliez votre téléphone', 'Une seule fois : un QR code à scanner avec le téléphone. Par câble USB, il suffit de le brancher.'],
+      ['phones', 'Vos téléphones', 'Point vert : en direct. Orange : en pause. Cercle gris : éteint ou trop loin. Cliquez pour choisir celui qui filme.'],
+      ['source', 'Caméra et qualité', 'Arrière, avant, grand-angle, résolution, images par seconde : tout se règle ici, sans toucher au téléphone.'],
+      ['start', 'Démarrer et arrêter', 'Le téléphone ne filme que quand vous appuyez ici. « Arrêter » libère sa caméra.'],
+      ['output', 'Dans vos applications', 'Dans Zoom, Teams, Discord ou OBS, choisissez la caméra « Oculibre ». Elle reste là même quand le téléphone est arrêté.'],
+    ];
+    const t = s.tour;
+    const at = (id) => t >= 1 && t <= 5 && steps[t][0] === id;
+    const wrap = (id, base) => base + (at(id) ? ' oc-tour-target' : '');
+    const step = t >= 1 && t <= 5 ? steps[t] : ['', '', ''];
     return {
+      tourIntro: t === 0,
+      tourOutro: t === 6,
+      atAdd: at('add'), atPhones: at('phones'), atSource: at('source'), atStart: at('start'), atOutput: at('output'),
+      tourAdd: wrap('add', ''), tourPhones: wrap('phones', ''),
+      tourSource: wrap('source', 'oc-panel__section'), tourStart: wrap('start', 'oc-panel__section'),
+      tourOutput: wrap('output', 'oc-panel__section'),
+      coachStep: 'Étape ' + t + ' sur 5',
+      coachTitle: step[1],
+      coachText: step[2],
+      nextStep: () => this.setState({ tour: t + 1 }),
+      endTour: () => this.setState({ tour: -1 }),
+      startTour: () => this.setState({ tour: 0 }),
       cameras,
       liveDot: s.live ? 'oc-dot oc-dot--lg' : 'oc-dot oc-dot--lg oc-dot--paused',
       phoneState: s.live ? 'En direct · USB' : 'Connecté · USB',

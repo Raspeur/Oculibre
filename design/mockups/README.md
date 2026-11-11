@@ -7,13 +7,15 @@ This folder is the source of truth; the online canvas is only a viewer, republis
 |---|---|
 | `ui.css` | Shared tokens (colours, type, radii, sizes) and components. Change the look here. |
 | `UIKit.dc.html` | Every token and component of `ui.css` on one page |
-| `Main2.dc.html` | PC: main window (phones, preview, camera settings, Start/Stop) |
+| `Main2.dc.html` | PC: main window (phones, preview, camera settings, Start/Stop) and the first-launch guided tour (Tweaks switch `tour`, or « Visite guidée » in the sidebar) |
 | `Pairing-fts1.dc.html` | PC: add a phone (steps + QR code) |
 | `Settings.dc.html` | PC: settings and About |
 | `Tray-vy8x.dc.html` | PC: tray menu |
+| `Problems.dc.html` | PC: every problem message, with its level, code, place and action |
 | `PhoneWelcomeA.dc.html` | Phone: first launch, one step per screen |
 | `PhoneHome.dc.html` | Phone: everyday screen |
 | `PhoneWelcomeB.dc.html` | Phone: settings with the checks list |
+| `PhoneProblems.dc.html` | Phone: problems on the everyday screen (tap to go through them) |
 | `canvas.json` | Board positions and titles on the canvas |
 | `oculibre_logo.svg` | Copy of the logo at the repository root |
 
@@ -25,6 +27,9 @@ This folder is the source of truth; the online canvas is only a viewer, republis
   button), `aria-current="true"` (selected phone).
 - Orange (`--oc-accent`) only for the primary action or the active element; green
   (`--oc-live`) for live and OK.
+- Problems: four levels (info, warning, error, progress), a code by area (1xx connection,
+  2xx pairing and security, 3xx phone camera, 4xx virtual camera and computer, 5xx
+  performance), the same code on the PC and the phone; see `Problems.dc.html`.
 - Inline `style` is kept for one-off layout (widths, gaps), never for colours or fonts.
 
 ## File format

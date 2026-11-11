@@ -63,11 +63,28 @@
     },
     "UIKit.dc.html": {
       "expand": "fill",
-      "h": 1500,
+      "h": 1800,
       "is_interactive": true,
       "title": "UI kit (ui.css)",
       "w": 1280,
-      "x": 1500,
+      "x": 1880,
+      "y": 1127
+    },
+    "Problems.dc.html": {
+      "expand": "fill",
+      "h": 2000,
+      "is_interactive": true,
+      "title": "PC — problems and messages",
+      "w": 1280,
+      "x": 4480,
+      "y": 0
+    },
+    "PhoneProblems.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Phone — problems",
+      "w": 390,
+      "x": 1410,
       "y": 1127
     }
   },
@@ -82,7 +99,7 @@
   "notes": {
     "pc": {
       "kind": "title1",
-      "maxW": 4400,
+      "maxW": 5800,
       "text": "Desktop app (Tauri)",
       "w": 240,
       "x": 0,
@@ -101,7 +118,7 @@
       "maxW": 1400,
       "text": "UI kit",
       "w": 240,
-      "x": 1500,
+      "x": 1880,
       "y": 908
     }
   },
@@ -113,7 +130,9 @@
     "PhoneWelcomeA.dc.html",
     "PhoneWelcomeB.dc.html",
     "Settings.dc.html",
-    "UIKit.dc.html"
+    "UIKit.dc.html",
+    "Problems.dc.html",
+    "PhoneProblems.dc.html"
   ],
   "pages": [],
   "title": "Oculibre UI mockups"

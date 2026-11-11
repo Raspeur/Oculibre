@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Oculibre — problèmes sur le téléphone</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./ui.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="oc-phone" style="padding: 24px 20px; gap: 18px">
+
+  <header style="display: flex; align-items: center; justify-content: space-between">
+    <div class="oc-cluster" style="gap: 10px">
+      <div class="oc-logo oc-logo--sm"><img src="./oculibre_logo.svg" alt=""></div>
+      <span class="oc-brand" style="font-size: 19px">Oculibre</span>
+    </div>
+    <a href="PhoneWelcomeB.dc.html" class="oc-icon-btn oc-icon-btn--lg" aria-label="Réglages">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </a>
+  </header>
+
+  <div class="{{cls}}" role="alert">
+    <span class="oc-alert__icon" aria-hidden="true">
+      <sc-if value="{{isProgress}}" hint-placeholder-val="{{false}}"><span class="oc-spinner" style="display: block"></span></sc-if>
+      <sc-if value="{{hasMark}}" hint-placeholder-val="{{true}}">{{mark}}</sc-if>
+    </span>
+    <div class="oc-alert__body">
+      <span class="oc-alert__title" style="font-size: var(--oc-text-lg)">{{title}}</span>
+      <span class="oc-alert__text">{{text}}</span>
+      <sc-if value="{{hasActions}}" hint-placeholder-val="{{true}}">
+        <div class="oc-alert__actions">
+          <button type="button" class="{{a1Class}}" style="min-height: 40px">{{a1}}</button>
+          <sc-if value="{{hasA2}}" hint-placeholder-val="{{false}}"><button type="button" class="oc-btn oc-btn--ghost" style="min-height: 40px">{{a2}}</button></sc-if>
+        </div>
+      </sc-if>
+      <span class="oc-alert__code">Code {{code}}</span>
+    </div>
+  </div>
+
+  <section aria-label="Ordinateur relié" class="oc-card oc-card--padded oc-cluster" style="flex-wrap: nowrap; gap: 14px">
+    <div class="oc-badge" style="width: 44px; height: 44px">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C9D3E3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+    </div>
+    <div class="oc-row__label" style="gap: 3px">
+      <span class="oc-strong">raspeur-ubuntu-studio</span>
+      <span class="oc-muted" style="font-size: var(--oc-text-md)">{{pcState}}</span>
+    </div>
+  </section>
+
+  <section class="oc-stack" style="flex: 1 1 auto; align-items: center; justify-content: center; gap: 18px">
+    <button type="button" class="oc-big-button" style="{{bigStyle}}" aria-pressed="false">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      <span>Démarrer</span>
+    </button>
+    <span class="oc-muted" style="font-size: var(--oc-text-base); text-align: center">{{detail}}</span>
+  </section>
+
+  <div class="oc-stack" style="gap: 6px; align-items: center">
+    <button type="button" class="oc-btn oc-btn--dashed oc-btn--block" onClick="{{next}}">Maquette : problème suivant ({{index}})</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { i: 0 };
+  }
+  renderVals() {
+    // Same codes as the PC catalogue (Problems board) when it is the same problem.
+    const list = [
+      { code: '101', level: 'progress', title: 'Recherche de l’ordinateur…', text: 'Vérifiez qu’Oculibre est ouvert sur l’ordinateur. La recherche continue toute seule.', pc: 'Recherche sur le Wi-Fi…', a1: 'Brancher le câble à la place', blocked: true },
+      { code: '102', level: 'warning', title: 'Ordinateur introuvable', text: 'Le téléphone et l’ordinateur sont-ils sur le même Wi-Fi ? Oculibre est-il ouvert sur l’ordinateur ? Le câble USB marche toujours.', pc: 'Introuvable depuis 1 min', a1: 'Réessayer', a2: 'Aide', blocked: true },
+      { code: '203', level: 'error', title: 'Cet ordinateur ne reconnaît plus ce téléphone', text: 'Il l’a peut-être oublié. Affichez un QR code sur l’ordinateur (« Ajouter un téléphone ») et scannez-le.', pc: 'A refusé la connexion', a1: 'Scanner le QR code', blocked: true },
+      { code: '204', level: 'error', title: 'Les codes ne correspondent pas', text: 'N’acceptez pas : un autre appareil se fait peut-être passer pour votre ordinateur. Recommencez l’appairage à côté de l’ordinateur.', pc: 'Appairage annulé', a1: 'Annuler l’appairage', danger: true, blocked: true },
+      { code: '301', level: 'error', title: 'La caméra est occupée', text: 'Une autre application l’utilise (appareil photo, appel vidéo). Fermez-la puis réessayez.', pc: 'Connecté · Wi-Fi', a1: 'Réessayer', blocked: true },
+      { code: '305', level: 'error', title: 'Accès à la caméra retiré', text: 'Android a retiré l’autorisation, par exemple après une longue période sans utiliser Oculibre.', pc: 'Connecté · Wi-Fi', a1: 'Autoriser la caméra', blocked: true },
+      { code: '304', level: 'warning', title: 'Le téléphone chauffe', text: 'Retirez la coque ou posez-le à l’ombre. Sinon, l’ordinateur peut passer en 720p.', pc: 'En direct · Wi-Fi', a1: 'OK', blocked: false },
+    ];
+    const i = this.state.i % list.length;
+    const p = list[i];
+    return {
+      code: p.code, title: p.title, text: p.text, pcState: p.pc,
+      cls: 'oc-alert' + (p.level === 'warning' ? '' : ' oc-alert--' + p.level),
+      isProgress: p.level === 'progress', hasMark: p.level !== 'progress',
+      mark: p.level === 'error' ? '×' : '!',
+      hasActions: !!p.a1, a1: p.a1 || '', hasA2: !!p.a2, a2: p.a2 || '',
+      // Orange only when the alert blocks Démarrer: otherwise the big button stays the one orange action.
+      a1Class: p.danger ? 'oc-btn oc-btn--danger' : p.blocked && p.level !== 'progress' ? 'oc-btn oc-btn--primary' : 'oc-btn oc-btn--secondary',
+      // A blocking problem greys the big button out: nothing to start until it is fixed.
+      bigStyle: p.blocked ? 'opacity: 0.35; cursor: not-allowed' : '',
+      detail: p.blocked ? 'Démarrer sera possible une fois le problème réglé' : 'L’ordinateur vous attend',
+      index: (i + 1) + '/' + list.length,
+      next: () => this.setState({ i: this.state.i + 1 }),
+    };
+  }
+}
+</script>
+</body>
+</html>

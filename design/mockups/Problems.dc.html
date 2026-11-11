@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Oculibre — problèmes et messages</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./ui.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="oc-app">
+  <header class="oc-header">
+    <div class="oc-logo oc-logo--md"><img src="./oculibre_logo.svg" alt=""></div>
+    <h1 class="oc-title oc-title--sm">Problèmes et messages</h1>
+    <span class="oc-small">Ce que l'ordinateur affiche quand quelque chose ne va pas</span>
+  </header>
+
+  <div style="max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-direction: column; gap: 28px">
+
+    <section class="oc-card oc-card--padded" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px">
+      <div class="oc-stack">
+        <h2 class="oc-label">Règles d'écriture</h2>
+        <ul class="oc-text oc-muted" style="margin: 0; padding-left: 18px; font-size: var(--oc-text-md)">
+          <li>D'abord ce qui se passe, ensuite quoi faire.</li>
+          <li>Pas de jargon : ni « TLS », ni « port », ni « v4l2 » dans le titre.</li>
+          <li>Une seule action principale, au plus une secondaire.</li>
+          <li>Quand Oculibre peut réparer seul, il le fait et le dit.</li>
+          <li>Le code reste petit : il sert au support et aux rapports de bug.</li>
+        </ul>
+      </div>
+      <div class="oc-stack">
+        <h2 class="oc-label">Codes</h2>
+        <ul class="oc-text oc-muted" style="margin: 0; padding-left: 18px; font-size: var(--oc-text-md)">
+          <li>1xx connexion</li>
+          <li>2xx appairage et sécurité</li>
+          <li>3xx caméra du téléphone</li>
+          <li>4xx caméra virtuelle et ordinateur</li>
+          <li>5xx performances</li>
+        </ul>
+        <span class="oc-small">Le même problème garde le même code sur le PC et sur le téléphone.</span>
+      </div>
+      <div class="oc-stack">
+        <h2 class="oc-label">Niveaux</h2>
+        <div class="oc-stack" style="gap: 6px; font-size: var(--oc-text-md)">
+          <span class="oc-cluster" style="gap: 8px"><span class="oc-dot" style="background: var(--oc-info)"></span>Information : rien à faire</span>
+          <span class="oc-cluster" style="gap: 8px"><span class="oc-dot oc-dot--paused"></span>Attention : une action est conseillée</span>
+          <span class="oc-cluster" style="gap: 8px"><span class="oc-dot" style="background: var(--oc-danger)"></span>Erreur : bloqué tant que rien n'est fait</span>
+          <span class="oc-cluster" style="gap: 8px"><span class="oc-spinner"></span>En cours : Oculibre s'en occupe</span>
+        </div>
+      </div>
+    </section>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start">
+      <sc-for list="{{items}}" as="p" hint-placeholder-count="16">
+        <sc-if value="{{p.isHeader}}" hint-placeholder-val="{{false}}" style="grid-column: 1 / -1">
+          <h2 class="oc-label" style="padding: 12px 4px 0">{{p.title}}</h2>
+        </sc-if>
+        <sc-if value="{{p.isItem}}" hint-placeholder-val="{{true}}">
+          <div class="oc-stack" style="gap: 6px">
+            <div class="{{p.cls}}" role="alert">
+              <span class="oc-alert__icon" aria-hidden="true">
+                <sc-if value="{{p.isProgress}}" hint-placeholder-val="{{false}}"><span class="oc-spinner" style="display: block"></span></sc-if>
+                <sc-if value="{{p.hasMark}}" hint-placeholder-val="{{true}}">{{p.mark}}</sc-if>
+              </span>
+              <div class="oc-alert__body">
+                <span class="oc-alert__title">{{p.title}}</span>
+                <span class="oc-alert__text">{{p.text}}</span>
+                <sc-if value="{{p.hasActions}}" hint-placeholder-val="{{true}}">
+                  <div class="oc-alert__actions">
+                    <button type="button" class="{{p.a1Class}}">{{p.a1}}</button>
+                    <sc-if value="{{p.hasA2}}" hint-placeholder-val="{{false}}"><button type="button" class="oc-btn oc-btn--ghost">{{p.a2}}</button></sc-if>
+                  </div>
+                </sc-if>
+                <span class="oc-alert__code">Code {{p.code}}</span>
+              </div>
+            </div>
+            <span class="oc-small" style="padding: 0 4px">{{p.where}}</span>
+          </div>
+        </sc-if>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":2000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const H = (title) => ({ isHeader: true, isItem: false, title });
+    // level: info | warning | error | progress
+    const P = (code, level, title, text, where, a1, a2, a1Danger) => ({
+      isHeader: false, isItem: true, code, title, text, where: 'Où : ' + where,
+      cls: 'oc-alert' + (level === 'warning' ? '' : ' oc-alert--' + level),
+      isProgress: level === 'progress', hasMark: level !== 'progress',
+      mark: level === 'info' ? 'i' : level === 'error' ? '×' : '!',
+      hasActions: !!a1, a1: a1 || '', hasA2: !!a2, a2: a2 || '',
+      a1Class: a1Danger ? 'oc-btn oc-btn--danger' : level === 'info' || level === 'progress' ? 'oc-btn oc-btn--secondary' : 'oc-btn oc-btn--primary',
+    });
+    const items = [
+      H('1xx · Connexion'),
+      P('101', 'progress', 'Connexion perdue, reconnexion…', 'Le téléphone ne répond plus depuis 5 secondes. Oculibre réessaie tout seul ; les applications gardent la dernière image.', 'bandeau au-dessus de l’aperçu, puis notification après 30 s', 'Arrêter'),
+      P('102', 'warning', 'Galaxy S23 Ultra n’est pas joignable', 'Ouvrez Oculibre sur le téléphone. En Wi-Fi, le téléphone et l’ordinateur doivent être sur le même réseau ; sinon, branchez le câble USB.', 'à la place de l’aperçu, quand on choisit un téléphone hors ligne', 'Aide'),
+      P('103', 'error', 'Oculibre est déjà ouvert', 'Une autre copie d’Oculibre attend déjà les téléphones. Fermez-la ; si vous ne la trouvez pas, redémarrez l’ordinateur.', 'fenêtre au lancement', 'Fermer celle-ci'),
+      P('104', 'warning', 'Le pare-feu bloque peut-être le Wi-Fi', 'Aucun téléphone n’a pu se connecter en Wi-Fi depuis 2 minutes alors qu’un téléphone relié est sur le réseau.', 'page « Ajouter un téléphone » et réglages', 'Autoriser Oculibre', 'Utiliser le câble'),
+
+      H('2xx · Appairage et sécurité'),
+      P('201', 'warning', 'Ce QR code a expiré', 'Pour votre sécurité, un QR code ne sert que 10 minutes et pour un seul téléphone.', 'à la place du QR code', 'Nouveau QR code'),
+      P('202', 'info', 'Un téléphone inconnu a été refusé', 'Un téléphone non relié a essayé de se connecter. S’il est à vous, reliez-le.', 'notification', 'Ajouter un téléphone'),
+      P('203', 'error', 'Redmi Note 9 Pro ne présente plus la même identité', 'L’app a sans doute été réinstallée. Par sécurité, la connexion est refusée tant que le téléphone n’est pas relié à nouveau.', 'bandeau au-dessus de l’aperçu', 'Relier à nouveau', 'Oublier ce téléphone'),
+
+      H('3xx · Caméra du téléphone'),
+      P('301', 'error', 'La caméra du téléphone est occupée', 'Une autre application l’utilise (appareil photo, appel vidéo). Fermez-la puis réessayez.', 'dans l’aperçu', 'Réessayer'),
+      P('302', 'info', 'Ce mode n’a pas fonctionné', 'Le téléphone n’a pas pu filmer en 4K à 60 i/s. Oculibre est revenu à 1080p · 60 i/s.', 'bandeau, disparaît après 10 s', 'OK'),
+      P('303', 'warning', 'L’image est très sombre', 'Allumez une lampe face à vous, ou passez à 30 images par seconde : le téléphone pourra capter plus de lumière.', 'bandeau, une fois par session', 'Passer à 30 i/s', 'Ignorer'),
+      P('304', 'warning', 'Le téléphone chauffe', 'Il risque de baisser la qualité de lui-même. Retirez la coque, ou passez en 720p.', 'bandeau', 'Passer en 720p', 'Ignorer'),
+      P('305', 'error', 'Le téléphone n’a plus accès à la caméra', 'Android a retiré l’autorisation. Ouvrez Oculibre sur le téléphone pour la rétablir.', 'dans l’aperçu'),
+
+      H('4xx · Caméra virtuelle et ordinateur'),
+      P('401', 'error', 'La caméra virtuelle n’est pas installée', 'Sans elle, Zoom, Teams ou OBS ne voient pas Oculibre. L’installation demande le mot de passe de l’ordinateur.', 'assistant de premier lancement, puis bandeau', 'Installer'),
+      P('402', 'info', 'Une application impose un format', 'OBS utilise la caméra « Oculibre » en 1280 × 720 : l’image est ajustée avec des bandes noires. Fermez OBS pour changer de format.', 'ligne « Format envoyé » du panneau Sortie'),
+
+      H('5xx · Performances'),
+      P('501', 'warning', 'La connexion ne suit pas', 'Les images arrivent en retard (4K par câble USB). Passez en 1080p, ou en Wi-Fi 5 GHz.', 'bandeau, après 5 s de retard', 'Passer en 1080p', 'Ignorer'),
+      P('502', 'info', 'Décodage par le processeur', 'La carte graphique n’a pas pu décoder la vidéo : le processeur prend le relais, l’ordinateur peut chauffer un peu plus.', 'réglages, ligne « Décodage de la vidéo »'),
+    ];
+    return { items };
+  }
+}
+</script>
+</body>
+</html>

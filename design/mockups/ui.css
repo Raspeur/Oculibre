@@ -34,6 +34,13 @@
   --oc-live: #3DDC97;                 /* live, done, OK */
   --oc-live-soft: rgba(61, 220, 151, 0.12);
   --oc-off: #5D6F90;                  /* offline */
+  --oc-danger: #FF6B6B;               /* blocking error, security warning */
+  --oc-danger-soft: rgba(255, 107, 107, 0.12);
+  --oc-danger-line: rgba(255, 107, 107, 0.45);
+  --oc-info: #7FB2FF;                 /* information, nothing to do */
+  --oc-info-soft: rgba(127, 178, 255, 0.10);
+  --oc-info-line: rgba(127, 178, 255, 0.35);
+  --oc-scrim: rgba(3, 7, 14, 0.72);   /* dims the window behind a tour step or a dialog */
 
   /* Type */
   --oc-font: Inter, system-ui, sans-serif;
@@ -187,3 +194,44 @@ a:hover { color: #FFB39E; }
 .oc-hero-icon--ok { background: var(--oc-live-soft); }
 .oc-big-button { width: 196px; height: 196px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer; background: var(--oc-accent); color: var(--oc-on-accent); border: 6px solid var(--oc-accent); font-size: var(--oc-title-sm); font-weight: 700; }
 .oc-big-button[aria-pressed="true"] { background: var(--oc-bg); color: var(--oc-live); border-color: var(--oc-live); }
+
+/* ---------- alerts: one component, four levels
+ * info (nothing to do) · warning (an action is suggested, orange) · error (blocked, red) ·
+ * progress (Oculibre is fixing it by itself). Text says what happened and what to do; the code
+ * (e.g. "Code 301") is small, for support and bug reports. */
+.oc-alert { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; box-sizing: border-box; border-radius: var(--oc-r-md); border: 1px solid var(--oc-accent-line); background: var(--oc-accent-soft); color: var(--oc-text); }
+.oc-alert__icon { flex: 0 0 auto; width: 28px; height: 28px; border-radius: var(--oc-r-sm); display: flex; align-items: center; justify-content: center; font-size: var(--oc-text-base); font-weight: 700; background: rgba(254, 99, 60, 0.16); color: var(--oc-accent-text); }
+.oc-alert__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.oc-alert__title { font-size: var(--oc-text-base); font-weight: 600; }
+.oc-alert__text { font-size: var(--oc-text-md); color: var(--oc-text-2); line-height: 1.45; }
+.oc-alert__code { font-size: var(--oc-text-xs); color: var(--oc-text-faint); letter-spacing: 0.3px; }
+.oc-alert__actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 6px; }
+.oc-alert--info { border-color: var(--oc-info-line); background: var(--oc-info-soft); }
+.oc-alert--info .oc-alert__icon { background: rgba(127, 178, 255, 0.16); color: var(--oc-info); }
+.oc-alert--error { border-color: var(--oc-danger-line); background: var(--oc-danger-soft); }
+.oc-alert--error .oc-alert__icon { background: rgba(255, 107, 107, 0.18); color: var(--oc-danger); }
+.oc-alert--progress { border-color: var(--oc-border-control); background: var(--oc-surface-3); }
+.oc-alert--progress .oc-alert__icon { background: var(--oc-surface-4); color: var(--oc-text-2); }
+.oc-spinner { width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--oc-border-control); border-top-color: var(--oc-text); animation: oc-spin 0.9s linear infinite; }
+@keyframes oc-spin { to { transform: rotate(360deg); } }
+.oc-btn--danger { background: transparent; border-color: var(--oc-danger-line); color: var(--oc-danger); }
+
+/* ---------- guided tour (first launch)
+ * The highlighted element gets .oc-tour-target: it rises above everything and its huge shadow
+ * dims the rest of the window, so no geometry has to be computed. The bubble (.oc-coach) sits
+ * inside the target, on the side given by its modifier. */
+.oc-tour-target { position: relative; z-index: 20; border-radius: var(--oc-r-sm); outline: 2px solid var(--oc-accent); outline-offset: 3px; box-shadow: 0 0 0 9999px var(--oc-scrim); }
+.oc-coach { position: absolute; z-index: 21; width: 300px; box-sizing: border-box; padding: 16px; border-radius: var(--oc-r-md); background: var(--oc-surface-4); border: 1px solid var(--oc-border-control); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45); color: var(--oc-text); font-family: var(--oc-font); text-align: left; display: flex; flex-direction: column; gap: 8px; cursor: default; }
+.oc-coach::before { content: ""; position: absolute; width: 12px; height: 12px; background: var(--oc-surface-4); border: 1px solid var(--oc-border-control); transform: rotate(45deg); }
+.oc-coach--right { left: calc(100% + 18px); top: 0; }
+.oc-coach--right::before { left: -7px; top: 18px; border-top: 0; border-right: 0; }
+.oc-coach--left { right: calc(100% + 18px); top: 0; }
+.oc-coach--left::before { right: -7px; top: 18px; border-bottom: 0; border-left: 0; }
+.oc-coach--above { bottom: calc(100% + 18px); right: 0; }
+.oc-coach--above::before { bottom: -7px; right: 24px; border-top: 0; border-left: 0; }
+.oc-coach__step { font-size: var(--oc-text-xs); font-weight: 600; color: var(--oc-accent-text); text-transform: uppercase; letter-spacing: 0.9px; }
+.oc-coach__title { margin: 0; font-family: var(--oc-font-display); font-size: var(--oc-text-xl); font-weight: 700; }
+.oc-coach__text { margin: 0; font-size: var(--oc-text-md); color: var(--oc-text-2); line-height: 1.5; }
+.oc-coach__actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; }
+.oc-scrim { position: fixed; inset: 0; z-index: 30; background: var(--oc-scrim); display: flex; align-items: center; justify-content: center; }
+.oc-dialog { width: 440px; max-width: calc(100% - 32px); box-sizing: border-box; padding: 28px; border-radius: var(--oc-r-md); background: var(--oc-surface-2); border: 1px solid var(--oc-border-control); box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column; gap: 14px; }
