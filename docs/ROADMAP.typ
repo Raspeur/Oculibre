@@ -39,7 +39,8 @@ Estimates are for one person at about 8–10 h/week (side project). #done done �
 
 = Phase 2 — Wi-Fi and security
 
-- #open mDNS discovery (`NsdManager` / `mdns-sd`)
+- #done mDNS discovery: the computer announces `_oculibre-host._tcp` (`mdns-sd`), a paired phone
+  finds it again when its address changes (`NsdManager`)
 - #done QR pairing: the desktop shows `oculibre://pair?…`, the phone's camera app opens it in Oculibre
   (also sent over USB by `adb`), one-time token, confirmation with the key fingerprint
 - #done Secure channel: TLS 1.3 / 1.2 (ECDHE + AEAD) with pinned self-signed keys, mandatory on any

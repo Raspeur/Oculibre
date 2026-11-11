@@ -44,8 +44,14 @@ The role is *independent of who opens the connection*. Either side MAY dial:
   [Wi-Fi / station mode, host dials], [host → camera], [camera IP, port *47101*], [reserved],
 )
 
-Reserved mDNS service types: `_oculibre-host._tcp` (a host listening on 47100) and `_oculibre-cam._tcp`
-(a camera listening on 47101).
+*Discovery* (DNS-SD over mDNS): a host that accepts network connections announces
+`_oculibre-host._tcp` (instance name: the host's `name`, its port, its local network addresses only:
+mDNS does not cross VPNs, and older cameras keep a single address per service) with two TXT
+keys: `v=1` (format) and `k` = the first 16 hex characters of its certificate fingerprint (@channel).
+A paired camera that cannot reach the host at its known address looks for the announcement whose `k`
+starts its pinned fingerprint, and uses that address from then on. `k` only picks the right host among
+several; the TLS handshake still checks the whole fingerprint. Reserved: `_oculibre-cam._tcp` (a camera
+listening on 47101, station mode).
 
 A host MAY serve several cameras at the same time (one virtual camera each). A camera serves *one host
 at a time* and answers a second connection with `BYE {"reason": "busy"}`.
@@ -536,8 +542,11 @@ TLS, right after the TCP connection and before the preamble; the camera is the T
 + Later connections: no token; the host accepts the fingerprints it remembers. Re-pairing a camera
   (same `id`) replaces its old fingerprint; the user can list and forget paired cameras.
 
-A camera is paired with one host at a time in 0.3. Discovery (mDNS) is still to come: the camera uses
-the address from the QR code.
+A camera is paired with one host at a time in 0.3. The *direct* way always wins, whatever address the
+user typed last, because a VPN is much slower: the camera tries (1) the host's known addresses on one
+of its own local networks, (2) discovery on the local network (@roles), (3) the host's addresses
+through a VPN the camera is also on (Tailscale's 100.64.0.0/10), (4) any other known address; it
+remembers the address that worked.
 
 = Limits and robustness <limits>
 
@@ -600,7 +609,7 @@ announced and allowed `length`, and SHOULD close the connection on the first mal
   [Several phones on one host], [`HELLO.id` → one virtual camera per camera `id`],
   [Camera controls from the host], [commands of @request, features `control.*`],
   [Station mode (host dials the phone)], [port 47101, `_oculibre-cam._tcp`],
-  [Discovery], [mDNS service types (@roles)],
+  [Discovery], [`_oculibre-host._tcp` done in 0.3 (@roles); `_oculibre-cam._tcp` reserved],
   [Pairing and encryption], [done in 0.3 (@security); later: several hosts per camera, mDNS discovery],
   [Thermal management], [`thermal` and `mode_changed` events, `BYE thermal` / `battery`],
   [Other codecs], [`STREAM_CONFIG.codec`, `codec_data`, features `video.*`],
@@ -646,7 +655,8 @@ USB, Redmi Note 9 Pro, 1080p60 (`→` camera to host, `←` host to camera):
   table.header([Version], [Changes]),
   [0.3], [Wi-Fi secured: TLS (1.3, or 1.2 with ECDHE + AEAD) with pinned self-signed keys on every
     non-loopback connection, pairing through a QR code (`oculibre://pair?v=1&…`), `HELLO.pairing_token`,
-    host checks the camera's `HELLO` before sending its own. Plaintext stays for loopback (USB).],
+    host checks the camera's `HELLO` before sending its own. Plaintext stays for loopback (USB).
+    Discovery: `_oculibre-host._tcp` with TXT `v`, `k`.],
   [0.2], [`set_mode` command and feature `control.mode` (the host picks the camera and the mode;
     used by `oculibre bench`), `STREAM_END` reason `mode_change`, capabilities list every camera. A
     0.1 peer still works, without `set_mode`. Encryption moves to the version that adds pairing.],

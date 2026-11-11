@@ -26,7 +26,8 @@ in Firefox, Chrome, Discord, Zoom, OBS… (it shows up once the first frame has 
   - once per phone: `cargo run --release -- --pair` shows a QR code. Scan it with the phone's camera
     app (or, phone plugged in over USB, it is sent to the phone directly), check that the key shown on
     the phone is the one printed here, tap **Pair**, then **Start**;
-  - then: `cargo run --release -- --wifi`, and **Start** in the app (the address is filled in).
+  - then: `cargo run --release -- --wifi`, and **Start** in the app (the address is filled in). The
+    computer announces itself on the network (mDNS): if its address changes, the phone finds it again.
   - `oculibre pairings` lists the paired phones, `oculibre unpair <name>` forgets one. Without `--wifi`
     only USB (loopback) connections are accepted; plaintext is never accepted from the network.
 - The phone can Stop/Start: the program keeps waiting for it.

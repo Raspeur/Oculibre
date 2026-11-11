@@ -6,6 +6,7 @@
 //! TLS with pinned keys, for paired phones only. `oculibre bench` measures every camera × mode.
 
 mod bench;
+mod discovery;
 mod pairing;
 mod session;
 mod tls;
@@ -192,6 +193,8 @@ fn main() {
 struct Wifi {
     config: Arc<rustls::ServerConfig>,
     pairings: pairing::Pairings,
+    /// mDNS announcement, as long as the program runs.
+    _announcer: Option<discovery::Announcer>,
 }
 
 /// A phone that connected, ready for a session.
@@ -328,21 +331,39 @@ fn run() -> Result<(), Box<dyn Error>> {
     })?;
     let wifi = if args.wifi {
         let identity = tls::Identity::load_or_create(&config_dir())?;
+        let addresses = pairing::lan_addresses();
+        let announcer =
+            match discovery::announce(&host_name(), &identity.fingerprint(), &addresses, args.port)
+            {
+                Ok(a) => Some(a),
+                Err(e) => {
+                    eprintln!(
+                        "warning: cannot announce this computer on the network (mDNS: {e}): \
+                         phones will use the address they know"
+                    );
+                    None
+                }
+            };
         let wifi = Wifi {
             config: tls::server_config(&identity, args.tls12_only)?,
             pairings: pairing::Pairings::load(config_dir().join("paired-phones.json")),
+            _announcer: announcer,
         };
-        let addresses = pairing::lan_addresses();
         let list: Vec<String> = addresses.iter().map(IpAddr::to_string).collect();
         println!(
-            "Wi-Fi: encrypted, paired phones only ({} paired) · this computer: {} · key {}",
+            "Wi-Fi: encrypted, paired phones only ({} paired) · this computer: {} · key {}{}",
             wifi.pairings.phones().len(),
             if list.is_empty() {
                 "no network address".into()
             } else {
                 list.join(", ")
             },
-            tls::short_fingerprint(&identity.fingerprint())
+            tls::short_fingerprint(&identity.fingerprint()),
+            if wifi._announcer.is_some() {
+                " · announced (mDNS)"
+            } else {
+                ""
+            }
         );
         if args.pair {
             show_pairing(&wifi, &identity, &addresses, args.port, args.adb)?;

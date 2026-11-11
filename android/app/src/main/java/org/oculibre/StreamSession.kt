@@ -136,6 +136,9 @@ class StreamSession(
     /** When the current pipeline started (elapsedRealtime ms), for the frame-rate warning. */
     @Volatile private var pipelineStartMs = 0L
 
+    /** Address actually used: [host], or the one found by mDNS. */
+    @Volatile private var target: String = host
+
     /** One-time pairing token to send in HELLO (Wi-Fi, first connection after pairing). */
     @Volatile private var pairingToken: String? = null
     /** " · encrypted (TLSv1.3)" on Wi-Fi, for the status line. */
@@ -203,9 +206,7 @@ class StreamSession(
         if (!running.compareAndSet(false, true)) return
         setupThread = thread(name = "oculibre-setup") {
             try {
-                val s = Socket()
-                s.tcpNoDelay = true
-                s.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+                val s = connect()
                 socket = s
                 if (!running.get()) return@thread
                 socket = secure(s)
@@ -284,9 +285,70 @@ class StreamSession(
 
     // ------------------------------------------------------------------ protocol
 
+    /**
+     * TCP connection to the computer. Wi-Fi with a paired computer: the *direct* way always wins
+     * (a VPN like Tailscale is much slower), whatever address the field holds:
+     * 1. the computer's known addresses on one of this phone's local networks;
+     * 2. the computer found on the local network (mDNS, §2);
+     * 3. its addresses through a VPN the phone is on;
+     * 4. any other known address.
+     * The address that worked is remembered (and shown in the address field).
+     */
+    private fun connect(): Socket {
+        fun open(address: String, timeoutMs: Int): Socket {
+            // Not `Socket().apply { … port … }`: there `port` would be the socket's own (0).
+            val s = Socket()
+            s.tcpNoDelay = true
+            s.connect(InetSocketAddress(address, port), timeoutMs)
+            return s
+        }
+        val paired = if (SecureChannel.isLoopback(host)) null else PairingStore.get(appContext)
+        if (paired == null) return open(host, CONNECT_TIMEOUT_MS)
+
+        val subnets = Networks.local()
+        val known = Networks.rank(listOf(host) + paired.addresses, subnets)
+        val byRoute = known.groupBy { Networks.route(it, subnets) }
+        val tried = mutableSetOf<String>()
+        fun attempt(address: String, timeoutMs: Int, how: String): Socket? {
+            if (!running.get() || !tried.add(address)) return null
+            return try {
+                open(address, timeoutMs).also {
+                    target = address
+                    if (address != host) {
+                        PairingStore.rememberAddress(appContext, address)
+                        status("Reached ${paired.name} at $address ($how)")
+                    }
+                }
+            } catch (e: IOException) {
+                null
+            }
+        }
+
+        for (a in byRoute[Networks.Route.DIRECT].orEmpty()) {
+            attempt(a, FIRST_TRY_TIMEOUT_MS, "local network")?.let { return it }
+        }
+        val vpn = byRoute[Networks.Route.VPN].orEmpty()
+        if (Networks.hasLocalNetwork(subnets) && running.get()) {
+            status("Looking for ${paired.name} on the network…")
+            // Shorter when a VPN way remains to be tried.
+            val timeout = if (vpn.isEmpty()) DISCOVERY_TIMEOUT_MS else DISCOVERY_TIMEOUT_MS / 2
+            Discovery.find(appContext, paired.fingerprint, timeout)?.let { found ->
+                attempt(found, CONNECT_TIMEOUT_MS, "found on the local network")?.let { return it }
+            }
+        }
+        for (a in vpn) attempt(a, CONNECT_TIMEOUT_MS, "through the VPN")?.let { return it }
+        for (a in byRoute[Networks.Route.UNKNOWN].orEmpty()) {
+            attempt(a, FIRST_TRY_TIMEOUT_MS, "known address")?.let { return it }
+        }
+        throw IOException(
+            "Cannot reach ${paired.name} (tried ${tried.joinToString()}, and not found on this " +
+                "network): is `oculibre --wifi` running there?",
+        )
+    }
+
     /** Wi-Fi: TLS with the paired computer's pinned key (§13). USB (loopback) stays plaintext. */
     private fun secure(s: Socket): Socket {
-        if (SecureChannel.isLoopback(host)) return s
+        if (SecureChannel.isLoopback(target)) return s
         val paired = PairingStore.get(appContext) ?: throw IOException(
             "Wi-Fi needs pairing first: run `oculibre --pair` on the computer and scan its QR code " +
                 "with the phone's camera",
@@ -294,7 +356,7 @@ class StreamSession(
         status("Connected — encrypting…")
         s.soTimeout = HANDSHAKE_TIMEOUT_MS
         val tls = try {
-            SecureChannel.connect(appContext, s, host, port, paired.fingerprint)
+            SecureChannel.connect(appContext, s, target, port, paired.fingerprint)
         } catch (e: javax.net.ssl.SSLException) {
             if (generateSequence<Throwable>(e) { it.cause }.any { it is SecureChannel.WrongComputer }) {
                 throw IOException(
@@ -1127,6 +1189,9 @@ class StreamSession(
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 3000
+        /** Wi-Fi, paired: the known address gets a short try before looking on the network. */
+        private const val FIRST_TRY_TIMEOUT_MS = 2000
+        private const val DISCOVERY_TIMEOUT_MS = 6000L
         private const val HANDSHAKE_TIMEOUT_MS = 5000
         private const val SILENCE_TIMEOUT_MS = 5000
         private const val BYE_TIMEOUT_MS = 300L

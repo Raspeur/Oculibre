@@ -86,6 +86,20 @@ object PairingStore {
             .apply()
     }
 
+    /** The computer was found at [address] (mDNS): use it from now on. */
+    fun rememberAddress(context: Context, address: String) {
+        val p = prefs(context)
+        val known = p.getString("pair_addresses", null)?.split(',')?.filter { it.isNotEmpty() && it != address }
+            ?: emptyList()
+        p.edit()
+            .putString("pair_addresses", (listOf(address) + known).joinToString(","))
+            .putString(HOST_PREF, address) // the address field of MainActivity
+            .apply()
+    }
+
+    /** Key of the address field in the app's preferences (shared with MainActivity). */
+    const val HOST_PREF = "host"
+
     fun clearToken(context: Context) {
         prefs(context).edit().remove("pair_token").apply()
     }

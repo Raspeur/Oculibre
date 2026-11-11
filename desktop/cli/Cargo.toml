@@ -22,3 +22,5 @@ rcgen = { version = "0.14", default-features = false, features = ["ring"] }
 ring = "0.17"
 # Pairing QR code shown in the terminal.
 qrcode = { version = "0.14", default-features = false }
+# mDNS: the computer announces itself on the network (no async runtime).
+mdns-sd = { version = "0.21", default-features = false }

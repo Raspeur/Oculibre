@@ -69,7 +69,7 @@ The documentation is written in [Typst](https://typst.app). Build the PDFs with 
 ## Roadmap
 
 1. **Phase 1** ✅ — H.264 over TCP through ADB (USB), received by a Rust CLI writing to v4l2loopback (Linux).
-2. **Phase 2** — Wi-Fi: QR pairing and TLS encryption ✅, mDNS discovery, adaptive bitrate.
+2. **Phase 2** — Wi-Fi: QR pairing, TLS encryption and mDNS discovery ✅, adaptive bitrate.
 3. **Phase 3** — Tauri desktop app, then Windows (DirectShow, then Media Foundation).
 4. **Phase 4** — Station mode, thermal management, test campaign on old devices.
 5. **Phase 5** — macOS, audio (virtual microphone), advanced camera controls.

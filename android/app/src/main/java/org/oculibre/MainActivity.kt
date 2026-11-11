@@ -149,17 +149,19 @@ class MainActivity : Activity() {
             status.text = "This pairing link is not valid (or comes from a newer Oculibre): update the app"
             return
         }
+        // The computer's address on this phone's network (it may also have VPN or container ones).
+        val address = Networks.rank(offer.addresses, Networks.local()).first()
         AlertDialog.Builder(this)
             .setTitle("Pair with ${offer.name}?")
             .setMessage(
                 "Wi-Fi streaming to this computer will be encrypted, and only this computer will be " +
                     "able to receive it.\n\nCheck that the computer shows the same key:\n" +
-                    "${offer.shortFingerprint}\n\nAddress: ${offer.addresses.first()}",
+                    "${offer.shortFingerprint}\n\nAddress: ${address}",
             )
             .setPositiveButton("Pair") { _, _ ->
                 PairingStore.save(this, offer)
-                hostInput.setText(offer.addresses.first())
-                prefs.edit().putString(PREF_HOST, offer.addresses.first()).apply()
+                hostInput.setText(address)
+                prefs.edit().putString(PREF_HOST, address).apply()
                 updatePairingView()
                 status.text = "Paired with ${offer.name}: press Start"
             }
@@ -235,6 +237,8 @@ class MainActivity : Activity() {
         super.onResume()
         StreamService.observe(observer)
         updateBatteryViews()
+        // The address may have been updated by mDNS discovery while this screen was away.
+        if (!StreamService.current.running) showSavedHost()
     }
 
     // ------------------------------------------------------------------ battery optimisation
@@ -290,6 +294,17 @@ class MainActivity : Activity() {
         button.isEnabled = state.running || supportedModes.isNotEmpty()
         setControlsEnabled(!state.running)
         if (state.status != null && (state.running || capabilities != null)) status.text = state.status
+        // The session may have found the computer at a new address (mDNS). While streaming the field
+        // is locked, and at Stop it is refreshed once: what the user types is never overwritten.
+        if (state.running || wasRunning) showSavedHost()
+        wasRunning = state.running
+    }
+
+    private var wasRunning = false
+
+    private fun showSavedHost() {
+        val saved = prefs.getString(PREF_HOST, null) ?: return
+        if (saved != hostInput.text.toString()) hostInput.setText(saved)
     }
 
     private fun toggle() {
@@ -356,7 +371,7 @@ class MainActivity : Activity() {
         const val PORT = 47100
         const val DEFAULT_HOST = "127.0.0.1"
         private const val REQ_CAMERA = 1
-        private const val PREF_HOST = "host"
+        private const val PREF_HOST = PairingStore.HOST_PREF
         private const val PREF_MODE = "mode"
         private const val PREF_ASKED_NOTIFICATIONS = "asked_notifications"
         private const val PREF_ASKED_BATTERY = "asked_battery"
