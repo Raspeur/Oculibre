@@ -40,8 +40,10 @@ Estimates are for one person at about 8–10 h/week (side project). #done done �
 = Phase 2 — Wi-Fi and security
 
 - #open mDNS discovery (`NsdManager` / `mdns-sd`)
-- #open QR pairing (desktop shows, phone scans)
-- #open Secure channel (Noise or TLS 1.3 with pinned keys, protocol §13), mandatory on any network
+- #done QR pairing: the desktop shows `oculibre://pair?…`, the phone's camera app opens it in Oculibre
+  (also sent over USB by `adb`), one-time token, confirmation with the key fingerprint
+- #done Secure channel: TLS 1.3 / 1.2 (ECDHE + AEAD) with pinned self-signed keys, mandatory on any
+  network (protocol 0.3 §13, #link("research/secure-channel.typ")[`research/secure-channel.typ`])
 - #open Adaptive bitrate from host statistics
 
 = Phase 3 — Desktop app and Windows

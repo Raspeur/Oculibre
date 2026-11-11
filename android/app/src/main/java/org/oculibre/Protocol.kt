@@ -6,14 +6,14 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * Oculibre wire protocol 0.2, camera side. The specification is docs/protocol.typ; the host side
+ * Oculibre wire protocol 0.3, camera side. The specification is docs/protocol.typ; the host side
  * is the Rust crate desktop/protocol. Both pass the shared vectors of tests/protocol/vectors.
  *
  * Pure Kotlin/JVM: no Android class here, so the unit tests run on the build machine.
  */
 object Protocol {
     const val MAJOR = 0
-    const val MINOR = 2
+    const val MINOR = 3
     const val HOST_PORT = 47100
 
     const val PREAMBLE_LEN = 8
@@ -293,6 +293,8 @@ object Protocol {
             val features: List<String> = emptyList(),
             /** Optional capabilities catalogue (§7.4), free-form JSON. */
             val capabilities: Any? = null,
+            /** Camera, inside TLS only: one-time token of the pairing QR code (§13, since 0.3). */
+            val pairingToken: String? = null,
         ) : Message() {
             override val type get() = Type.HELLO
             fun hasFeature(f: String) = f in features
@@ -300,6 +302,7 @@ object Protocol {
                 "app" to app, "app_version" to appVersion, "id" to id, "name" to name,
                 "device" to device?.toJson(), "features" to features,
                 "capabilities" to Json.sorted(capabilities),
+                "pairing_token" to pairingToken,
             )
         }
 
@@ -443,6 +446,7 @@ object Protocol {
                     device = optObj(o, "device")?.let { Device.fromJson(it) },
                     features = strList(o, "features"),
                     capabilities = o["capabilities"],
+                    pairingToken = optStr(o, "pairing_token"),
                 )
             }
             Type.BYE -> jsonObject(t, p) { o -> Message.Bye(str(o, "reason", ""), optStr(o, "message")) }

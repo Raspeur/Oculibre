@@ -354,7 +354,7 @@ impl Link {
     fn title(self) -> &'static str {
         match self {
             Link::Usb => "USB (`adb reverse`)",
-            Link::Wifi => "Wi-Fi (`--insecure-lan`)",
+            Link::Wifi => "Wi-Fi (`--wifi`, encrypted)",
         }
     }
 }
@@ -714,7 +714,11 @@ mod tests {
         let report = "# phone\n\n## Oculibre results\n\n- Notes:\n\n# Labs Result\nS0\n";
         let usb = section(&outcome(), &ctx(Link::Usb));
         assert!(usb.starts_with("<!-- oculibre-bench:usb:start -->\n### Automatic bench, USB"));
-        assert!(usb.contains("protocol 0.2 · PC: linux 7.0 · 10 s measured per mode after 3 s"));
+        assert!(usb.contains(&format!(
+            "protocol {}.{} · PC: linux 7.0 · 10 s measured per mode after 3 s",
+            oculibre_protocol::MAJOR,
+            oculibre_protocol::MINOR
+        )));
         assert!(usb.contains("round trip 2.0 ms"));
 
         let once = update_report(report, &usb, Link::Usb);

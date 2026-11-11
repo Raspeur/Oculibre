@@ -11,8 +11,8 @@ android {
         applicationId = "org.oculibre"
         minSdk = 21 // Android 5.0 — the whole point of the project
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.0" // speaks protocol 0.2
+        versionCode = 4
+        versionName = "0.3.0" // speaks protocol 0.3
     }
 
     buildTypes {

@@ -455,6 +455,7 @@ fn bench_drives_the_phone_through_every_mode() {
         &mut sink,
         true,
         Some(driver),
+        None,
     );
     assert_eq!(end.map_err(|e| e.to_string()).unwrap(), End::Finished);
     let asked = phone.join().unwrap();
@@ -509,9 +510,106 @@ fn bench_needs_a_phone_that_switches_modes() {
         &mut sink,
         true,
         Some(driver),
+        None,
     );
     assert_eq!(end.map_err(|e| e.to_string()).unwrap(), End::Finished);
     phone.join().unwrap();
     let e = outcome.into_inner().unwrap().unwrap().unwrap_err();
     assert!(e.contains("update it (protocol 0.2)"), "{e}");
+}
+
+/// A phone over TLS: sends its preamble and HELLO (with an optional pairing token), returns the
+/// first message of the computer, then says goodbye.
+fn tls_phone(
+    tcp: TcpStream,
+    identity: &crate::tls::Identity,
+    host_fp: &str,
+    token: Option<String>,
+) -> Message {
+    let mut tls = crate::tls::tests::client(identity, host_fp, &rustls::version::TLS12, tcp);
+    std::io::Write::write_all(&mut tls, &Preamble::new(Role::Camera).encode()).unwrap();
+    let mut hello = phone_hello();
+    hello.pairing_token = token;
+    write_message(&mut tls, &Message::Hello(hello)).unwrap();
+    let first = {
+        let mut r = MessageReader::new(&mut tls);
+        assert_eq!(r.read_preamble().unwrap().role, Role::Host);
+        r.read_message().unwrap()
+    };
+    let _ = write_message(
+        &mut tls,
+        &Message::Bye(Bye {
+            reason: "user_stop".into(),
+            message: None,
+        }),
+    );
+    first
+}
+
+#[test]
+fn wifi_phone_pairs_once_then_strangers_are_refused() {
+    use crate::{pairing, tls};
+    let host = tls::Identity::generate().unwrap();
+    let config = tls::server_config(&host).unwrap();
+    let path = std::env::temp_dir().join(format!("oculibre-wifi-test-{}.json", std::process::id()));
+    let pairings = pairing::Pairings::load(path.clone());
+    let token = pairings.open_offer(pairing::OFFER_TTL).unwrap();
+    let phone = tls::Identity::generate().unwrap();
+    let stranger = tls::Identity::generate().unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let hello = session::host_hello("host-id".into(), "test-host".into(), None);
+
+    let host_fp = host.fingerprint();
+    let phones = thread::spawn(move || {
+        let first = |id: &tls::Identity, token: Option<String>| {
+            tls_phone(TcpStream::connect(addr).unwrap(), id, &host_fp, token)
+        };
+        [
+            first(&phone, Some(token)), // pairs
+            first(&phone, None),        // paired: no token needed
+            first(&stranger, None),     // never paired
+        ]
+    });
+    let mut ends = Vec::new();
+    for _ in 0..3 {
+        let (tcp, _) = listener.accept().unwrap();
+        let accepted = tls::accept(tcp, config.clone()).unwrap();
+        let fp = accepted.fingerprint.clone();
+        let authorize = |h: &Hello| pairings.authorize(&fp, h).map(|_| ());
+        let mut sink = Counter::default();
+        ends.push(
+            session::run_driven(
+                accepted.link,
+                &hello,
+                View::default(),
+                &mut sink,
+                true,
+                None,
+                Some(&authorize),
+            )
+            .map_err(|e| e.to_string()),
+        );
+    }
+    let firsts = phones.join().unwrap();
+
+    for i in 0..2 {
+        assert!(
+            matches!(&firsts[i], Message::Hello(h) if h.app == "oculibre-desktop"),
+            "{i}"
+        );
+        assert!(
+            matches!(&ends[i], Ok(End::Bye { reason, .. }) if reason == "user_stop"),
+            "{i}"
+        );
+    }
+    // The stranger learns nothing about the computer: BYE unpaired instead of its HELLO.
+    assert!(
+        matches!(&firsts[2], Message::Bye(b) if b.reason == "unpaired"),
+        "{:?}",
+        firsts[2]
+    );
+    assert!(ends[2].as_ref().unwrap_err().contains("not paired"));
+    assert_eq!(pairings.phones().len(), 1);
+    std::fs::remove_file(path).unwrap();
 }

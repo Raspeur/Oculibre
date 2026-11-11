@@ -1,0 +1,24 @@
+{
+  "description": "HELLO from a camera pairing with a computer: one-time token of the QR code (0.3)",
+  "fields": {
+    "app": "oculibre-android",
+    "app_version": "0.3.0",
+    "features": [
+      "video.h264",
+      "clock",
+      "control.mode"
+    ],
+    "id": "5b0d7f0e-3f1c-4a8e-9f7d-0c2b2f6f1a11",
+    "name": "Redmi Note 9 Pro",
+    "pairing_token": "3f0c9a2b7d1e4c5f8a6b0e2d9c7f1a3b"
+  },
+  "header": {
+    "flags": 0,
+    "length": 218,
+    "stream": 0,
+    "timestamp": 0,
+    "type": 1
+  },
+  "kind": "message",
+  "type": "HELLO"
+}

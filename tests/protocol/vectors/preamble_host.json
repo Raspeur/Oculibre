@@ -1,7 +1,7 @@
 {
-  "description": "Preamble sent by a host speaking 0.2",
+  "description": "Preamble sent by a host speaking 0.3",
   "kind": "preamble",
   "major": 0,
-  "minor": 2,
+  "minor": 3,
   "role": "host"
 }

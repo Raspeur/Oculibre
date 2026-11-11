@@ -2,8 +2,8 @@
 
 #show: oculibre-doc.with(
   title: [Oculibre protocol],
-  subtitle: [Wire format between the phone (camera) and the computer (host) — version 0.2],
-  revision: "0.2",
+  subtitle: [Wire format between the phone (camera) and the computer (host) — version 0.3],
+  revision: "0.3",
   date: datetime(year: 2026, month: 11, day: 11),
   show-toc: 1,
 )
@@ -40,7 +40,7 @@ The role is *independent of who opens the connection*. Either side MAY dial:
   columns: (auto, auto, 1fr, auto),
   table.header([Mode], [Who dials], [Address], [Status]),
   [USB via ADB], [camera → host], [`127.0.0.1:47100` on the phone, mapped by `adb reverse tcp:47100 tcp:47100`], [0.1],
-  [Wi-Fi, camera dials], [camera → host], [host IP, port *47100*], [0.1 (see @security)],
+  [Wi-Fi, camera dials], [camera → host], [host IP, port *47100*, TLS (@security)], [0.3],
   [Wi-Fi / station mode, host dials], [host → camera], [camera IP, port *47101*], [reserved],
 )
 
@@ -59,7 +59,7 @@ at a time* and answers a second connection with `BYE {"reason": "busy"}`.
 │ Preamble: "OCUL" + version + role, once per connection      │
 ├─────────────────────────────────────────────────────────────┤
 │ Secure channel: none on loopback,                           │
-│ mandatory on any network once pairing exists (@security)    │
+│ TLS with pinned keys on any network (@security)             │
 ├─────────────────────────────────────────────────────────────┤
 │ Byte stream: TCP (over ADB, Wi-Fi, USB tethering…)          │
 └─────────────────────────────────────────────────────────────┘
@@ -77,7 +77,7 @@ sends 8 bytes, without waiting for the other:
   table.header([Offset], [Size], [Field], [Value]),
   [0], [4], [magic], [ASCII `OCUL` (`4F 43 55 4C`)],
   [4], [1], [major], [protocol major version (`0`)],
-  [5], [1], [minor], [protocol minor version (`2`)],
+  [5], [1], [minor], [protocol minor version (`3`)],
   [6], [1], [role], [`1` = camera, `2` = host],
   [7], [1], [reserved], [`0`],
 )
@@ -180,6 +180,11 @@ Host:
 - `name`: human-readable, user-editable.
 - `features`: what this side understands. The session uses the *intersection*. Feature names are
   lowercase, dot-separated, and listed in @versioning.
+- `pairing_token` (camera only, since 0.3): the one-time token of the pairing QR code, sent only inside
+  the secure channel, on the first connection after pairing (@pairing).
+
+The host MAY read the camera's `HELLO` before sending its own (a camera never waits for it): a host
+that refuses the camera (`BYE unpaired`) then tells it nothing about itself.
 
 == `BYE` (0x02) <bye>
 
@@ -489,22 +494,50 @@ $ "rtt" = (t_4 - t_1) - (t_3 - t_2) quad quad "offset" = ((t_2 - t_1) + (t_3 - t
 *Threat model:* an attacker on the same network (flat-share, school or office Wi-Fi) who tries to watch
 the stream, *inject images into the user's virtual camera*, or crash the host.
 
-Rules until pairing exists (0.1, 0.2):
-- A host MUST accept connections *only from loopback* (`127.0.0.1`, `::1`: USB via ADB) unless the user
-  explicitly allows unencrypted network connections (`--insecure-lan`), in which case it shows a warning
-  for the whole session.
-- Over USB tethering, the link is a real network: same rule as Wi-Fi.
+Rules (0.3):
+- *Loopback* connections (`127.0.0.1`, `::1`: USB through ADB) are plaintext: only apps on the phone and
+  on the computer can reach them.
+- *Every other connection* (Wi-Fi, USB tethering, VPN) goes through the secure channel below; a host
+  MUST NOT accept plaintext from a network address, and a camera MUST NOT send plaintext to one.
+- A host MUST refuse any camera that is not paired, with `BYE {"reason": "unpaired"}`; a camera MUST
+  refuse a host whose key is not the paired one (the TLS handshake fails).
 
-Once pairing exists (planned for 0.3, issue \#5), a *secure channel* is established below the preamble
-on every non-loopback connection:
-- mutual authentication with long-term keys exchanged once at *pairing* (QR code shown by the host,
-  scanned by the phone, containing the host key, its addresses and a one-time token);
-- encryption with forward secrecy. The candidates are a Noise handshake
-  (`Noise_IK/XX_25519_ChaChaPoly_BLAKE2s`) or TLS 1.3 with pinned keys; the choice is made at that step
-  and does not change the other sections;
-- a host MUST refuse any camera that is not paired (`BYE {"reason": "unpaired"}`), and vice versa.
+The choice of TLS over Noise is explained in
+#link("research/secure-channel.typ")[`research/secure-channel.typ`].
 
-The pairing URI format is reserved: `oculibre://pair?v=1&…`.
+== Secure channel <channel>
+
+TLS, right after the TCP connection and before the preamble; the camera is the TLS *client*.
+- Versions: TLS 1.3, or TLS 1.2 (Android before 10) with ECDHE key exchange and AEAD ciphers only
+  (`TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256`, `…AES_256_GCM_SHA384`, `…CHACHA20_POLY1305_SHA256`). TLS
+  picks the version; nothing older is allowed.
+- *No certificate authority.* Each side has a long-term ECDSA P-256 key and a self-signed certificate,
+  and recognises the other by its *fingerprint*: the SHA-256 of its DER certificate, lowercase hex.
+  Names and validity dates in the certificates are ignored.
+- The host requires a client certificate (mutual authentication); the camera's private key stays in the
+  Android Keystore.
+
+== Pairing <pairing>
+
++ The host opens a *pairing offer* (`oculibre --pair`): a one-time token of 128 random bits, valid
+  10 minutes, for one camera. It shows the offer as a QR code of the URI
+  ```
+  oculibre://pair?v=1&n=<name>&k=<host fingerprint>&t=<token>&a=<address>,<address>&p=<port>
+  ```
+  (`n` percent-encoded; `a`: the host's network addresses, home networks first). The camera's camera
+  app opens the link in Oculibre; over USB the host may also open it with
+  `adb shell am start -a android.intent.action.VIEW -d '<uri>'`. Since any app or web page can open
+  such a link, the camera asks the user to confirm, showing the start of the fingerprint the host
+  prints.
++ The camera pins `k` and connects; in its `HELLO` it sends `pairing_token`. The host compares it in
+  constant time with its offer; if it matches and the offer is still valid, the host remembers the
+  camera's fingerprint (with its `HELLO` name and `id`) and closes the offer; otherwise
+  `BYE unpaired`.
++ Later connections: no token; the host accepts the fingerprints it remembers. Re-pairing a camera
+  (same `id`) replaces its old fingerprint; the user can list and forget paired cameras.
+
+A camera is paired with one host at a time in 0.3. Discovery (mDNS) is still to come: the camera uses
+the address from the QR code.
 
 = Limits and robustness <limits>
 
@@ -568,7 +601,7 @@ announced and allowed `length`, and SHOULD close the connection on the first mal
   [Camera controls from the host], [commands of @request, features `control.*`],
   [Station mode (host dials the phone)], [port 47101, `_oculibre-cam._tcp`],
   [Discovery], [mDNS service types (@roles)],
-  [Pairing and encryption], [@security, `oculibre://pair` URIs, `BYE unpaired`],
+  [Pairing and encryption], [done in 0.3 (@security); later: several hosts per camera, mDNS discovery],
   [Thermal management], [`thermal` and `mode_changed` events, `BYE thermal` / `battery`],
   [Other codecs], [`STREAM_CONFIG.codec`, `codec_data`, features `video.*`],
   [HDR], [`STREAM_CONFIG.color`],
@@ -581,7 +614,7 @@ USB, Redmi Note 9 Pro, 1080p60 (`→` camera to host, `←` host to camera):
 
 ```
    TCP connect 127.0.0.1:47100 (adb reverse)
-→  OCUL 0.2 camera            ←  OCUL 0.2 host
+→  OCUL 0.3 camera            ←  OCUL 0.3 host
 →  HELLO {features: [video.h264, clock, orientation, stats, control.keyframe, control.bitrate,
                      control.mode]}
 ←  HELLO {features: [video.h264, clock, orientation, stats]}
@@ -611,6 +644,9 @@ USB, Redmi Note 9 Pro, 1080p60 (`→` camera to host, `←` host to camera):
 #table(
   columns: (auto, 1fr),
   table.header([Version], [Changes]),
+  [0.3], [Wi-Fi secured: TLS (1.3, or 1.2 with ECDHE + AEAD) with pinned self-signed keys on every
+    non-loopback connection, pairing through a QR code (`oculibre://pair?v=1&…`), `HELLO.pairing_token`,
+    host checks the camera's `HELLO` before sending its own. Plaintext stays for loopback (USB).],
   [0.2], [`set_mode` command and feature `control.mode` (the host picks the camera and the mode;
     used by `oculibre bench`), `STREAM_END` reason `mode_change`, capabilities list every camera. A
     0.1 peer still works, without `set_mode`. Encryption moves to the version that adds pairing.],

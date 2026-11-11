@@ -100,13 +100,13 @@ pub fn all() -> Vec<Vector> {
     vec![
         Vector {
             name: "preamble_camera",
-            description: "Preamble sent by a camera speaking 0.2",
+            description: "Preamble sent by a camera speaking 0.3",
             bytes: Preamble::new(Role::Camera).encode().to_vec(),
             expect: Expect::Preamble(Preamble::new(Role::Camera)),
         },
         Vector {
             name: "preamble_host",
-            description: "Preamble sent by a host speaking 0.2",
+            description: "Preamble sent by a host speaking 0.3",
             bytes: Preamble::new(Role::Host).encode().to_vec(),
             expect: Expect::Preamble(Preamble::new(Role::Host)),
         },
@@ -136,6 +136,23 @@ pub fn all() -> Vec<Vector> {
                 .map(String::from)
                 .to_vec(),
                 capabilities: None,
+                pairing_token: None,
+            }),
+        ),
+        msg(
+            "hello_camera_pairing",
+            "HELLO from a camera pairing with a computer: one-time token of the QR code (0.3)",
+            Message::Hello(Hello {
+                app: "oculibre-android".into(),
+                app_version: "0.3.0".into(),
+                id: "5b0d7f0e-3f1c-4a8e-9f7d-0c2b2f6f1a11".into(),
+                name: "Redmi Note 9 Pro".into(),
+                device: None,
+                features: ["video.h264", "clock", "control.mode"]
+                    .map(String::from)
+                    .to_vec(),
+                capabilities: None,
+                pairing_token: Some("3f0c9a2b7d1e4c5f8a6b0e2d9c7f1a3b".into()),
             }),
         ),
         msg(
@@ -155,6 +172,7 @@ pub fn all() -> Vec<Vector> {
                     .map(String::from)
                     .to_vec(),
                 capabilities: None,
+                pairing_token: None,
             }),
         ),
         msg(

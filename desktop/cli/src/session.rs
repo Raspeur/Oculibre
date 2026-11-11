@@ -12,6 +12,7 @@ use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::io::{self, Write};
 use std::net::{Shutdown, TcpStream};
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -28,6 +29,54 @@ use openh264::decoder::{DecodedYUV, Decoder};
 use serde_json::{json, Value};
 
 use crate::yuv::Transform;
+
+/// The byte stream of a session: a TCP socket (USB, through `adb reverse`) or the plaintext side of
+/// a TLS connection (Wi-Fi, see `tls.rs`).
+pub trait Link: io::Read + io::Write + Send + Sync + 'static {
+    fn try_clone_link(&self) -> io::Result<Box<dyn Link>>;
+    fn set_read_timeout_link(&self, timeout: Option<Duration>) -> io::Result<()>;
+    fn shutdown_link(&self) -> io::Result<()>;
+}
+
+impl Link for TcpStream {
+    fn try_clone_link(&self) -> io::Result<Box<dyn Link>> {
+        Ok(Box::new(self.try_clone()?))
+    }
+    fn set_read_timeout_link(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.set_read_timeout(timeout)
+    }
+    fn shutdown_link(&self) -> io::Result<()> {
+        self.shutdown(Shutdown::Both)
+    }
+}
+
+impl Link for UnixStream {
+    fn try_clone_link(&self) -> io::Result<Box<dyn Link>> {
+        Ok(Box::new(self.try_clone()?))
+    }
+    fn set_read_timeout_link(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.set_read_timeout(timeout)
+    }
+    fn shutdown_link(&self) -> io::Result<()> {
+        self.shutdown(Shutdown::Both)
+    }
+}
+
+impl Link for Box<dyn Link> {
+    fn try_clone_link(&self) -> io::Result<Box<dyn Link>> {
+        (**self).try_clone_link()
+    }
+    fn set_read_timeout_link(&self, timeout: Option<Duration>) -> io::Result<()> {
+        (**self).set_read_timeout_link(timeout)
+    }
+    fn shutdown_link(&self) -> io::Result<()> {
+        (**self).shutdown_link()
+    }
+}
+
+/// Decides, from its `HELLO`, whether the phone may stream (pairing, §13). `Err`: why not; the
+/// phone gets `BYE unpaired`.
+pub type Authorize<'a> = &'a (dyn Fn(&Hello) -> Result<(), String> + Sync);
 
 /// Where decoded pictures go (the virtual camera, or a test).
 pub trait Sink {
@@ -128,7 +177,7 @@ struct Latency {
 
 /// State shared with the ticker thread.
 struct Shared {
-    writer: Mutex<TcpStream>,
+    writer: Mutex<Box<dyn Link>>,
     epoch: Instant,
     stop: AtomicBool,
     next_id: AtomicU32,
@@ -257,7 +306,7 @@ impl Control {
             message: Some(message.into()),
         }));
         if let Ok(w) = self.shared.writer.lock() {
-            let _ = w.shutdown(Shutdown::Both);
+            let _ = w.shutdown_link();
         }
     }
 }
@@ -279,35 +328,39 @@ pub fn host_hello(id: String, name: String, os_version: Option<String>) -> Hello
         }),
         features: HOST_FEATURES.iter().map(|s| s.to_string()).collect(),
         capabilities: None,
+        pairing_token: None,
     }
 }
 
 /// Runs a session until the phone leaves. `quiet` disables the status line (tests).
+#[cfg(test)]
 pub fn run(
-    stream: TcpStream,
+    stream: impl Link,
     hello: &Hello,
     view: View,
     sink: &mut dyn Sink,
     quiet: bool,
 ) -> Result<End, Box<dyn Error>> {
-    run_driven(stream, hello, view, sink, quiet, None)
+    run_driven(stream, hello, view, sink, quiet, None, None)
 }
 
 /// [`run`], plus a `driver` started on its own thread once the phone's `HELLO` is in. The session
 /// ends when the phone leaves or when the driver calls [`Control::finish`]; the driver is always
 /// finished when this returns.
+///
+/// `authorize` (Wi-Fi): checked on the phone's `HELLO` before we send ours.
 pub fn run_driven(
-    stream: TcpStream,
+    stream: impl Link,
     hello: &Hello,
     view: View,
     sink: &mut dyn Sink,
     quiet: bool,
     driver: Option<Driver<'_>>,
+    authorize: Option<Authorize<'_>>,
 ) -> Result<End, Box<dyn Error>> {
-    stream.set_nodelay(true)?;
-    stream.set_read_timeout(Some(SILENCE))?;
+    stream.set_read_timeout_link(Some(SILENCE))?;
     let shared = Arc::new(Shared {
-        writer: Mutex::new(stream.try_clone()?),
+        writer: Mutex::new(stream.try_clone_link()?),
         epoch: Instant::now(),
         stop: AtomicBool::new(false),
         next_id: AtomicU32::new(1),
@@ -328,7 +381,7 @@ pub fn run_driven(
     });
     let mut reader = MessageReader::new(io::BufReader::with_capacity(
         256 * 1024,
-        stream.try_clone()?,
+        stream.try_clone_link()?,
     ));
 
     // --- handshake (§4, §7.1)
@@ -339,7 +392,8 @@ pub fn run_driven(
         _ => format!("{e}"),
     })?;
     ours.check_peer(&peer)?;
-    shared.send(&Message::Hello(hello.clone()))?;
+    // The phone sends its HELLO without waiting for ours: check it first, so that a phone that is
+    // not paired learns nothing about this computer.
     let phone = loop {
         match reader.read_message()? {
             Message::Hello(h) => break h,
@@ -352,6 +406,17 @@ pub fn run_driven(
             _ => {} // nothing else may come before HELLO: ignore
         }
     };
+    if let Some(authorize) = authorize {
+        if let Err(why) = authorize(&phone) {
+            let _ = shared.send(&Message::Bye(Bye {
+                reason: bye_reasons::UNPAIRED.into(),
+                message: Some(why.clone()),
+            }));
+            let _ = stream.shutdown_link();
+            return Err(why.into());
+        }
+    }
+    shared.send(&Message::Hello(hello.clone()))?;
     let shared_features: Vec<&str> = HOST_FEATURES
         .iter()
         .copied()
@@ -439,7 +504,7 @@ pub fn run_driven(
         }
     }
     shared.stop.store(true, Ordering::Relaxed);
-    let _ = stream.shutdown(Shutdown::Both);
+    let _ = stream.shutdown_link();
     if let Ok(totals) = ticker.join() {
         if !quiet && totals.seconds > 0 {
             println!("\n{}", totals.summary());
@@ -449,7 +514,7 @@ pub fn run_driven(
 }
 
 fn receive(
-    reader: &mut MessageReader<io::BufReader<TcpStream>>,
+    reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
     shared: &Shared,
     view: View,
     sink: &mut dyn Sink,
@@ -857,7 +922,7 @@ fn ticker(shared: &Shared) -> Totals {
         if !ok {
             // Unblock the reader: the session is over.
             if let Ok(w) = shared.writer.lock() {
-                let _ = w.shutdown(Shutdown::Both);
+                let _ = w.shutdown_link();
             }
             return totals;
         }

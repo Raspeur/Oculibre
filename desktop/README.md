@@ -22,10 +22,13 @@ Then press **Start** in the phone app. The phone appears as a webcam named **Ocu
 in Firefox, Chrome, Discord, Zoom, OBS… (it shows up once the first frame has arrived).
 
 - USB: `adb reverse` is done automatically; use `127.0.0.1` in the app.
-- Wi-Fi: `cargo run --release -- --insecure-lan`, and type the PC's IP in the app. **Unencrypted**:
-  anyone on the network could watch or inject video; only on a network you trust, until pairing and
-  encryption arrive ([#5](https://github.com/Raspeur/Oculibre/issues/5)). Without this option, only USB
-  (loopback) connections are accepted.
+- Wi-Fi, encrypted (TLS with pinned keys, see [`docs/research/secure-channel.typ`](../docs/research/secure-channel.typ)):
+  - once per phone: `cargo run --release -- --pair` shows a QR code. Scan it with the phone's camera
+    app (or, phone plugged in over USB, it is sent to the phone directly), check that the key shown on
+    the phone is the one printed here, tap **Pair**, then **Start**;
+  - then: `cargo run --release -- --wifi`, and **Start** in the app (the address is filled in).
+  - `oculibre pairings` lists the paired phones, `oculibre unpair <name>` forgets one. Without `--wifi`
+    only USB (loopback) connections are accepted; plaintext is never accepted from the network.
 - The phone can Stop/Start: the program keeps waiting for it.
 - Rotation: by default (`--rotate auto`) the picture is upright however you hold the phone.
   The virtual camera stays landscape, like every webcam: a portrait picture gets black bars on the
@@ -44,7 +47,7 @@ cargo run --release -- bench     # then Start in the app (any quality)
 The PC switches the phone through every camera and quality it offers (about 15 s each), measures the
 real frame rate, the latency (phone + network + PC), the bitrate and the dropped frames, prints a table
 and writes it into `devices/<brand>/<model>/report.md` (found through its "Model" line; run
-`python3 scripts/device-report.py` first for a new phone). USB and Wi-Fi (`--insecure-lan`) results get
+`python3 scripts/device-report.py` first for a new phone). USB and Wi-Fi (`--wifi`) results get
 their own section, replaced at each run. `--seconds`, `--warmup`, `--report <path>`, `--no-report`.
 Needs app 0.2 or newer.
 

@@ -136,6 +136,11 @@ class StreamSession(
     /** When the current pipeline started (elapsedRealtime ms), for the frame-rate warning. */
     @Volatile private var pipelineStartMs = 0L
 
+    /** One-time pairing token to send in HELLO (Wi-Fi, first connection after pairing). */
+    @Volatile private var pairingToken: String? = null
+    /** " · encrypted (TLSv1.3)" on Wi-Fi, for the status line. */
+    @Volatile private var linkLabel = ""
+
     @Volatile private var setupThread: Thread? = null
     @Volatile private var senderThread: Thread? = null
     @Volatile private var readerThread: Thread? = null
@@ -203,9 +208,11 @@ class StreamSession(
                 s.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
                 socket = s
                 if (!running.get()) return@thread
+                socket = secure(s)
+                if (!running.get()) return@thread
 
                 status("Connected — handshake…")
-                val reader = handshake(s)
+                val reader = handshake(socket!!)
                 if (!running.get()) return@thread
 
                 status("Connected — opening camera…")
@@ -277,6 +284,31 @@ class StreamSession(
 
     // ------------------------------------------------------------------ protocol
 
+    /** Wi-Fi: TLS with the paired computer's pinned key (§13). USB (loopback) stays plaintext. */
+    private fun secure(s: Socket): Socket {
+        if (SecureChannel.isLoopback(host)) return s
+        val paired = PairingStore.get(appContext) ?: throw IOException(
+            "Wi-Fi needs pairing first: run `oculibre --pair` on the computer and scan its QR code " +
+                "with the phone's camera",
+        )
+        status("Connected — encrypting…")
+        s.soTimeout = HANDSHAKE_TIMEOUT_MS
+        val tls = try {
+            SecureChannel.connect(appContext, s, host, port, paired.fingerprint)
+        } catch (e: javax.net.ssl.SSLException) {
+            if (generateSequence<Throwable>(e) { it.cause }.any { it is SecureChannel.WrongComputer }) {
+                throw IOException(
+                    "This computer is not the one paired with this phone (${paired.name}): " +
+                        "pair again with `oculibre --pair`",
+                )
+            }
+            throw IOException("Secure connection failed: ${e.message}")
+        }
+        pairingToken = paired.token
+        linkLabel = " · encrypted (${SecureChannel.version(tls)})"
+        return tls
+    }
+
     /** Preambles and HELLOs (§4, §7.1). The computer has 5 s to answer. */
     private fun handshake(s: Socket): Protocol.MessageReader {
         s.soTimeout = HANDSHAKE_TIMEOUT_MS
@@ -291,7 +323,7 @@ class StreamSession(
             r.readPreamble()
         } catch (e: Protocol.ProtocolException) {
             if (e.kind == "connection_closed") {
-                throw IOException("The computer closed the connection (only USB/localhost connections are accepted unless it runs with --insecure-lan)")
+                throw IOException("The computer closed the connection (over Wi-Fi it must run `oculibre --wifi`)")
             }
             throw e
         }
@@ -301,9 +333,17 @@ class StreamSession(
             when (val m = r.readMessage()) {
                 is Message.Hello -> {
                     shared = m.features.toSet() intersect OUR_FEATURES.toSet()
+                    // The computer accepted the pairing token: it is used up.
+                    if (pairingToken != null) {
+                        PairingStore.clearToken(appContext)
+                        pairingToken = null
+                    }
                     break
                 }
-                is Message.Bye -> throw IOException(byeText(m))
+                is Message.Bye -> {
+                    if (m.reason == "unpaired" && pairingToken != null) PairingStore.clearToken(appContext)
+                    throw IOException(byeText(m))
+                }
                 else -> {} // nothing else is allowed before HELLO: ignore
             }
         }
@@ -335,6 +375,7 @@ class StreamSession(
             ),
             features = OUR_FEATURES,
             capabilities = requested.device?.catalogue(),
+            pairingToken = pairingToken,
         )
     }
 
@@ -344,6 +385,8 @@ class StreamSession(
             "busy" -> "The computer is busy"
             "version" -> "Incompatible versions: update Oculibre"
             "protocol_error" -> "The computer rejected the stream (protocol error)"
+            "unpaired" -> "This phone is not paired with the computer: run `oculibre --pair` there " +
+                "and scan the QR code"
             else -> "The computer closed the connection (${m.reason})"
         }
         return if (m.message.isNullOrEmpty()) why else "$why: ${m.message}"
@@ -1071,7 +1114,7 @@ class StreamSession(
                         }
                     } ?: ""
                     status(
-                        "Streaming ${cfg.width}x${cfg.height}\n" +
+                        "Streaming ${cfg.width}x${cfg.height}$linkLabel\n" +
                             "camera $cameraFps fps · sent $sentFps fps · ${"%.1f".format(bitrate / 1_000_000.0)} Mbit/s\n" +
                             "dropped: ${framesDropped.get()}" + pc + warning,
                     )

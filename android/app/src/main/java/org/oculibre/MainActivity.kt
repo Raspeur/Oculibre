@@ -2,6 +2,7 @@ package org.oculibre
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -38,6 +39,8 @@ class MainActivity : Activity() {
     private lateinit var deviceInfo: TextView
     private lateinit var batteryWarning: Button
     private lateinit var miuiSettings: Button
+    private lateinit var pairingInfo: TextView
+    private lateinit var forgetPairing: Button
 
     private var capabilities: DeviceCapabilities? = null
     private var supportedModes: List<ModeSupport> = emptyList()
@@ -77,6 +80,15 @@ class MainActivity : Activity() {
             isAllCaps = false
             setOnClickListener { requestBatteryExemption() }
         }
+        pairingInfo = TextView(this).apply { textSize = 13f }
+        forgetPairing = Button(this).apply {
+            text = "Forget this computer"
+            isAllCaps = false
+            setOnClickListener {
+                PairingStore.forget(this@MainActivity)
+                updatePairingView()
+            }
+        }
         miuiSettings = Button(this).apply {
             text = "Xiaomi: open MIUI battery saver for Oculibre (choose \"No restrictions\")"
             isAllCaps = false
@@ -88,9 +100,11 @@ class MainActivity : Activity() {
             fitsSystemWindows = true
             setPadding(pad, pad, pad, pad)
             addView(TextView(context).apply {
-                text = "PC address (127.0.0.1 over USB, or the PC's IP over Wi-Fi with --insecure-lan)"
+                text = "PC address (127.0.0.1 over USB, or the PC's Wi-Fi address once paired)"
             })
             addView(hostInput)
+            addView(pairingInfo)
+            addView(forgetPairing)
             addView(TextView(context).apply {
                 text = "Quality"
                 setPadding(0, pad / 2, 0, 0)
@@ -109,6 +123,59 @@ class MainActivity : Activity() {
         setContentView(root)
 
         probeCapabilities()
+        updatePairingView()
+        handlePairingLink(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePairingLink(intent)
+    }
+
+    // ------------------------------------------------------------------ Wi-Fi pairing (§13)
+
+    /**
+     * `oculibre://pair?…` from the computer's QR code (opened by the camera app) or from
+     * `adb shell am start`. Any app or web page can open such a link: nothing is saved before the
+     * user confirms, after comparing the key with the one the computer prints.
+     */
+    private fun handlePairingLink(intent: Intent?) {
+        val link = intent?.data?.toString() ?: return
+        if (!link.startsWith("oculibre://pair", ignoreCase = true)) return
+        intent.data = null // handled once
+        val offer = PairingOffer.parse(link)
+        if (offer == null) {
+            status.text = "This pairing link is not valid (or comes from a newer Oculibre): update the app"
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Pair with ${offer.name}?")
+            .setMessage(
+                "Wi-Fi streaming to this computer will be encrypted, and only this computer will be " +
+                    "able to receive it.\n\nCheck that the computer shows the same key:\n" +
+                    "${offer.shortFingerprint}\n\nAddress: ${offer.addresses.first()}",
+            )
+            .setPositiveButton("Pair") { _, _ ->
+                PairingStore.save(this, offer)
+                hostInput.setText(offer.addresses.first())
+                prefs.edit().putString(PREF_HOST, offer.addresses.first()).apply()
+                updatePairingView()
+                status.text = "Paired with ${offer.name}: press Start"
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun updatePairingView() {
+        val paired = PairingStore.get(this)
+        pairingInfo.text = if (paired == null) {
+            "Wi-Fi: not paired. Run `oculibre --pair` on the computer and scan its QR code with the " +
+                "phone's camera app."
+        } else {
+            "Wi-Fi: paired with ${paired.name} (key ${PairingOffer.shortFingerprint(paired.fingerprint)}), encrypted"
+        }
+        forgetPairing.visibility = if (paired == null) View.GONE else View.VISIBLE
     }
 
     private fun probeCapabilities() {

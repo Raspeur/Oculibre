@@ -5,9 +5,9 @@ Free, open source, private by default. No ads, no watermark, no paid "Pro" tier.
 
 > 🇫🇷 *Oculibre transforme un smartphone Android, même ancien, en webcam pour PC. Gratuit, open source, chiffré par défaut. Les contributions en français sont bienvenues.*
 
-> ⚠️ **Status: early, Linux + USB only.** The phone streams up to 4K or 1080p60 over USB to a Linux
-> virtual webcam, with about 60–110 ms of latency. Wi-Fi works but is **not encrypted yet** (pairing and
-> encryption come next), Windows and macOS are planned. See [Try it](#try-it-linux-usb).
+> ⚠️ **Status: early, Linux only.** The phone streams up to 4K or 1080p60 to a Linux virtual webcam,
+> with about 60–110 ms of latency, over USB or over Wi-Fi (encrypted, after pairing with a QR code).
+> Windows and macOS are planned. See [Try it](#try-it-linux-usb).
 
 ---
 
@@ -34,7 +34,7 @@ If your phone runs Android 14+ and supports the native USB webcam mode, Oculibre
 ┌──────────────────────────┐                   ┌──────────────────────────────┐
 │ Camera2 ──► MediaCodec   │   H.264 over TCP  │ Rust: decode (OpenH264)      │
 │  (zero-copy Surface)     │ ════════════════► │        ──► virtual camera    │
-│ encryption (planned)     │  Wi-Fi  or  USB   │ Linux   : v4l2loopback       │
+│ TLS on Wi-Fi, QR pairing │  Wi-Fi  or  USB   │ Linux   : v4l2loopback       │
 │ mDNS + QR pairing        │                   │ Windows : DirectShow / MF    │
 └──────────────────────────┘                   │ macOS   : CMIO Extension     │
                                                └──────────────────────────────┘
@@ -69,7 +69,7 @@ The documentation is written in [Typst](https://typst.app). Build the PDFs with 
 ## Roadmap
 
 1. **Phase 1** ✅ — H.264 over TCP through ADB (USB), received by a Rust CLI writing to v4l2loopback (Linux).
-2. **Phase 2** — Wi-Fi, mDNS discovery, QR pairing, encryption (Noise or TLS 1.3, to be decided).
+2. **Phase 2** — Wi-Fi: QR pairing and TLS encryption ✅, mDNS discovery, adaptive bitrate.
 3. **Phase 3** — Tauri desktop app, then Windows (DirectShow, then Media Foundation).
 4. **Phase 4** — Station mode, thermal management, test campaign on old devices.
 5. **Phase 5** — macOS, audio (virtual microphone), advanced camera controls.

@@ -1,4 +1,4 @@
-//! Messages of protocol 0.2 (§7–§9).
+//! Messages of protocol 0.3 (§7–§9).
 //!
 //! JSON payloads use serde with `#[serde(default)]`: unknown keys are ignored and missing optional
 //! keys take their documented default, as §6 requires.
@@ -31,6 +31,10 @@ pub struct Hello {
     /// Optional capabilities catalogue (§7.4), kept as raw JSON.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<Value>,
+    /// Camera only, inside the secure channel: the one-time token of the pairing QR code (§13,
+    /// since 0.3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pairing_token: Option<String>,
 }
 
 impl Hello {

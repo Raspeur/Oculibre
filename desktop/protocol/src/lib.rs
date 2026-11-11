@@ -1,4 +1,4 @@
-//! Oculibre wire protocol, version 0.2.
+//! Oculibre wire protocol, version 0.3.
 //!
 //! The specification is `docs/protocol.typ`; this crate is its reference implementation on the
 //! host side. Section numbers (§) below refer to that document.
@@ -10,7 +10,7 @@
 //!
 //! - [`Preamble`]: magic, version and role, exchanged once (§4).
 //! - [`Header`]: fixed 16-byte message header (§5).
-//! - [`Message`]: every message type of 0.2 (§7–§9), decoded with [`Message::decode`] and
+//! - [`Message`]: every message type of 0.3 (§7–§9), decoded with [`Message::decode`] and
 //!   encoded with [`Message::encode`].
 //! - [`MessageReader`]: reads a preamble and messages from any [`std::io::Read`], enforcing the
 //!   limits of §14 before allocating anything.
@@ -40,7 +40,7 @@ pub use reader::{write_message, MessageReader};
 /// Protocol major version (§15).
 pub const MAJOR: u8 = 0;
 /// Protocol minor version (§15).
-pub const MINOR: u8 = 2;
+pub const MINOR: u8 = 3;
 
 /// Port a host listens on (§2).
 pub const HOST_PORT: u16 = 47100;
