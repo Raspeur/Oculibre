@@ -33,6 +33,8 @@ Estimates are for one person at about 8–10 h/week (side project). #done done �
 - #done Host: `--rotate 0|90|180|270|auto` and `--mirror`
 - #done Live latency in the console: phone + network + PC, camera vs shown frame rate
 - #done Glass-to-glass latency measured and documented (30 and 60 fps)
+- #done Automatic bench: `oculibre bench` walks every camera × mode through the protocol 0.2 `set_mode`
+  command and writes the results into the phone's `devices/` report
 - 🎯 _Usable on Linux_
 
 = Phase 2 — Wi-Fi and security

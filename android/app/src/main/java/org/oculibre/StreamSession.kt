@@ -34,6 +34,7 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -61,34 +62,31 @@ data class StreamConfig(
     val highSpeedFps: Int = 0,
     /** Capture path announced to the computer: normal, unlisted or high_speed. */
     val path: String = "normal",
-    /** Capabilities catalogue (HELLO and get_capabilities), null if unknown. */
-    val capabilities: Map<String, Any?>? = null,
+    /** Every camera and mode (HELLO, get_capabilities, set_mode), null if unknown. */
+    val device: DeviceCapabilities? = null,
 ) {
     companion object {
-        fun from(support: ModeSupport, caps: DeviceCapabilities): StreamConfig {
+        fun from(support: ModeSupport, camera: CameraCapabilities, caps: DeviceCapabilities): StreamConfig {
             val mode = support.mode
-            return fromMode(mode, caps).copy(
+            return StreamConfig(
+                width = mode.width,
+                height = mode.height,
+                fps = mode.fps,
+                bitrate = mode.bitrate,
+                avcLevel = mode.avcLevel,
+                baseline = caps.baselineMaxLevel >= mode.avcLevel,
+                encoderName = caps.encoderName,
+                cameraId = camera.id,
                 highSpeedFps = support.highSpeedFps,
                 path = support.path,
-                capabilities = caps.catalogue(),
+                device = caps,
             )
         }
-
-        private fun fromMode(mode: QualityMode, caps: DeviceCapabilities) = StreamConfig(
-            width = mode.width,
-            height = mode.height,
-            fps = mode.fps,
-            bitrate = mode.bitrate,
-            avcLevel = mode.avcLevel,
-            baseline = caps.baselineMaxLevel >= mode.avcLevel,
-            encoderName = caps.encoderName,
-            cameraId = caps.cameraId,
-        )
     }
 }
 
 /**
- * One streaming session, speaking the Oculibre protocol 0.1 (docs/protocol.typ):
+ * One streaming session, speaking the Oculibre protocol 0.2 (docs/protocol.typ):
  *
  *   Camera2 ──► encoder input Surface ──► MediaCodec (H.264) ──► queue ──► TCP socket
  *                                                                           ▲   │
@@ -100,7 +98,10 @@ data class StreamConfig(
  * The camera never rotates the picture: it reports its sensor orientation and the phone rotation,
  * and the computer decides.
  *
- * Threads: setup, camera (HandlerThread), encoder drain, sender, reader, control, stats, stop.
+ * Camera + encoder form a [Pipeline]: the computer's `set_mode` command replaces it as a whole
+ * (STREAM_END, then a new STREAM_CONFIG), while the connection stays up.
+ *
+ * Threads: setup, camera (HandlerThread), encoder drain, sender, reader, control, mode, stats, stop.
  */
 class StreamSession(
     context: Context,
@@ -127,17 +128,15 @@ class StreamSession(
 
     @Volatile private var socket: Socket? = null
     @Volatile private var writer: Protocol.MessageWriter? = null
-    @Volatile private var codec: MediaCodec? = null
-    @Volatile private var inputSurface: Surface? = null
-    @Volatile private var camera: CameraDevice? = null
-    @Volatile private var captureSession: CameraCaptureSession? = null
-    @Volatile private var cameraThread: HandlerThread? = null
+    /** Camera + encoder currently streaming (or starting). */
+    @Volatile private var pipeline: Pipeline? = null
     @Volatile private var activeConfig: StreamConfig = requested
     @Volatile private var cameraInfo: Protocol.CameraInfo? = null
     @Volatile private var orientationListener: OrientationEventListener? = null
+    /** When the current pipeline started (elapsedRealtime ms), for the frame-rate warning. */
+    @Volatile private var pipelineStartMs = 0L
 
     @Volatile private var setupThread: Thread? = null
-    @Volatile private var drainThread: Thread? = null
     @Volatile private var senderThread: Thread? = null
     @Volatile private var readerThread: Thread? = null
     @Volatile private var statsThread: Thread? = null
@@ -146,6 +145,12 @@ class StreamSession(
     private val control: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "oculibre-control")
     }
+
+    /** set_mode work (closing and opening a camera takes a while: never on the reader thread). */
+    private val modeExecutor: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "oculibre-mode")
+    }
+    private val switching = AtomicBoolean(false)
 
     private val queue = ArrayBlockingQueue<Packet>(QUEUE_CAPACITY)
 
@@ -199,35 +204,25 @@ class StreamSession(
                 socket = s
                 if (!running.get()) return@thread
 
-                val cameraId = requested.cameraId ?: Capabilities.pickCamera(cameraManager)
-                val chars = cameraManager.getCameraCharacteristics(cameraId)
-                realtimeClock = Build.VERSION.SDK_INT >= 23 &&
-                    chars.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
-                    CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
-                val facing = Capabilities.facingName(chars.get(CameraCharacteristics.LENS_FACING))
-                cameraInfo = Protocol.CameraInfo(
-                    id = cameraId,
-                    facing = facing,
-                    sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0,
-                    mirrored = false,
-                )
-
                 status("Connected — handshake…")
                 val reader = handshake(s)
                 if (!running.get()) return@thread
 
                 status("Connected — opening camera…")
-                val size = pickSize(chars)
-                val cfg = requested.copy(width = size.width, height = size.height)
-                activeConfig = cfg
-
-                startReader(reader)
-                // Before the camera: the computer should know the rotation before the first frame.
-                startOrientation()
-                startEncoder(cfg)
-                startSender()
-                openCamera(cameraId, chars, cfg)
+                // set_mode answers "busy" until this first camera is up (one start at a time).
+                switching.set(true)
+                try {
+                    startReader(reader)
+                    // Before the camera: the computer should know the rotation before the first frame.
+                    startOrientation()
+                    startSender()
+                    startPipeline(requested)
+                } finally {
+                    switching.set(false)
+                }
                 startStats()
+            } catch (e: PipelineException) {
+                if (running.get()) fail(e.message ?: "Camera error", "camera_lost")
             } catch (e: Protocol.ProtocolException) {
                 fail(e.message ?: e.kind, if (e.kind == "incompatible_major") "version" else "protocol_error")
             } catch (e: SocketTimeoutException) {
@@ -259,18 +254,16 @@ class StreamSession(
             }
             // Closing the socket unblocks the sender (write) and the reader (read).
             runCatching { socket?.close() }
+            // Unblock a camera start in progress (setup or set_mode), then wait for it.
+            pipeline?.abort()
             setupThread?.join(CONNECT_TIMEOUT_MS + 1000L)
-            runCatching { captureSession?.close() }
-            runCatching { camera?.close() }
-            drainThread?.join(1000)
+            modeExecutor.shutdownNow()
+            runCatching { modeExecutor.awaitTermination(3, TimeUnit.SECONDS) }
+            pipeline?.close()
             senderThread?.join(1000)
             readerThread?.join(1000)
             statsThread?.interrupt()
             control.shutdownNow()
-            runCatching { codec?.stop() }
-            runCatching { codec?.release() }
-            runCatching { inputSurface?.release() }
-            cameraThread?.quitSafely()
             queue.clear()
             listener.onStopped(this, error)
         }
@@ -341,7 +334,7 @@ class StreamSession(
                 sdk = Build.VERSION.SDK_INT.toLong(),
             ),
             features = OUR_FEATURES,
-            capabilities = requested.capabilities,
+            capabilities = requested.device?.catalogue(),
         )
     }
 
@@ -366,7 +359,7 @@ class StreamSession(
                             val t2 = nowUs()
                             writer?.write(Message.Pong(m.seq, m.t1, t2, nowUs()))
                         }
-                        is Message.Request -> writer?.write(handle(m))
+                        is Message.Request -> handle(m)?.let { writer?.write(it) }
                         is Message.Event -> if (m.event == "stats") hostStats = m.data as? Map<*, *>
                         is Message.Bye -> {
                             // The computer leaves on purpose: no BYE back.
@@ -391,9 +384,35 @@ class StreamSession(
         }
     }
 
-    /** Commands of §9.1. Every request gets exactly one response. */
-    private fun handle(req: Message.Request): Message.Response {
-        val c = codec ?: return Message.Response.error(req.id, Protocol.ErrorCode.BUSY, "encoder not ready")
+    /**
+     * Commands of §9.1. Every request gets exactly one response: returned here, or written later
+     * by the mode thread for `set_mode` (null).
+     */
+    private fun handle(req: Message.Request): Message.Response? {
+        when (req.cmd) {
+            "get_capabilities" -> return requested.device?.let { Message.Response.ok(req.id, it.catalogue()) }
+                ?: Message.Response.error(req.id, Protocol.ErrorCode.UNSUPPORTED, "capabilities unknown")
+            "set_mode" -> {
+                if (!switching.compareAndSet(false, true)) {
+                    return Message.Response.error(req.id, Protocol.ErrorCode.BUSY, "already changing mode")
+                }
+                try {
+                    modeExecutor.execute {
+                        val response = try {
+                            setMode(req)
+                        } finally {
+                            switching.set(false)
+                        }
+                        runCatching { writer?.write(response) }
+                    }
+                } catch (e: Exception) { // shutting down
+                    switching.set(false)
+                    return Message.Response.error(req.id, Protocol.ErrorCode.BUSY, "stopping")
+                }
+                return null
+            }
+        }
+        val c = pipeline?.codec ?: return Message.Response.error(req.id, Protocol.ErrorCode.BUSY, "encoder not ready")
         return when (req.cmd) {
             "request_keyframe" -> {
                 requestKeyframe(c)
@@ -416,9 +435,51 @@ class StreamSession(
                     }
                 }
             }
-            "get_capabilities" -> requested.capabilities?.let { Message.Response.ok(req.id, it) }
-                ?: Message.Response.error(req.id, Protocol.ErrorCode.UNSUPPORTED, "capabilities unknown")
             else -> Message.Response.error(req.id, Protocol.ErrorCode.UNKNOWN_COMMAND, req.cmd)
+        }
+    }
+
+    /**
+     * `set_mode` (§9.1, since 0.2), on the mode thread: stops the current camera and encoder, sends
+     * STREAM_END, starts the new ones (their STREAM_CONFIG follows). If the new mode fails, goes
+     * back to the previous one so the computer keeps a picture.
+     */
+    private fun setMode(req: Message.Request): Message.Response {
+        fun error(code: String, message: String) = Message.Response.error(req.id, code, message)
+        val args = req.args as? Map<*, *> ?: return error(Protocol.ErrorCode.INVALID_ARGS, "args missing")
+        val cameraId = args["camera"] as? String
+        val width = (args["width"] as? Long)?.toInt()
+        val height = (args["height"] as? Long)?.toInt()
+        val fps = (args["fps"] as? Long)?.toInt()
+        val path = args["path"] as? String
+        if (cameraId == null || width == null || height == null || fps == null) {
+            return error(Protocol.ErrorCode.INVALID_ARGS, "camera, width, height and fps are required")
+        }
+        val device = requested.device ?: return error(Protocol.ErrorCode.UNSUPPORTED, "capabilities unknown")
+        val (camera, support) = device.find(cameraId, width, height, fps, path)
+            ?: return error(Protocol.ErrorCode.UNSUPPORTED, "camera $cameraId can't do ${width}x$height@$fps ${path ?: ""}".trim())
+
+        val previous = activeConfig
+        status("Switching to camera $cameraId · ${support.label}…")
+        pipeline?.close()
+        val end = Protocol.encode(Message.StreamEnd(Protocol.STREAM_VIDEO, "mode_change"))
+        if (!queue.offer(Packet(end), 1, TimeUnit.SECONDS)) {
+            fail("Network too slow: cannot even send the end of the stream")
+            return error(Protocol.ErrorCode.FAILED, "network too slow")
+        }
+        return try {
+            startPipeline(StreamConfig.from(support, camera, device))
+            Message.Response.ok(req.id)
+        } catch (e: Exception) {
+            val why = e.message ?: e.javaClass.simpleName
+            if (running.get()) {
+                try {
+                    startPipeline(previous)
+                } catch (e2: Exception) {
+                    if (running.get()) fail("Cannot restart the camera: ${e2.message}", "camera_lost")
+                }
+            }
+            error(Protocol.ErrorCode.FAILED, why)
         }
     }
 
@@ -460,7 +521,7 @@ class StreamSession(
 
     // ------------------------------------------------------------------ camera selection
 
-    private fun pickSize(chars: CameraCharacteristics): Size {
+    private fun pickSize(chars: CameraCharacteristics, requested: StreamConfig): Size {
         val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             ?: throw IllegalStateException("Camera has no stream configuration map")
         val sizes = map.getOutputSizes(MediaCodec::class.java)?.takeIf { it.isNotEmpty() }
@@ -512,7 +573,109 @@ class StreamSession(
         }
     }
 
-    private fun startEncoder(cfg: StreamConfig) {
+    // ------------------------------------------------------------------ pipeline
+
+    /** A camera or encoder problem while starting a [Pipeline]. */
+    private class PipelineException(message: String) : IOException(message)
+
+    /** Camera + encoder of one mode. `set_mode` replaces it as a whole. */
+    private inner class Pipeline(val cfg: StreamConfig, val cameraId: String, val chars: CameraCharacteristics) {
+        @Volatile var active = true
+        @Volatile var codec: MediaCodec? = null
+        @Volatile var surface: Surface? = null
+        @Volatile var device: CameraDevice? = null
+        @Volatile var session: CameraCaptureSession? = null
+        @Volatile var cameraThread: HandlerThread? = null
+        @Volatile var drainThread: Thread? = null
+        /** Counted down once the camera repeats its request, or on the first error. */
+        val started = CountDownLatch(1)
+        @Volatile var startError: String? = null
+        private val deviceClosed = CountDownLatch(1)
+
+        fun onDeviceClosed() = deviceClosed.countDown()
+
+        /** Fails the start; once streaming, a camera or encoder error ends the whole session. */
+        fun failed(message: String, byeReason: String = "other") {
+            if (!active) return
+            if (started.count > 0) {
+                startError = message
+                started.countDown()
+            } else {
+                fail(message, byeReason)
+            }
+        }
+
+        /** Stops waiting for the start (the session is stopping). */
+        fun abort() {
+            active = false
+            started.countDown()
+        }
+
+        fun close() {
+            abort()
+            runCatching { session?.close() }
+            device?.let {
+                runCatching { it.close() }
+                // Opening the next camera before this one is really closed can fail ("in use").
+                runCatching { deviceClosed.await(2, TimeUnit.SECONDS) }
+            }
+            drainThread?.join(1000)
+            runCatching { codec?.stop() }
+            runCatching { codec?.release() }
+            runCatching { surface?.release() }
+            cameraThread?.quitSafely()
+        }
+    }
+
+    /**
+     * Starts the camera and the encoder for [wanted] and waits until the camera streams. Throws a
+     * [PipelineException] (with everything closed) if the camera or the encoder refuses.
+     */
+    private fun startPipeline(wanted: StreamConfig): Pipeline {
+        val cameraId = wanted.cameraId ?: Capabilities.pickCamera(cameraManager)
+        val chars = cameraManager.getCameraCharacteristics(cameraId)
+        val size = pickSize(chars, wanted)
+        val cfg = wanted.copy(width = size.width, height = size.height, cameraId = cameraId)
+
+        // A new stream: the encoder may use another clock (§11). PINGs wait for the first frame.
+        clockChecked.set(false)
+        realtimeClock = Build.VERSION.SDK_INT >= 23 &&
+            chars.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+            CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+        firstSensorNs = -1L
+        cameraInfo = Protocol.CameraInfo(
+            id = cameraId,
+            facing = Capabilities.facingName(chars.get(CameraCharacteristics.LENS_FACING)),
+            sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0,
+            mirrored = false,
+        )
+        // Drain-thread state, written before the drain thread starts.
+        waitingForKeyframe = false
+        pendingDiscontinuity = false
+        outputFormat = null
+        activeConfig = cfg
+        pipelineStartMs = SystemClock.elapsedRealtime()
+
+        val p = Pipeline(cfg, cameraId, chars)
+        pipeline = p
+        try {
+            if (!running.get()) throw PipelineException("stopped")
+            startEncoder(p)
+            openCamera(p)
+            if (!p.started.await(START_TIMEOUT_S, TimeUnit.SECONDS)) {
+                throw PipelineException("the camera did not start within $START_TIMEOUT_S s")
+            }
+            p.startError?.let { throw PipelineException(it) }
+            if (!p.active || !running.get()) throw PipelineException("stopped")
+            return p
+        } catch (e: Exception) {
+            p.close()
+            throw e as? PipelineException ?: PipelineException(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun startEncoder(p: Pipeline) {
+        val cfg = p.cfg
         // Baseline = no B-frames = lowest latency, with the level matching size × fps.
         // Some encoders refuse an explicit profile, so fall back to the vendor default.
         val c = if (cfg.baseline) {
@@ -531,17 +694,17 @@ class StreamSession(
         } else {
             configureEncoder(baseFormat(cfg), cfg.encoderName)
         }
-        codec = c
-        inputSurface = c.createInputSurface()
+        p.codec = c
+        p.surface = c.createInputSurface()
         c.start()
-        drainThread = thread(name = "oculibre-encoder") { drainLoop(c) }
+        p.drainThread = thread(name = "oculibre-encoder") { drainLoop(p, c) }
     }
 
-    private fun drainLoop(c: MediaCodec) {
+    private fun drainLoop(p: Pipeline, c: MediaCodec) {
         val info = MediaCodec.BufferInfo()
         var scratch = ByteArray(256 * 1024)
         try {
-            while (running.get()) {
+            while (running.get() && p.active) {
                 val index = c.dequeueOutputBuffer(info, DEQUEUE_TIMEOUT_US)
                 if (index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     outputFormat = c.outputFormat
@@ -567,7 +730,7 @@ class StreamSession(
                 if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
             }
         } catch (e: Exception) {
-            if (running.get()) fail(e)
+            if (running.get()) p.failed("Encoder error: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
@@ -663,65 +826,68 @@ class StreamSession(
     // ------------------------------------------------------------------ camera
 
     @SuppressLint("MissingPermission") // checked by MainActivity before start()
-    private fun openCamera(cameraId: String, chars: CameraCharacteristics, cfg: StreamConfig) {
+    private fun openCamera(p: Pipeline) {
         val ht = HandlerThread("oculibre-camera").also { it.start() }
-        cameraThread = ht
+        p.cameraThread = ht
         val handler = Handler(ht.looper)
 
-        cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
-            override fun onOpened(device: CameraDevice) {
-                if (!running.get()) {
+        try {
+            cameraManager.openCamera(p.cameraId, object : CameraDevice.StateCallback() {
+                override fun onOpened(device: CameraDevice) {
+                    if (!running.get() || !p.active) {
+                        device.close()
+                        return
+                    }
+                    p.device = device
+                    if (p.cfg.highSpeedFps > 0 && Build.VERSION.SDK_INT >= 23) {
+                        createHighSpeedSession(p, device, handler)
+                    } else {
+                        createSession(p, device, handler)
+                    }
+                }
+
+                override fun onDisconnected(device: CameraDevice) {
                     device.close()
-                    return
+                    p.failed("Camera disconnected (used by another app?)", "camera_lost")
                 }
-                camera = device
-                if (cfg.highSpeedFps > 0 && Build.VERSION.SDK_INT >= 23) {
-                    createHighSpeedSession(device, cfg, handler)
-                } else {
-                    createSession(device, chars, cfg, handler)
+
+                override fun onError(device: CameraDevice, error: Int) {
+                    device.close()
+                    p.failed("Camera error $error", "camera_lost")
                 }
-            }
 
-            override fun onDisconnected(device: CameraDevice) {
-                device.close()
-                fail("Camera disconnected (used by another app?)", "camera_lost")
-            }
-
-            override fun onError(device: CameraDevice, error: Int) {
-                device.close()
-                fail("Camera error $error", "camera_lost")
-            }
-        }, handler)
+                override fun onClosed(device: CameraDevice) = p.onDeviceClosed()
+            }, handler)
+        } catch (e: Exception) {
+            // CameraAccessException, IllegalArgumentException (unknown id), SecurityException…
+            p.failed("Cannot open camera ${p.cameraId}: ${e.message ?: e.javaClass.simpleName}")
+        }
     }
 
     @Suppress("DEPRECATION") // createCaptureSession(List, …) is the only variant available on API 21–27
-    private fun createSession(
-        device: CameraDevice,
-        chars: CameraCharacteristics,
-        cfg: StreamConfig,
-        handler: Handler,
-    ) {
-        val surface = inputSurface ?: return
+    private fun createSession(p: Pipeline, device: CameraDevice, handler: Handler) {
+        val surface = p.surface ?: return
+        val cfg = p.cfg
         try {
             device.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
                 override fun onConfigured(session: CameraCaptureSession) {
-                    if (!running.get()) {
+                    if (!running.get() || !p.active) {
                         session.close()
                         return
                     }
-                    captureSession = session
+                    p.session = session
                     try {
                         val request = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                             addTarget(surface)
                             set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
-                            val ranges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+                            val ranges = p.chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
                             // Above 30 fps, ask for [fps, fps] even when it is not listed: many HALs
                             // (Xiaomi, Samsung…) honour it although they hide it (docs/research/60fps.typ).
                             // The real rate is measured by cameraCallback and shown in the stats.
                             val range = fpsRangeFor(ranges, cfg.fps)
                                 ?: if (cfg.fps > 30) Range(cfg.fps, cfg.fps) else null
                             range?.let { set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
-                            val afModes = chars.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
+                            val afModes = p.chars.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)
                             if (afModes?.contains(CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO) == true) {
                                 set(
                                     CaptureRequest.CONTROL_AF_MODE,
@@ -730,40 +896,41 @@ class StreamSession(
                             }
                         }.build()
                         session.setRepeatingRequest(request, cameraCallback, handler)
+                        p.started.countDown()
                         status("Streaming ${cfg.width}x${cfg.height}…")
-                    } catch (e: CameraAccessException) {
-                        fail(e)
-                    } catch (e: IllegalStateException) {
-                        if (running.get()) fail(e)
+                    } catch (e: Exception) {
+                        // CameraAccessException, IllegalStateException (closed meanwhile)…
+                        p.failed("Camera request refused: ${e.message ?: e.javaClass.simpleName}")
                     }
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
-                    fail("Camera session configuration failed")
+                    p.failed("Camera session configuration failed")
                 }
             }, handler)
-        } catch (e: CameraAccessException) {
-            fail(e)
+        } catch (e: Exception) {
+            p.failed("Camera session refused: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
     /**
-     * Slow-motion session: fixed [cfg.highSpeedFps] range, requests sent as bursts.
+     * Slow-motion session: fixed [StreamConfig.highSpeedFps] range, requests sent as bursts.
      * Exposure is capped at 1/highSpeedFps s, hence "needs light".
      */
     @TargetApi(23)
-    private fun createHighSpeedSession(device: CameraDevice, cfg: StreamConfig, handler: Handler) {
-        val surface = inputSurface ?: return
+    private fun createHighSpeedSession(p: Pipeline, device: CameraDevice, handler: Handler) {
+        val surface = p.surface ?: return
+        val cfg = p.cfg
         try {
             device.createConstrainedHighSpeedCaptureSession(
                 listOf(surface),
                 object : CameraCaptureSession.StateCallback() {
                     override fun onConfigured(session: CameraCaptureSession) {
-                        if (!running.get()) {
+                        if (!running.get() || !p.active) {
                             session.close()
                             return
                         }
-                        captureSession = session
+                        p.session = session
                         try {
                             val highSpeed = session as CameraConstrainedHighSpeedCaptureSession
                             val request = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
@@ -778,26 +945,21 @@ class StreamSession(
                                 cameraCallback,
                                 handler,
                             )
+                            p.started.countDown()
                             status("Streaming ${cfg.width}x${cfg.height} (high-speed ${cfg.highSpeedFps} → ${cfg.fps} fps)…")
-                        } catch (e: CameraAccessException) {
-                            fail(e)
-                        } catch (e: IllegalArgumentException) {
-                            fail(e)
-                        } catch (e: IllegalStateException) {
-                            if (running.get()) fail(e)
+                        } catch (e: Exception) {
+                            p.failed("High-speed request refused: ${e.message ?: e.javaClass.simpleName}")
                         }
                     }
 
                     override fun onConfigureFailed(session: CameraCaptureSession) {
-                        fail("High-speed camera session refused")
+                        p.failed("High-speed camera session refused")
                     }
                 },
                 handler,
             )
-        } catch (e: CameraAccessException) {
-            fail(e)
-        } catch (e: IllegalArgumentException) {
-            fail(e)
+        } catch (e: Exception) {
+            p.failed("High-speed camera session refused: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
@@ -889,7 +1051,8 @@ class StreamSession(
 
                     val captureFps = if (cfg.highSpeedFps > 0) cfg.highSpeedFps else cfg.fps
                     // After a warm-up, warn if the camera ignores the requested rate.
-                    val warning = if (seconds >= 3 && cameraFps < captureFps * 0.85) {
+                    val warm = seconds >= 3 && SystemClock.elapsedRealtime() - pipelineStartMs >= 3000
+                    val warning = if (warm && cameraFps < captureFps * 0.85) {
                         "\n⚠ camera delivers $cameraFps fps, not $captureFps: this phone refuses it"
                     } else {
                         ""
@@ -932,6 +1095,8 @@ class StreamSession(
         private const val PREF_INSTALL_ID = "install_id"
         /** A first frame closer than this to a clock uses that clock. */
         private const val CLOCK_MATCH_US = 2_000_000L
+        /** Time allowed for a camera to open and start streaming. */
+        private const val START_TIMEOUT_S = 10L
 
         private val OUR_FEATURES = listOf(
             Protocol.Feature.VIDEO_H264,
@@ -940,6 +1105,7 @@ class StreamSession(
             Protocol.Feature.STATS,
             Protocol.Feature.CONTROL_KEYFRAME,
             Protocol.Feature.CONTROL_BITRATE,
+            Protocol.Feature.CONTROL_MODE,
         )
 
         /**

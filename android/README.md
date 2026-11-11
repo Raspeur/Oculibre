@@ -2,7 +2,7 @@
 
 Kotlin, **no dependencies** (platform APIs only), minSdk 21 (Android 5.0).
 
-`Camera2 → MediaCodec (H.264, input Surface, zero-copy) → Oculibre protocol 0.1 over TCP`
+`Camera2 → MediaCodec (H.264, input Surface, zero-copy) → Oculibre protocol 0.2 over TCP`
 ([`docs/protocol.typ`](../docs/protocol.typ)).
 
 - `MainActivity.kt`: computer address, quality picker (only what this phone can really do), Start/Stop,

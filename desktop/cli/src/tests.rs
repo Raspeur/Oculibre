@@ -13,7 +13,9 @@ use openh264::decoder::DecodedYUV;
 use openh264::encoder::Encoder;
 use openh264::formats::{YUVBuffer, YUVSource};
 use openh264::nal_units;
+use serde_json::{json, Value};
 
+use crate::bench;
 use crate::session::{self, End, Rotate, Sink, View};
 use crate::yuv::Transform;
 
@@ -299,4 +301,201 @@ fn fixed_rotation_ignores_the_phone() {
         mirror: true,
     };
     assert_eq!(sink.transforms, vec![expected; 5]);
+}
+
+/// A phone that obeys `set_mode` (protocol 0.2): one camera, two modes; it streams the first one
+/// and refuses the second one, like a camera that cannot open.
+fn obedient_phone(s: TcpStream, codec_data: Vec<u8>, frames: Vec<Vec<u8>>) -> Vec<Value> {
+    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex};
+
+    let mut s = s;
+    let mut r = {
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        std::io::Write::write_all(&mut s, &Preamble::new(Role::Camera).encode()).unwrap();
+        let mut r = MessageReader::new(BufReader::new(s.try_clone().unwrap()));
+        r.read_preamble().unwrap();
+        let mut hello = phone_hello();
+        hello.features.push(features::CONTROL_MODE.into());
+        hello.capabilities = Some(json!({
+            "cameras": [{"id": "0", "facing": "back", "sensor_orientation": 90, "modes": [
+                {"width": W, "height": H, "fps": 30, "path": "normal"},
+                {"width": W, "height": H, "fps": 60, "path": "unlisted"},
+            ]}],
+            "codecs": ["h264"],
+        }));
+        write_message(&mut s, &Message::Hello(hello)).unwrap();
+        assert!(matches!(r.read_message().unwrap(), Message::Hello(_)));
+        r
+    };
+    let writer = Arc::new(Mutex::new(s.try_clone().unwrap()));
+    let send = |w: &Arc<Mutex<TcpStream>>, m: &Message| write_message(&mut *w.lock().unwrap(), m);
+
+    // Reader: answers PINGs, hands requests over.
+    let (tx, rx) = mpsc::channel();
+    let reader = {
+        let w = Arc::clone(&writer);
+        thread::spawn(move || loop {
+            match r.read_message() {
+                Ok(Message::Ping(p)) => {
+                    let pong = Message::Pong(oculibre_protocol::Pong {
+                        seq: p.seq,
+                        t1: p.t1,
+                        t2: p.t1,
+                        t3: p.t1,
+                    });
+                    let _ = send(&w, &pong);
+                }
+                Ok(Message::Request(req)) => {
+                    if tx.send(req).is_err() {
+                        return;
+                    }
+                }
+                Ok(Message::Bye(_)) | Err(_) => return,
+                Ok(_) => {}
+            }
+        })
+    };
+
+    let mut asked = Vec::new();
+    let mut streaming = false;
+    let mut config_id = 0u16;
+    let mut n = 0u32;
+    loop {
+        match rx.try_recv() {
+            Ok(req) => {
+                assert_eq!(req.cmd, "set_mode");
+                asked.push(req.args.clone());
+                let response = if req.args["fps"] == 30 {
+                    oculibre_protocol::Response::ok(req.id)
+                } else {
+                    oculibre_protocol::Response::error(
+                        req.id,
+                        "failed",
+                        Some("camera refused".into()),
+                    )
+                };
+                if response.ok {
+                    let end = Message::StreamEnd {
+                        stream: streams::VIDEO,
+                        end: oculibre_protocol::StreamEnd {
+                            reason: "mode_change".into(),
+                        },
+                    };
+                    config_id += 1;
+                    let ok = send(&writer, &end)
+                        .and_then(|_| send(&writer, &config(config_id, &codec_data)));
+                    if ok.is_err() {
+                        break;
+                    }
+                    streaming = true;
+                    n = 0;
+                }
+                if send(&writer, &Message::Response(response)).is_err() {
+                    break;
+                }
+            }
+            Err(mpsc::TryRecvError::Disconnected) => break, // BYE from the host
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
+        if streaming {
+            let i = n as usize % frames.len();
+            if send(&writer, &frame(n, config_id, &frames[i], i == 0, false)).is_err() {
+                break;
+            }
+            n += 1;
+        }
+        thread::sleep(Duration::from_millis(33));
+    }
+    reader.join().unwrap();
+    asked
+}
+
+#[test]
+fn bench_drives_the_phone_through_every_mode() {
+    let (codec_data, frames) = encode(15);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let phone = thread::spawn(move || {
+        obedient_phone(TcpStream::connect(addr).unwrap(), codec_data, frames)
+    });
+    let (stream, _) = listener.accept().unwrap();
+    let hello = session::host_hello("host-id".into(), "test-host".into(), None);
+    let mut sink = Counter::default();
+    let outcome = std::sync::Mutex::new(None);
+    let settings = bench::Settings {
+        warmup: 1,
+        seconds: 2,
+    };
+    let driver: session::Driver<'_> = Box::new(|control| {
+        let o = bench::run(&control, settings);
+        control.finish("done");
+        *outcome.lock().unwrap() = Some(o);
+    });
+    let end = session::run_driven(
+        stream,
+        &hello,
+        View::default(),
+        &mut sink,
+        true,
+        Some(driver),
+    );
+    assert_eq!(end.map_err(|e| e.to_string()).unwrap(), End::Finished);
+    let asked = phone.join().unwrap();
+    assert_eq!(
+        asked,
+        vec![
+            json!({"camera": "0", "width": W, "height": H, "fps": 30, "path": "normal"}),
+            json!({"camera": "0", "width": W, "height": H, "fps": 60, "path": "unlisted"}),
+        ]
+    );
+
+    let outcome = outcome.into_inner().unwrap().unwrap().unwrap();
+    assert_eq!(outcome.planned, 2);
+    assert_eq!(outcome.interrupted, None);
+    let m = outcome.rows[0].result.as_ref().unwrap();
+    assert_eq!(m.seconds, 2);
+    assert!(m.shown_fps > 10.0, "{m:?}");
+    assert_eq!(m.decode_errors, 0);
+    assert_eq!(
+        outcome.rows[1].result,
+        Err("failed (camera refused)".to_string())
+    );
+    assert!(sink.pictures > 30);
+}
+
+#[test]
+fn bench_needs_a_phone_that_switches_modes() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let phone = thread::spawn(move || {
+        let mut s = TcpStream::connect(addr).unwrap();
+        let mut r = handshake(&mut s); // a 0.1 phone: no control.mode
+        while let Ok(m) = r.read_message() {
+            if matches!(m, Message::Bye(_)) {
+                break;
+            }
+        }
+    });
+    let (stream, _) = listener.accept().unwrap();
+    let hello = session::host_hello("host-id".into(), "test-host".into(), None);
+    let mut sink = Counter::default();
+    let outcome = std::sync::Mutex::new(None);
+    let driver: session::Driver<'_> = Box::new(|control| {
+        let o = bench::run(&control, bench::Settings::default());
+        control.finish("done");
+        *outcome.lock().unwrap() = Some(o);
+    });
+    let end = session::run_driven(
+        stream,
+        &hello,
+        View::default(),
+        &mut sink,
+        true,
+        Some(driver),
+    );
+    assert_eq!(end.map_err(|e| e.to_string()).unwrap(), End::Finished);
+    phone.join().unwrap();
+    let e = outcome.into_inner().unwrap().unwrap().unwrap_err();
+    assert!(e.contains("update it (protocol 0.2)"), "{e}");
 }

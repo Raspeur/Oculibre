@@ -2,9 +2,9 @@
 
 #show: oculibre-doc.with(
   title: [Oculibre protocol],
-  subtitle: [Wire format between the phone (camera) and the computer (host) — version 0.1],
-  revision: "0.1",
-  date: datetime(year: 2026, month: 11, day: 10),
+  subtitle: [Wire format between the phone (camera) and the computer (host) — version 0.2],
+  revision: "0.2",
+  date: datetime(year: 2026, month: 11, day: 11),
   show-toc: 1,
 )
 
@@ -58,8 +58,8 @@ at a time* and answers a second connection with `BYE {"reason": "busy"}`.
 ├─────────────────────────────────────────────────────────────┤
 │ Preamble: "OCUL" + version + role, once per connection      │
 ├─────────────────────────────────────────────────────────────┤
-│ Secure channel: none on loopback in 0.1,                    │
-│ mandatory on any network (Wi-Fi, tethering) from 0.2        │
+│ Secure channel: none on loopback,                           │
+│ mandatory on any network once pairing exists (@security)    │
 ├─────────────────────────────────────────────────────────────┤
 │ Byte stream: TCP (over ADB, Wi-Fi, USB tethering…)          │
 └─────────────────────────────────────────────────────────────┘
@@ -77,7 +77,7 @@ sends 8 bytes, without waiting for the other:
   table.header([Offset], [Size], [Field], [Value]),
   [0], [4], [magic], [ASCII `OCUL` (`4F 43 55 4C`)],
   [4], [1], [major], [protocol major version (`0`)],
-  [5], [1], [minor], [protocol minor version (`1`)],
+  [5], [1], [minor], [protocol minor version (`2`)],
   [6], [1], [role], [`1` = camera, `2` = host],
   [7], [1], [reserved], [`0`],
 )
@@ -243,7 +243,9 @@ Keep-alive and clock synchronisation (@clock). Either side MAY send `PING`; the 
 
 == Capabilities <capabilities>
 
-Optional `HELLO.capabilities`, also returned by the `get_capabilities` command.
+Optional `HELLO.capabilities`, also returned by the `get_capabilities` command. It lists *every camera
+apps can open* (the default one first) and, for each, the modes the camera can stream: the host picks
+one with `set_mode` (@request).
 
 ```json
 {
@@ -329,8 +331,9 @@ Rules:
 
 == `STREAM_END` (0x23) <stream-end>
 
-The stream stops while the session stays open (switching camera, pausing):
-`{"reason": "camera_switch"}`. A new `STREAM_CONFIG` restarts it.
+The stream stops while the session stays open: `{"reason": "mode_change"}` (applying `set_mode`, since
+0.2), `"camera_switch"`, or any other reason (unknown reasons are only informative). A new
+`STREAM_CONFIG` restarts it, with the same or a new camera and size: the host resets its decoder.
 
 = Control messages <control>
 
@@ -357,7 +360,7 @@ The stream stops while the session stays open (switching camera, pausing):
   [`failed`], [attempted and failed; see `message`],
 )
 
-Commands handled by the *camera* (none is handled by the host in 0.1):
+Commands handled by the *camera* (none is handled by the host):
 
 #table(
   columns: (auto, 1fr, auto),
@@ -365,7 +368,7 @@ Commands handled by the *camera* (none is handled by the host in 0.1):
   [`request_keyframe`], [—], [0.1],
   [`set_bitrate`], [`{"bitrate": int}`], [0.1],
   [`get_capabilities`], [— → `result` = capabilities (@capabilities)], [0.1],
-  [`set_mode`], [`{"camera", "width", "height", "fps", "path"?}`], [reserved],
+  [`set_mode`], [`{"camera", "width", "height", "fps", "path"?}`: one of the modes of the capabilities (@set-mode)], [0.2],
   [`select_camera`], [`{"camera": id}`], [reserved],
   [`set_zoom`], [`{"ratio": float}`], [reserved],
   [`focus`], [`{"mode", "x"?, "y"?, "distance"?}`; `mode` is `auto`, `continuous` or `manual`; x and y in 0..1 of the image], [reserved],
@@ -374,6 +377,31 @@ Commands handled by the *camera* (none is handled by the host in 0.1):
   [`lock`], [`{"ae": bool?, "awb": bool?}`], [reserved],
   [`set_white_balance`], [`{"mode"}`: `auto`, `daylight`, `cloudy`, `incandescent`, `fluorescent`…], [reserved],
 )
+
+== `set_mode` <set-mode>
+
+Since 0.2, feature `control.mode`. The host asks for one of the modes listed in the capabilities
+(@capabilities): `camera` is a camera `id`; `path` picks between two modes of the same size and rate
+(absent: the first one listed).
+
+```json
+{ "id": 4, "cmd": "set_mode",
+  "args": { "camera": "0", "width": 1920, "height": 1080, "fps": 60, "path": "unlisted" } }
+```
+
+The camera:
++ stops its current camera and encoder and sends `STREAM_END {"reason": "mode_change"}` after the last
+  frame of the old stream;
++ opens the requested camera and mode, then answers `ok` once the camera streams; the new
+  `STREAM_CONFIG` and its first keyframe follow (the response and the `STREAM_CONFIG` may come in either
+  order);
++ does not answer `PING`s from the `STREAM_END` until the first frame of the new stream: the encoder may
+  time it with another clock (@clock). The host drops its clock offsets on every `STREAM_CONFIG`.
+
+Errors: `unsupported` (not in the capabilities), `invalid_args`, `busy` (the camera is still starting
+or already changing mode: try again a moment later), `failed` (the camera refused; it then goes back to
+the previous mode, with a new `STREAM_CONFIG`). Opening a camera takes about a second: the host waits
+longer than the default timeout (15 s).
 
 == `EVENT` (0x42) <event>
 
@@ -434,7 +462,8 @@ $ "rtt" = (t_4 - t_1) - (t_3 - t_2) quad quad "offset" = ((t_2 - t_1) + (t_3 - t
 
 - The host keeps the offset with the lowest `rtt` over the last few seconds and computes the
   *capture-to-display latency* of each frame as $"display_time" - ("frame.timestamp" - "offset")$, with
-  `offset` measured by the host's own `PING`s (camera clock minus host clock).
+  `offset` measured by the host's own `PING`s (camera clock minus host clock). It starts over at every
+  `STREAM_CONFIG`: a new stream may use another clock (@set-mode).
 - The camera MUST answer `PING`s with the clock of its frame timestamps. On Android the timestamps of
   the *encoder* output count either in `CLOCK_MONOTONIC` or in `CLOCK_BOOTTIME`, and neither
   `SENSOR_INFO_TIMESTAMP_SOURCE` nor `SENSOR_TIMESTAMP` tells which (the camera service may convert boot
@@ -460,13 +489,14 @@ $ "rtt" = (t_4 - t_1) - (t_3 - t_2) quad quad "offset" = ((t_2 - t_1) + (t_3 - t
 *Threat model:* an attacker on the same network (flat-share, school or office Wi-Fi) who tries to watch
 the stream, *inject images into the user's virtual camera*, or crash the host.
 
-Rules in 0.1:
+Rules until pairing exists (0.1, 0.2):
 - A host MUST accept connections *only from loopback* (`127.0.0.1`, `::1`: USB via ADB) unless the user
   explicitly allows unencrypted network connections (`--insecure-lan`), in which case it shows a warning
   for the whole session.
 - Over USB tethering, the link is a real network: same rule as Wi-Fi.
 
-From 0.2 (Wi-Fi), a *secure channel* is established below the preamble on every non-loopback connection:
+Once pairing exists (planned for 0.3, issue \#5), a *secure channel* is established below the preamble
+on every non-loopback connection:
 - mutual authentication with long-term keys exchanged once at *pairing* (QR code shown by the host,
   scanned by the phone, containing the host key, its addresses and a one-time token);
 - encryption with forward secrecy. The candidates are a Noise handshake
@@ -514,7 +544,8 @@ announced and allowed `length`, and SHOULD close the connection on the first mal
   [`stats`], [`stats` events],
   [`control.keyframe`], [`request_keyframe`],
   [`control.bitrate`], [`set_bitrate`],
-  [`control.*`], [reserved for the other commands: `control.mode`, `control.camera`, `control.zoom`, `control.focus`, `control.exposure`, `control.torch`, `control.lock`, `control.white_balance`],
+  [`control.mode`], [`set_mode` (0.2)],
+  [`control.*`], [reserved for the other commands: `control.camera`, `control.zoom`, `control.focus`, `control.exposure`, `control.torch`, `control.lock`, `control.white_balance`],
 )
 
 = Conformance tests <tests>
@@ -550,8 +581,9 @@ USB, Redmi Note 9 Pro, 1080p60 (`→` camera to host, `←` host to camera):
 
 ```
    TCP connect 127.0.0.1:47100 (adb reverse)
-→  OCUL 0.1 camera            ←  OCUL 0.1 host
-→  HELLO {features: [video.h264, clock, orientation, stats, control.keyframe, control.bitrate]}
+→  OCUL 0.2 camera            ←  OCUL 0.2 host
+→  HELLO {features: [video.h264, clock, orientation, stats, control.keyframe, control.bitrate,
+                     control.mode]}
 ←  HELLO {features: [video.h264, clock, orientation, stats]}
 →  STREAM_CONFIG stream=1 {config_id 1, 1920x1080, fps 60, path unlisted, codec_data, camera back/90}
 →  EVENT orientation {device_rotation: 90}
@@ -564,6 +596,12 @@ USB, Redmi Note 9 Pro, 1080p60 (`→` camera to host, `←` host to camera):
 →  RESPONSE {id: 1, ok: true}
 →  VIDEO_FRAME stream=1 KEY  frame 812, config 1
    …
+←  REQUEST {id: 2, cmd: set_mode, args: {camera: "1", 1280x720, fps 30}}   (oculibre bench)
+→  STREAM_END stream=1 {reason: mode_change}
+→  RESPONSE {id: 2, ok: true}
+→  STREAM_CONFIG stream=1 {config_id 2, 1280x720, fps 30, camera front/270}
+→  VIDEO_FRAME stream=1 KEY  frame 1650, config 2
+   …
 →  BYE {reason: user_stop}
    TCP close
 ```
@@ -573,6 +611,9 @@ USB, Redmi Note 9 Pro, 1080p60 (`→` camera to host, `←` host to camera):
 #table(
   columns: (auto, 1fr),
   table.header([Version], [Changes]),
+  [0.2], [`set_mode` command and feature `control.mode` (the host picks the camera and the mode;
+    used by `oculibre bench`), `STREAM_END` reason `mode_change`, capabilities list every camera. A
+    0.1 peer still works, without `set_mode`. Encryption moves to the version that adds pairing.],
   [0.1], [First implemented version: preamble, header, `HELLO`, `BYE`, `PING`/`PONG`, `STREAM_CONFIG`, `VIDEO_FRAME`, `STREAM_END`, `REQUEST`/`RESPONSE`/`EVENT`, orientation hints, stats, loopback-only plaintext.],
   [0 (draft)], [Initial sketch (CBOR control, phone-only client, Noise IK). Superseded.],
 )

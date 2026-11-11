@@ -6,14 +6,14 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * Oculibre wire protocol 0.1, camera side. The specification is docs/protocol.typ; the host side
+ * Oculibre wire protocol 0.2, camera side. The specification is docs/protocol.typ; the host side
  * is the Rust crate desktop/protocol. Both pass the shared vectors of tests/protocol/vectors.
  *
  * Pure Kotlin/JVM: no Android class here, so the unit tests run on the build machine.
  */
 object Protocol {
     const val MAJOR = 0
-    const val MINOR = 1
+    const val MINOR = 2
     const val HOST_PORT = 47100
 
     const val PREAMBLE_LEN = 8
@@ -64,6 +64,8 @@ object Protocol {
         const val STATS = "stats"
         const val CONTROL_KEYFRAME = "control.keyframe"
         const val CONTROL_BITRATE = "control.bitrate"
+        /** set_mode (since 0.2). */
+        const val CONTROL_MODE = "control.mode"
     }
 
     object ErrorCode {

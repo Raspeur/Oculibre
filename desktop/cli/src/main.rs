@@ -1,9 +1,10 @@
 //! `oculibre` — desktop receiver (Linux).
 //!
-//! Waits for the phone, speaks the Oculibre protocol 0.1 with it (`docs/protocol.typ`), decodes
+//! Waits for the phone, speaks the Oculibre protocol 0.2 with it (`docs/protocol.typ`), decodes
 //! the H.264 video with OpenH264 and writes the frames to a v4l2loopback device, so the phone
-//! shows up as a regular webcam.
+//! shows up as a regular webcam. `oculibre bench` measures every camera × mode of the phone.
 
+mod bench;
 mod session;
 mod v4l2;
 mod yuv;
@@ -13,6 +14,7 @@ use std::fs;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 use openh264::decoder::DecodedYUV;
 use openh264::formats::YUVSource;
@@ -22,6 +24,7 @@ Oculibre — use your Android phone as a webcam (Linux receiver)
 
 USAGE:
     oculibre [OPTIONS]
+    oculibre bench [OPTIONS] [BENCH OPTIONS]
 
 OPTIONS:
     -p, --port <PORT>       TCP port to listen on [default: 47100]
@@ -37,6 +40,13 @@ OPTIONS:
                             a portrait picture then gets black bars on the sides)
     -h, --help              Show this help
 
+BENCH: walks every camera and quality of the phone, measures frame rate, latency, bitrate
+and dropped frames, prints a table and writes it into devices/<brand>/<model>/report.md.
+        --seconds <N>       Seconds measured per mode [default: 10]
+        --warmup <N>        Seconds left out after each switch [default: 3]
+        --report <PATH>     Report to update [default: the phone's report in devices/]
+        --no-report         Only print the results
+
 Several phones plugged in? Choose one with ANDROID_SERIAL=<serial> oculibre
 ";
 
@@ -47,6 +57,10 @@ struct Args {
     insecure_lan: bool,
     view: session::View,
     portrait: bool,
+    /// `oculibre bench`.
+    bench: Option<bench::Settings>,
+    report: Option<PathBuf>,
+    write_report: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -57,10 +71,42 @@ fn parse_args() -> Result<Args, String> {
         insecure_lan: false,
         view: session::View::default(),
         portrait: false,
+        bench: None,
+        report: None,
+        write_report: true,
     };
-    let mut it = std::env::args().skip(1);
+    let mut settings = bench::Settings::default();
+    let mut bench_only = Vec::new();
+    let mut it = std::env::args().skip(1).peekable();
+    if it.peek().map(String::as_str) == Some("bench") {
+        it.next();
+        args.bench = Some(settings);
+    }
+    let seconds = |v: Option<String>, name: &str| -> Result<u32, String> {
+        let v = v.ok_or(format!("{name} needs a value"))?;
+        v.parse()
+            .ok()
+            .filter(|&n| n <= 600)
+            .ok_or(format!("invalid {name}: {v}"))
+    };
     while let Some(arg) = it.next() {
         match arg.as_str() {
+            "--seconds" => {
+                settings.seconds = seconds(it.next(), "--seconds")?.max(1);
+                bench_only.push(arg);
+            }
+            "--warmup" => {
+                settings.warmup = seconds(it.next(), "--warmup")?.max(1);
+                bench_only.push(arg);
+            }
+            "--report" => {
+                args.report = Some(it.next().ok_or("--report needs a value")?.into());
+                bench_only.push(arg);
+            }
+            "--no-report" => {
+                args.write_report = false;
+                bench_only.push(arg);
+            }
             "-p" | "--port" => {
                 let v = it.next().ok_or("--port needs a value")?;
                 args.port = v.parse().map_err(|_| format!("invalid port: {v}"))?;
@@ -87,6 +133,11 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown option: {other}\n\n{USAGE}")),
         }
     }
+    match (&mut args.bench, bench_only.first()) {
+        (Some(b), _) => *b = settings,
+        (None, Some(option)) => return Err(format!("{option} only works with `oculibre bench`")),
+        (None, None) => {}
+    }
     Ok(args)
 }
 
@@ -100,7 +151,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn Error>> {
     let args = parse_args()?;
 
-    let device_path = match args.device {
+    let device_path = match args.device.clone() {
         Some(d) => d,
         None => v4l2::find_loopback()?,
     };
@@ -133,6 +184,10 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     let hello = session::host_hello(host_id(), host_name(), os_version());
 
+    if let Some(settings) = args.bench {
+        return run_bench(&listener, &args, settings, &hello, &device_path);
+    }
+
     for conn in listener.incoming() {
         let stream = match conn {
             Ok(s) => s,
@@ -150,15 +205,125 @@ fn run() -> Result<(), Box<dyn Error>> {
             continue;
         }
         println!("Phone connected ({peer})");
-        let mut sink = VirtualCamera::new(&device_path, args.portrait);
+        let mut sink = VirtualCamera::new(&device_path, args.portrait, true);
         match session::run(stream, &hello, args.view, &mut sink, false) {
             Ok(session::End::Bye { reason, message }) => println!(
                 "\nPhone stopped ({reason}{}) — waiting for it…",
                 message.map(|m| format!(": {m}")).unwrap_or_default()
             ),
-            Ok(session::End::Closed) => println!("\nPhone disconnected — waiting for it…"),
+            Ok(session::End::Closed | session::End::Finished) => {
+                println!("\nPhone disconnected — waiting for it…")
+            }
             Err(e) => eprintln!("\nConnection ended: {e} — waiting for the phone…"),
         }
+    }
+    Ok(())
+}
+
+/// `oculibre bench`: waits for one phone, drives it through every mode, writes the report.
+fn run_bench(
+    listener: &TcpListener,
+    args: &Args,
+    settings: bench::Settings,
+    hello: &oculibre_protocol::Hello,
+    device_path: &Path,
+) -> Result<(), Box<dyn Error>> {
+    println!("Bench: start the Oculibre app on the phone and press Start (any quality).");
+    let (stream, peer) = loop {
+        let (stream, peer) = listener.accept()?;
+        if peer.ip().is_loopback() || args.insecure_lan {
+            break (stream, peer);
+        }
+        eprintln!(
+            "Refused a connection from {peer}: only USB (adb) is allowed without --insecure-lan"
+        );
+    };
+    let link = if peer.ip().is_loopback() {
+        bench::Link::Usb
+    } else {
+        bench::Link::Wifi
+    };
+    let mut sink = VirtualCamera::new(device_path, args.portrait, false);
+    let outcome = Mutex::new(None);
+    let driver: session::Driver<'_> = Box::new(|control: session::Control| {
+        let d = control.phone.device.clone().unwrap_or_default();
+        println!(
+            "Phone: {} {} (Android {}, {} {}) over {}",
+            d.manufacturer.unwrap_or_default(),
+            d.model.unwrap_or_default(),
+            d.os_version.unwrap_or_default(),
+            control.phone.app,
+            control.phone.app_version,
+            match link {
+                bench::Link::Usb => "USB",
+                bench::Link::Wifi => "Wi-Fi",
+            }
+        );
+        let result = bench::run(&control, settings);
+        control.finish("bench finished");
+        *outcome.lock().unwrap() = Some(result);
+    });
+    let end = session::run_driven(stream, hello, args.view, &mut sink, true, Some(driver));
+
+    let outcome = match outcome.into_inner().unwrap() {
+        Some(Ok(o)) => o,
+        Some(Err(e)) => return Err(e.into()),
+        None => {
+            return Err(match end {
+                Err(e) => format!("the session ended before the bench could start: {e}"),
+                Ok(end) => format!("the phone left before the bench could start ({end:?})"),
+            }
+            .into())
+        }
+    };
+    if let Err(e) = end {
+        eprintln!("Connection: {e}");
+    }
+    println!("\n{}", bench::table(&outcome.rows));
+    if outcome.rows.iter().all(|r| r.result.is_err()) {
+        return Err("no mode could be measured: nothing written".into());
+    }
+    if !args.write_report {
+        return Ok(());
+    }
+
+    let model = outcome
+        .phone
+        .device
+        .as_ref()
+        .and_then(|d| d.model.clone())
+        .unwrap_or_default();
+    let devices = bench::devices_dir();
+    let path = match (&args.report, &devices) {
+        (Some(p), _) => p.clone(),
+        (None, Some(devices)) => match bench::find_report(devices, &model) {
+            Some(p) => p,
+            None => {
+                let p = PathBuf::from(format!("oculibre-bench-{}.md", bench::slugify(&model)));
+                println!(
+                    "No report in {} names the model \"{model}\": run \
+                     `python3 scripts/device-report.py` (it creates the phone's folder), then the \
+                     bench again. Results saved to {} for now.",
+                    devices.display(),
+                    p.display()
+                );
+                p
+            }
+        },
+        (None, None) => PathBuf::from(format!("oculibre-bench-{}.md", bench::slugify(&model))),
+    };
+    let ctx = bench::Context {
+        link,
+        date: bench::today(),
+        host_os: std::env::consts::OS,
+        settings,
+    };
+    let old = fs::read_to_string(&path).unwrap_or_default();
+    let new = bench::update_report(&old, &bench::section(&outcome, &ctx), link);
+    fs::write(&path, new).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    println!("Results written to {}", path.display());
+    if path.starts_with(devices.unwrap_or_default()) {
+        println!("Check it, then open a pull request (or attach it to a device report issue).");
     }
     Ok(())
 }
@@ -171,6 +336,8 @@ fn run() -> Result<(), Box<dyn Error>> {
 struct VirtualCamera<'a> {
     path: &'a Path,
     portrait: bool,
+    /// Say when the device is (re)opened.
+    verbose: bool,
     device: Option<v4l2::OutputDevice>,
     /// Size asked for when the device was opened.
     requested: (usize, usize),
@@ -178,10 +345,11 @@ struct VirtualCamera<'a> {
 }
 
 impl<'a> VirtualCamera<'a> {
-    fn new(path: &'a Path, portrait: bool) -> Self {
+    fn new(path: &'a Path, portrait: bool, verbose: bool) -> Self {
         Self {
             path,
             portrait,
+            verbose,
             device: None,
             requested: (0, 0),
             frame: Vec::new(),
@@ -212,8 +380,10 @@ impl session::Sink for VirtualCamera<'_> {
                 self.requested = (w, h);
                 let (cw, ch) = d.size();
                 if (cw, ch) == (w, h) {
-                    println!("Virtual camera set to {cw}x{ch}");
-                } else {
+                    if self.verbose {
+                        println!("Virtual camera set to {cw}x{ch}");
+                    }
+                } else if self.verbose {
                     println!(
                         "Virtual camera is locked at {cw}x{ch} by an app that has it open \
                          (OBS, ffplay, a browser tab…): fitting the picture into it.\n\

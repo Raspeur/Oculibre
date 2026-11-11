@@ -1,16 +1,19 @@
-//! One camera session on the host side of the Oculibre protocol 0.1 (`docs/protocol.typ`).
+//! One camera session on the host side of the Oculibre protocol 0.2 (`docs/protocol.typ`).
 //!
 //! - Main thread: reads messages, decodes video, hands pictures to a [`Sink`].
 //! - Ticker thread: every second, a `PING` (keep-alive + clock), the host `stats` event and the
 //!   status line.
+//! - Optional driver thread ([`run_driven`]): sends commands to the phone through a [`Control`]
+//!   and reads the per-second measurements (`oculibre bench`).
 //!
 //! Nothing here touches v4l2, so the tests drive it with a simulated phone over a real socket.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::io::{self, Write};
 use std::net::{Shutdown, TcpStream};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -19,7 +22,7 @@ use oculibre_protocol::clock::{self, ClockSync};
 use oculibre_protocol::orientation::auto_rotation;
 use oculibre_protocol::{
     bye_reasons, error_codes, features, streams, write_message, Bye, Event, Hello, Message,
-    MessageReader, Preamble, Request, Response, Role,
+    MessageReader, Preamble, Request, Response, Role, StreamConfig,
 };
 use openh264::decoder::{DecodedYUV, Decoder};
 use serde_json::{json, Value};
@@ -106,6 +109,8 @@ pub enum End {
     },
     /// The phone closed the connection without `BYE`.
     Closed,
+    /// We ended the session on purpose ([`Control::finish`]).
+    Finished,
 }
 
 /// Latency of the frames shown during the last second, µs.
@@ -137,6 +142,15 @@ struct Shared {
     phone_stats: Mutex<Option<Value>>,
     stats_enabled: AtomicBool,
     quiet: bool,
+    /// Our requests waiting for their `RESPONSE`, by id.
+    pending: Mutex<HashMap<u32, mpsc::Sender<Response>>>,
+    /// Number of video `STREAM_CONFIG` received so far, and the last one.
+    stream_seq: AtomicU64,
+    stream: Mutex<Option<StreamConfig>>,
+    /// Where the ticker sends each [`Second`] (only with a driver).
+    seconds: Mutex<Option<mpsc::Sender<Second>>>,
+    /// We are closing the session ourselves: a read error is the expected end.
+    finished: AtomicBool,
 }
 
 impl Shared {
@@ -159,6 +173,97 @@ impl Shared {
         Ok(id)
     }
 }
+
+/// What the host measured during one second (ticker period), for a [`Control`] driver.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Second {
+    /// [`Control::stream_seq`] at the end of this second.
+    pub stream_seq: u64,
+    pub shown_fps: f64,
+    /// Last `camera_fps` reported by the phone.
+    pub camera_fps: Option<f64>,
+    pub mbits: f64,
+    /// Capture → virtual camera, µs, over the frames shown during this second.
+    pub latency_sum_us: i64,
+    pub latency_max_us: i64,
+    pub latency_count: u32,
+    /// Received → virtual camera, µs (same frames).
+    pub pc_sum_us: i64,
+    /// Capture → network on the phone (its last `stats`), ms.
+    pub phone_latency_ms: Option<f64>,
+    pub rtt_ms: Option<f64>,
+    /// Totals since the start of the session.
+    pub dropped_total: Option<u64>,
+    pub errors_total: u32,
+}
+
+/// The driver's handle on a running session (see [`run_driven`]).
+pub struct Control {
+    shared: Arc<Shared>,
+    seconds: mpsc::Receiver<Second>,
+    /// The phone's `HELLO`.
+    pub phone: Hello,
+}
+
+impl Control {
+    /// Sends a `REQUEST` and waits for its `RESPONSE` (§9.1).
+    pub fn call(&self, cmd: &str, args: Value, timeout: Duration) -> Result<Response, String> {
+        let id = self.shared.next_id.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = mpsc::channel();
+        self.shared.pending.lock().unwrap().insert(id, tx);
+        let request = Message::Request(Request {
+            id,
+            cmd: cmd.into(),
+            args,
+        });
+        if let Err(e) = self.shared.send(&request) {
+            self.shared.pending.lock().unwrap().remove(&id);
+            return Err(format!("cannot send {cmd}: {e}"));
+        }
+        match rx.recv_timeout(timeout) {
+            Ok(response) => Ok(response),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                self.shared.pending.lock().unwrap().remove(&id);
+                Err(format!(
+                    "the phone did not answer {cmd} within {} s",
+                    timeout.as_secs()
+                ))
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err("the session ended".into()),
+        }
+    }
+
+    /// Increases by one at every video `STREAM_CONFIG` (a new stream, e.g. after `set_mode`).
+    pub fn stream_seq(&self) -> u64 {
+        self.shared.stream_seq.load(Ordering::Relaxed)
+    }
+
+    /// The last video `STREAM_CONFIG`.
+    pub fn stream(&self) -> Option<StreamConfig> {
+        self.shared.stream.lock().unwrap().clone()
+    }
+
+    /// Waits for the next second of measurements; `None` once the session is over.
+    pub fn next_second(&self) -> Option<Second> {
+        self.seconds.recv().ok()
+    }
+
+    /// Says goodbye (`BYE user_stop`) and ends the session: [`run_driven`] returns
+    /// [`End::Finished`].
+    pub fn finish(&self, message: &str) {
+        self.shared.finished.store(true, Ordering::Relaxed);
+        let _ = self.shared.send(&Message::Bye(Bye {
+            reason: bye_reasons::USER_STOP.into(),
+            message: Some(message.into()),
+        }));
+        if let Ok(w) = self.shared.writer.lock() {
+            let _ = w.shutdown(Shutdown::Both);
+        }
+    }
+}
+
+/// Code that drives a session from its own thread (see [`run_driven`]).
+pub type Driver<'a> = Box<dyn FnOnce(Control) + Send + 'a>;
 
 /// Our `HELLO`.
 pub fn host_hello(id: String, name: String, os_version: Option<String>) -> Hello {
@@ -185,6 +290,20 @@ pub fn run(
     sink: &mut dyn Sink,
     quiet: bool,
 ) -> Result<End, Box<dyn Error>> {
+    run_driven(stream, hello, view, sink, quiet, None)
+}
+
+/// [`run`], plus a `driver` started on its own thread once the phone's `HELLO` is in. The session
+/// ends when the phone leaves or when the driver calls [`Control::finish`]; the driver is always
+/// finished when this returns.
+pub fn run_driven(
+    stream: TcpStream,
+    hello: &Hello,
+    view: View,
+    sink: &mut dyn Sink,
+    quiet: bool,
+    driver: Option<Driver<'_>>,
+) -> Result<End, Box<dyn Error>> {
     stream.set_nodelay(true)?;
     stream.set_read_timeout(Some(SILENCE))?;
     let shared = Arc::new(Shared {
@@ -201,6 +320,11 @@ pub fn run(
         phone_stats: Mutex::new(None),
         stats_enabled: AtomicBool::new(false),
         quiet,
+        pending: Mutex::new(HashMap::new()),
+        stream_seq: AtomicU64::new(0),
+        stream: Mutex::new(None),
+        seconds: Mutex::new(None),
+        finished: AtomicBool::new(false),
     });
     let mut reader = MessageReader::new(io::BufReader::with_capacity(
         256 * 1024,
@@ -273,6 +397,16 @@ pub fn run(
         );
     }
 
+    let control = driver.is_some().then(|| {
+        let (tx, rx) = mpsc::channel();
+        *shared.seconds.lock().unwrap() = Some(tx);
+        Control {
+            shared: Arc::clone(&shared),
+            seconds: rx,
+            phone: phone.clone(),
+        }
+    });
+
     let ticker = {
         let shared = Arc::clone(&shared);
         thread::Builder::new()
@@ -280,7 +414,18 @@ pub fn run(
             .spawn(move || ticker(&shared))?
     };
 
-    let result = receive(&mut reader, &shared, view, sink, clock_enabled);
+    let result = thread::scope(|scope| {
+        if let (Some(driver), Some(control)) = (driver, control) {
+            thread::Builder::new()
+                .name("oculibre-driver".into())
+                .spawn_scoped(scope, move || driver(control))?;
+        }
+        let result = receive(&mut reader, &shared, view, sink, clock_enabled);
+        // Unblock the driver before the scope waits for it: no more responses or seconds.
+        shared.stop.store(true, Ordering::Relaxed);
+        shared.pending.lock().unwrap().clear();
+        result
+    });
 
     // Polite goodbye on our own errors; the phone may already be gone.
     if let Err(e) = &result {
@@ -329,6 +474,7 @@ fn receive(
     loop {
         let message = match reader.read_message() {
             Ok(m) => m,
+            Err(_) if shared.finished.load(Ordering::Relaxed) => return Ok(End::Finished),
             Err(e) if e.kind() == "connection_closed" => return Ok(End::Closed),
             Err(oculibre_protocol::Error::Io(e))
                 if matches!(
@@ -362,16 +508,31 @@ fn receive(
                         config.path.as_deref().unwrap_or("normal"),
                     );
                 }
+                // A new stream may have another size or camera: start from a clean decoder.
+                decoder = Decoder::new()?;
                 if !codec_data.is_empty() {
                     // SPS + PPS: no picture expected; errors show up on the next frame anyway.
                     let _ = decoder.decode(&codec_data);
                 }
+                // The phone may now time its frames with another clock (it does not answer PINGs
+                // until it knows): forget the previous offsets.
+                *shared.clock.lock().unwrap() = ClockSync::default();
                 if let Some(c) = &config.camera {
                     orientation.sensor = c.sensor_orientation % 360;
                     orientation.front = c.facing == "front";
                 }
                 transform = orientation.transform(view);
                 config_id = Some(config.config_id);
+                need_key = true;
+                *shared.stream.lock().unwrap() = Some(config);
+                shared.stream_seq.fetch_add(1, Ordering::Relaxed);
+            }
+            Message::StreamEnd { stream, end } if stream == streams::VIDEO => {
+                // The phone stops this stream (e.g. to change mode); a new STREAM_CONFIG follows.
+                if !shared.quiet {
+                    println!("\nStream paused ({})", end.reason);
+                }
+                config_id = None;
                 need_key = true;
             }
             Message::VideoFrame(frame) if frame.stream == streams::VIDEO => {
@@ -450,7 +611,10 @@ fn receive(
                 )))?;
             }
             Message::Response(r) => {
-                if !r.ok && !shared.quiet {
+                let waiting = shared.pending.lock().unwrap().remove(&r.id);
+                if let Some(tx) = waiting {
+                    let _ = tx.send(r);
+                } else if !r.ok && !shared.quiet {
                     let e = r.error.unwrap_or_default();
                     eprintln!(
                         "\nphone refused request {}: {} {}",
@@ -466,7 +630,7 @@ fn receive(
                     message: b.message,
                 })
             }
-            // A second HELLO, other streams, STREAM_END, unknown types: nothing to do yet.
+            // A second HELLO, other streams, unknown types: nothing to do yet.
             _ => {}
         }
     }
@@ -635,6 +799,8 @@ impl Totals {
 
 /// Every second: PING, host stats, status line. Stops when the session ends or a write fails.
 fn ticker(shared: &Shared) -> Totals {
+    // Owned here: the driver's `next_second` returns `None` once the ticker is gone.
+    let seconds = shared.seconds.lock().unwrap().take();
     let mut totals = Totals::default();
     let mut seq = 0u32;
     let mut last = Instant::now();
@@ -696,25 +862,43 @@ fn ticker(shared: &Shared) -> Totals {
             return totals;
         }
 
+        let phone = shared
+            .phone_stats
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_default();
+        totals.dropped = phone.get("dropped").and_then(Value::as_u64);
+        let mbits = bytes as f64 * 8.0 / secs / 1e6;
+        if let Some(tx) = &seconds {
+            let _ = tx.send(Second {
+                stream_seq: shared.stream_seq.load(Ordering::Relaxed),
+                shown_fps: decoded as f64 / secs,
+                camera_fps: phone.get("camera_fps").and_then(Value::as_f64),
+                mbits,
+                latency_sum_us: latency.total_sum,
+                latency_max_us: latency.total_max,
+                latency_count: latency.count,
+                pc_sum_us: latency.pc_sum,
+                phone_latency_ms: phone.get("latency_ms").and_then(Value::as_f64),
+                rtt_ms,
+                dropped_total: totals.dropped,
+                errors_total: errors,
+            });
+        }
+
         if !shared.quiet {
-            let phone = shared
-                .phone_stats
-                .lock()
-                .unwrap()
-                .clone()
-                .unwrap_or_default();
-            totals.dropped = phone.get("dropped").and_then(Value::as_u64);
             let status = Status {
                 shown_fps: decoded as f64 / secs,
                 camera_fps: phone.get("camera_fps").and_then(Value::as_u64),
-                mbits: bytes as f64 * 8.0 / secs / 1e6,
+                mbits,
                 latency: latency_ms,
                 latency_max: latency_ms.map(|_| latency.total_max as f64 / 1000.0),
                 latency_avg: totals.rolling_ms(),
                 phone: phone.get("latency_ms").and_then(Value::as_f64),
                 pc: avg_ms(latency.pc_sum),
                 rtt: rtt_ms,
-                dropped: phone.get("dropped").and_then(Value::as_u64),
+                dropped: totals.dropped,
                 errors,
                 clock_mismatch: latency.rejected > 0,
             };

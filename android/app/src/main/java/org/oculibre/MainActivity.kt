@@ -124,7 +124,7 @@ class MainActivity : Activity() {
 
     private fun showCapabilities(caps: DeviceCapabilities) {
         capabilities = caps
-        supportedModes = caps.modes.filter { it.supported }
+        supportedModes = caps.main.modes.filter { it.supported }
 
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, supportedModes.map { it.label })
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
@@ -136,10 +136,15 @@ class MainActivity : Activity() {
             ?: supportedModes.indexOfFirst { it.id == Capabilities.DEFAULT_MODE_ID }.coerceAtLeast(0)
         if (supportedModes.isNotEmpty()) qualitySpinner.setSelection(index)
 
-        val unsupported = caps.modes.filter { !it.supported }
+        val unsupported = caps.main.modes.filter { !it.supported }
         deviceInfo.text = buildString {
             append("${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
-            append("Camera ${caps.cameraId} · encoder ${caps.encoderName ?: "default"}\n")
+            append("Camera ${caps.main.id} (${caps.main.facing}) · encoder ${caps.encoderName ?: "default"}\n")
+            if (caps.cameras.size > 1) {
+                append("Other cameras (used by the PC's bench): ")
+                append(caps.cameras.drop(1).joinToString { "${it.id} (${it.facing})" })
+                append("\n")
+            }
             val unlisted = supportedModes.filter { it.unlisted }
             if (unlisted.isNotEmpty()) {
                 append("\nNot officially listed (the real rate is checked while streaming):\n")
@@ -248,7 +253,7 @@ class MainActivity : Activity() {
         val host = hostInput.text.toString().trim().ifEmpty { DEFAULT_HOST }
         prefs.edit().putString(PREF_HOST, host).putString(PREF_MODE, support.id).apply()
 
-        StreamService.start(this, host, PORT, StreamConfig.from(support, caps))
+        StreamService.start(this, host, PORT, StreamConfig.from(support, caps.main, caps))
 
         // First start only: ask for the battery exemption right away (the warning button stays
         // visible afterwards until it is granted).

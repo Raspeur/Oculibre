@@ -4,8 +4,8 @@ Rust workspace.
 
 | Crate | State |
 |---|---|
-| `cli` → binary `oculibre` | **Works on Linux**: protocol 0.1 session → H.264 decode (OpenH264) → v4l2loopback |
-| `protocol` | **Protocol v0.1** ([`docs/protocol.typ`](../docs/protocol.typ)): preamble, header, messages, reader with the §14 limits, clock sync, `auto` rotation. Shared test vectors in [`tests/protocol/vectors`](../tests/protocol/vectors), fuzz target in `protocol/fuzz` |
+| `cli` → binary `oculibre` | **Works on Linux**: protocol 0.2 session → H.264 decode (OpenH264) → v4l2loopback; `oculibre bench` |
+| `protocol` | **Protocol v0.2** ([`docs/protocol.typ`](../docs/protocol.typ)): preamble, header, messages, reader with the §14 limits, clock sync, `auto` rotation. Shared test vectors in [`tests/protocol/vectors`](../tests/protocol/vectors), fuzz target in `protocol/fuzz` |
 | `core`, `app-tauri` | Planned |
 
 No system library needed: OpenH264 (BSD-2-Clause) is compiled from source by Cargo
@@ -34,6 +34,19 @@ in Firefox, Chrome, Discord, Zoom, OBS… (it shows up once the first frame has 
 - An app that has the virtual camera open (OBS, ffplay, a browser tab) locks its size: close it
   before changing the quality on the phone.
 - `cargo run --release -- --help` for all options.
+
+## Measure a phone (`oculibre bench`)
+
+```sh
+cargo run --release -- bench     # then Start in the app (any quality)
+```
+
+The PC switches the phone through every camera and quality it offers (about 15 s each), measures the
+real frame rate, the latency (phone + network + PC), the bitrate and the dropped frames, prints a table
+and writes it into `devices/<brand>/<model>/report.md` (found through its "Model" line; run
+`python3 scripts/device-report.py` first for a new phone). USB and Wi-Fi (`--insecure-lan`) results get
+their own section, replaced at each run. `--seconds`, `--warmup`, `--report <path>`, `--no-report`.
+Needs app 0.2 or newer.
 
 ## Develop
 

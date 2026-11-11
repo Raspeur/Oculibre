@@ -19,7 +19,10 @@ devices/<brand>/<model>/
    # or, if the folder name is not the marketing name:
    python3 scripts/device-report.py --name "Galaxy S23 Ultra"
    ```
-3. Open `report.md`, fill in the **Oculibre results** section if you tested the app.
+3. Measure Oculibre on it, automatically: load the virtual camera (`bash scripts/vcam-load.sh`), run
+   `cargo run --release -- bench` in `desktop/`, then press **Start** in the app. The PC goes through
+   every camera and quality (a few minutes; keep the phone still, facing something lit) and writes the
+   results into `report.md`. Nothing to copy by hand.
 4. Open a pull request (or attach both files to a
    [device report issue](../.github/ISSUE_TEMPLATE/device_report.md)).
 

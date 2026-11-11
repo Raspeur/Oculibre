@@ -63,7 +63,7 @@ PC                   [secure channel] ◄───┘
   columns: (auto, auto, 1fr),
   table.header([Mode], [Phase], [Notes]),
   [USB via ADB (`adb reverse`)], [1], [Simplest; requires developer mode],
-  [Wi-Fi (TCP)], [1 / 2], [Loopback-only plaintext in protocol 0.1; encrypted from 0.2],
+  [Wi-Fi (TCP)], [1 / 2], [Loopback-only plaintext in protocol 0.1–0.2; encrypted once pairing exists (\#5)],
   [USB tethering (RNDIS)], [4], [No developer mode; a real network, so encrypted],
   [SRT / QUIC], [later], [Only if TCP jitter on Wi-Fi is a real problem],
 )

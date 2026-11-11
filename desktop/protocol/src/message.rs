@@ -1,4 +1,4 @@
-//! Messages of protocol 0.1 (§7–§9).
+//! Messages of protocol 0.2 (§7–§9).
 //!
 //! JSON payloads use serde with `#[serde(default)]`: unknown keys are ignored and missing optional
 //! keys take their documented default, as §6 requires.
@@ -61,6 +61,74 @@ pub struct Bye {
     pub reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+/// Capabilities catalogue (§7.4): `HELLO.capabilities` and the result of `get_capabilities`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Capabilities {
+    pub cameras: Vec<CameraCapabilities>,
+    pub codecs: Vec<String>,
+}
+
+impl Capabilities {
+    /// Reads the raw JSON of `HELLO.capabilities` or of a `get_capabilities` result.
+    pub fn from_value(value: &Value) -> Result<Self, String> {
+        serde_json::from_value(value.clone()).map_err(|e| e.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CameraCapabilities {
+    pub id: String,
+    /// `back`, `front` or `external`.
+    pub facing: String,
+    pub sensor_orientation: u16,
+    pub modes: Vec<ModeCapabilities>,
+    pub controls: Vec<String>,
+}
+
+/// One mode a camera can stream.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModeCapabilities {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    /// `normal`, `unlisted` or `high_speed` (absent: `normal`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capture_fps: Option<u32>,
+}
+
+/// Arguments of the `set_mode` command (§9.1, since 0.2).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SetMode {
+    pub camera: String,
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+impl SetMode {
+    pub fn new(camera: &CameraCapabilities, mode: &ModeCapabilities) -> Self {
+        Self {
+            camera: camera.id.clone(),
+            width: mode.width,
+            height: mode.height,
+            fps: mode.fps,
+            path: mode.path.clone(),
+        }
+    }
+
+    pub fn to_value(&self) -> Value {
+        serde_json::to_value(self).expect("protocol structs always serialise")
+    }
 }
 
 /// `STREAM_CONFIG` (§8.1).
@@ -416,7 +484,7 @@ impl Message {
                     data: payload[VIDEO_SUBHEADER_LEN..].to_vec(),
                 })
             }
-            // Unknown and reserved types (e.g. AUDIO_FRAME in 0.1) are skipped.
+            // Unknown and reserved types (e.g. AUDIO_FRAME) are skipped.
             other => Message::Unknown {
                 msg_type: other,
                 stream: header.stream,
@@ -628,6 +696,25 @@ mod tests {
             Message::decode(&h, &p).unwrap(),
             Message::Ping(Ping { seq: 1, t1: 2 })
         );
+    }
+
+    #[test]
+    fn capabilities_and_set_mode() {
+        let caps = Capabilities::from_value(&json!({
+            "cameras": [{"id": "1", "facing": "front", "sensor_orientation": 270, "modes": [
+                {"width": 1920, "height": 1080, "fps": 60, "path": "high_speed", "capture_fps": 120},
+                {"width": 1280, "height": 720, "fps": 30, "future": true}
+            ]}],
+            "codecs": ["h264"]
+        }))
+        .unwrap();
+        let cam = &caps.cameras[0];
+        assert_eq!(cam.modes[1].path, None);
+        assert_eq!(
+            SetMode::new(cam, &cam.modes[0]).to_value(),
+            json!({"camera": "1", "width": 1920, "height": 1080, "fps": 60, "path": "high_speed"})
+        );
+        assert!(Capabilities::from_value(&json!({"cameras": 3})).is_err());
     }
 
     #[test]

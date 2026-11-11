@@ -100,13 +100,13 @@ pub fn all() -> Vec<Vector> {
     vec![
         Vector {
             name: "preamble_camera",
-            description: "Preamble sent by a camera speaking 0.1",
+            description: "Preamble sent by a camera speaking 0.2",
             bytes: Preamble::new(Role::Camera).encode().to_vec(),
             expect: Expect::Preamble(Preamble::new(Role::Camera)),
         },
         Vector {
             name: "preamble_host",
-            description: "Preamble sent by a host speaking 0.1",
+            description: "Preamble sent by a host speaking 0.2",
             bytes: Preamble::new(Role::Host).encode().to_vec(),
             expect: Expect::Preamble(Preamble::new(Role::Host)),
         },
@@ -240,6 +240,15 @@ pub fn all() -> Vec<Vector> {
                 id: 2,
                 cmd: "set_bitrate".into(),
                 args: json!({"bitrate": 8_000_000}),
+            }),
+        ),
+        msg(
+            "request_set_mode",
+            "REQUEST set_mode: back camera 0, 1080p60 through the unlisted AE range (0.2)",
+            Message::Request(Request {
+                id: 4,
+                cmd: "set_mode".into(),
+                args: json!({"camera": "0", "fps": 60, "height": 1080, "path": "unlisted", "width": 1920}),
             }),
         ),
         msg(

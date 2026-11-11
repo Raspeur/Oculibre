@@ -94,7 +94,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "oculibre-protocol",
@@ -104,7 +104,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "serde",

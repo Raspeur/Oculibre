@@ -1,4 +1,4 @@
-//! Oculibre wire protocol, version 0.1.
+//! Oculibre wire protocol, version 0.2.
 //!
 //! The specification is `docs/protocol.typ`; this crate is its reference implementation on the
 //! host side. Section numbers (§) below refer to that document.
@@ -10,7 +10,7 @@
 //!
 //! - [`Preamble`]: magic, version and role, exchanged once (§4).
 //! - [`Header`]: fixed 16-byte message header (§5).
-//! - [`Message`]: every message type of 0.1 (§7–§9), decoded with [`Message::decode`] and
+//! - [`Message`]: every message type of 0.2 (§7–§9), decoded with [`Message::decode`] and
 //!   encoded with [`Message::encode`].
 //! - [`MessageReader`]: reads a preamble and messages from any [`std::io::Read`], enforcing the
 //!   limits of §14 before allocating anything.
@@ -30,8 +30,9 @@ pub mod vectors;
 pub use error::Error;
 pub use header::{Header, HEADER_LEN};
 pub use message::{
-    Bye, CameraInfo, Color, Device, ErrorBody, Event, Hello, Message, Ping, Pong, Request,
-    Response, StreamConfig, StreamEnd, VideoFrame, VIDEO_SUBHEADER_LEN,
+    Bye, CameraCapabilities, CameraInfo, Capabilities, Color, Device, ErrorBody, Event, Hello,
+    Message, ModeCapabilities, Ping, Pong, Request, Response, SetMode, StreamConfig, StreamEnd,
+    VideoFrame, VIDEO_SUBHEADER_LEN,
 };
 pub use preamble::{Preamble, Role, MAGIC, PREAMBLE_LEN};
 pub use reader::{write_message, MessageReader};
@@ -39,7 +40,7 @@ pub use reader::{write_message, MessageReader};
 /// Protocol major version (§15).
 pub const MAJOR: u8 = 0;
 /// Protocol minor version (§15).
-pub const MINOR: u8 = 1;
+pub const MINOR: u8 = 2;
 
 /// Port a host listens on (§2).
 pub const HOST_PORT: u16 = 47100;
@@ -124,7 +125,7 @@ pub mod streams {
     pub const AUDIO: u8 = 2;
 }
 
-/// Feature names defined in 0.1 (§15).
+/// Feature names (§15).
 pub mod features {
     pub const VIDEO_H264: &str = "video.h264";
     pub const CLOCK: &str = "clock";
@@ -132,6 +133,24 @@ pub mod features {
     pub const STATS: &str = "stats";
     pub const CONTROL_KEYFRAME: &str = "control.keyframe";
     pub const CONTROL_BITRATE: &str = "control.bitrate";
+    /// `set_mode` (since 0.2).
+    pub const CONTROL_MODE: &str = "control.mode";
+}
+
+/// Commands of `REQUEST` (§9.1).
+pub mod commands {
+    pub const REQUEST_KEYFRAME: &str = "request_keyframe";
+    pub const SET_BITRATE: &str = "set_bitrate";
+    pub const GET_CAPABILITIES: &str = "get_capabilities";
+    /// Since 0.2, feature `control.mode`.
+    pub const SET_MODE: &str = "set_mode";
+}
+
+/// `STREAM_END` reasons (§8.3).
+pub mod stream_end_reasons {
+    pub const CAMERA_SWITCH: &str = "camera_switch";
+    /// The camera applies a `set_mode` command (since 0.2).
+    pub const MODE_CHANGE: &str = "mode_change";
 }
 
 /// `BYE` reasons (§7.2).
