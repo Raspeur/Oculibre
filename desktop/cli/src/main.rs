@@ -6,6 +6,7 @@
 //! TLS with pinned keys, for paired phones only. `oculibre bench` measures every camera × mode.
 
 mod bench;
+mod decoder;
 mod discovery;
 mod pairing;
 mod session;
@@ -42,6 +43,9 @@ OPTIONS:
                             auto: upright whatever the way you hold the phone.
                             A number: fixed, the picture never turns.
     -m, --mirror            Flip the picture horizontally (left ↔ right)
+        --decoder <NAME>    auto, vaapi, nvdec, software or openh264 [default: auto]
+                            auto: hardware decoding when the computer can
+                            (VA-API: AMD, Intel; NVDEC: NVIDIA)
         --portrait          Portrait virtual camera (default: landscape, like every webcam;
                             a portrait picture then gets black bars on the sides)
     -h, --help              Show this help
@@ -167,6 +171,13 @@ fn parse_args() -> Result<Args, String> {
             }
             "-m" | "--mirror" => args.view.mirror = true,
             "--portrait" => args.portrait = true,
+            "--decoder" => {
+                let v = it.next().ok_or("--decoder needs a value")?;
+                let choice = decoder::Choice::parse(&v).ok_or(format!(
+                    "invalid decoder: {v} (auto, vaapi, nvdec, software or openh264)"
+                ))?;
+                decoder::set_choice(choice);
+            }
             "-h" | "--help" => {
                 print!("{USAGE}");
                 std::process::exit(0);
@@ -183,6 +194,8 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn main() {
+    // Before any thread exists: it may set environment variables.
+    decoder::prepare_environment();
     if let Err(e) = run() {
         eprintln!("error: {e}");
         std::process::exit(1);

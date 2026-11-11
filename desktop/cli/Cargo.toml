@@ -9,6 +9,12 @@ license.workspace = true
 name = "oculibre"
 path = "src/main.rs"
 
+[features]
+default = ["ffmpeg"]
+# Decoding with FFmpeg (VA-API hardware decoding, fast software decoder). Without it: OpenH264 only.
+# Needs libavcodec-dev, libavutil-dev and libclang-dev to build (#11).
+ffmpeg = ["dep:ffmpeg-sys-next"]
+
 [dependencies]
 oculibre-protocol = { path = "../protocol" }
 serde = { version = "1", features = ["derive"] }
@@ -24,3 +30,4 @@ ring = "0.17"
 qrcode = { version = "0.14", default-features = false }
 # mDNS: the computer announces itself on the network (no async runtime).
 mdns-sd = { version = "0.21", default-features = false }
+ffmpeg-sys-next = { version = "8", optional = true, default-features = false, features = ["avcodec"] }

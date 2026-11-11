@@ -40,20 +40,57 @@ impl Picture {
     /// Copies `src` (any strides) into this picture.
     pub fn copy_from(&mut self, src: &impl YUVSource) {
         let (w, h) = src.dimensions();
-        let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
         let (sy, su, sv) = src.strides();
+        self.copy_i420(w, h, (src.y(), sy), (src.u(), su), (src.v(), sv));
+    }
+
+    /// Copies planar I420 planes given as (data, stride).
+    pub fn copy_i420(
+        &mut self,
+        w: usize,
+        h: usize,
+        y: (&[u8], usize),
+        u: (&[u8], usize),
+        v: (&[u8], usize),
+    ) {
+        let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
         self.w = w;
         self.h = h;
         self.data.clear();
         self.data.reserve(w * h + 2 * cw * ch);
         for r in 0..h {
-            self.data.extend_from_slice(&src.y()[r * sy..r * sy + w]);
+            self.data.extend_from_slice(&y.0[r * y.1..r * y.1 + w]);
         }
         for r in 0..ch {
-            self.data.extend_from_slice(&src.u()[r * su..r * su + cw]);
+            self.data.extend_from_slice(&u.0[r * u.1..r * u.1 + cw]);
         }
         for r in 0..ch {
-            self.data.extend_from_slice(&src.v()[r * sv..r * sv + cw]);
+            self.data.extend_from_slice(&v.0[r * v.1..r * v.1 + cw]);
+        }
+    }
+
+    /// Copies an NV12 picture (luma plane + interleaved UV plane, what hardware decoders output),
+    /// splitting U and V.
+    #[cfg_attr(not(feature = "ffmpeg"), allow(dead_code))]
+    pub fn copy_nv12(&mut self, w: usize, h: usize, y: (&[u8], usize), uv: (&[u8], usize)) {
+        let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
+        self.w = w;
+        self.h = h;
+        let chroma = cw * ch;
+        self.data.clear();
+        self.data.resize(w * h + 2 * chroma, 0);
+        let (luma, rest) = self.data.split_at_mut(w * h);
+        let (u, v) = rest.split_at_mut(chroma);
+        for r in 0..h {
+            luma[r * w..(r + 1) * w].copy_from_slice(&y.0[r * y.1..r * y.1 + w]);
+        }
+        for r in 0..ch {
+            let row = &uv.0[r * uv.1..r * uv.1 + 2 * cw];
+            let (ur, vr) = (&mut u[r * cw..(r + 1) * cw], &mut v[r * cw..(r + 1) * cw]);
+            for (i, pair) in row.as_chunks::<2>().0.iter().enumerate() {
+                ur[i] = pair[0];
+                vr[i] = pair[1];
+            }
         }
     }
 
@@ -236,6 +273,18 @@ mod tests {
             (p.y(), p.u(), p.v()),
             (&[1, 2, 3, 4][..], &[5][..], &[6][..])
         );
+    }
+
+    #[test]
+    fn nv12_is_split_into_u_and_v() {
+        // 4x2, luma stride 5, UV stride 6: one row of 2 interleaved UV pairs.
+        let y = [1, 2, 3, 4, 0, 5, 6, 7, 8, 0];
+        let uv = [10, 20, 11, 21, 0, 0];
+        let mut p = Picture::default();
+        p.copy_nv12(4, 2, (&y, 5), (&uv, 6));
+        assert_eq!(p.y(), &[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(p.u(), &[10, 11]);
+        assert_eq!(p.v(), &[20, 21]);
     }
 
     #[test]

@@ -33,7 +33,7 @@ PHONE   Camera2 ─► encoder input Surface ─► MediaCodec (H.264, hardware)
                                           │  USB (adb reverse) · Wi-Fi · USB tethering
 PC                   [secure channel] ◄───┘
                              │
-          message parser ─► OpenH264 decode ─► rotate / mirror ─► YUYV ─► virtual camera
+          message parser ─► H.264 decode ─► rotate / mirror ─► YUYV ─► virtual camera
 ```
 
 = Android (camera side) — `android/`
@@ -77,7 +77,7 @@ Single Rust binary (workspace).
   table.header([Concern], [Crate / tool]),
   [Network], [`std::net` today, `tokio` when several connections are needed],
   [Protocol], [`protocol` crate: parser/encoder, test vectors, `cargo-fuzz` target],
-  [Decoding], [`openh264` (Cisco OpenH264, BSD, built from source: no system dependency). FFmpeg (LGPL build) or hardware decoding later if needed],
+  [Decoding], [FFmpeg (libavcodec, LGPL, linked dynamically) with hardware decoding (VA-API, NVDEC), its software decoder otherwise; `openh264` (Cisco, BSD, built from source) as a last resort or without FFmpeg. Decoding and output run on two threads (#11)],
   [Image], [rotation, mirroring, I420 → YUYV conversion],
   [Discovery (planned)], [`mdns-sd`],
   [Encryption (planned)], [`snow` (Noise) or `rustls` (TLS 1.3), see protocol §13],

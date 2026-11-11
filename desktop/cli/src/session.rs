@@ -25,9 +25,9 @@ use oculibre_protocol::{
     bye_reasons, error_codes, features, streams, write_message, Bye, Event, Hello, Message,
     MessageReader, Preamble, Request, Response, Role, StreamConfig,
 };
-use openh264::decoder::Decoder;
 use serde_json::{json, Value};
 
+use crate::decoder::VideoDecoder;
 use crate::yuv::{Picture, Transform};
 
 /// The byte stream of a session: a TCP socket (USB, through `adb reverse`) or the plaintext side of
@@ -566,7 +566,10 @@ fn receive_loop(
     jobs: &mpsc::SyncSender<Job>,
     free: &mpsc::Receiver<Picture>,
 ) -> Result<End, Box<dyn Error>> {
-    let mut decoder = Decoder::new()?;
+    let mut decoder = VideoDecoder::new()?;
+    let mut announced_decoder: Option<&'static str> = None;
+    // Picture being filled by the decoder (recycled from the output thread).
+    let mut picture = Picture::default();
     let mut orientation = Orientation::default();
     let mut transform = orientation.transform(view);
     let mut announced: Option<Transform> = None;
@@ -620,10 +623,10 @@ fn receive_loop(
                     );
                 }
                 // A new stream may have another size or camera: start from a clean decoder.
-                decoder = Decoder::new()?;
+                decoder = VideoDecoder::new()?;
                 if !codec_data.is_empty() {
                     // SPS + PPS: no picture expected; errors show up on the next frame anyway.
-                    let _ = decoder.decode(&codec_data);
+                    let _ = decoder.decode(&codec_data, &mut picture);
                 }
                 // The phone may now time its frames with another clock (it does not answer PINGs
                 // until it knows): forget the previous offsets.
@@ -665,19 +668,23 @@ fn receive_loop(
                     continue;
                 }
                 let decode_start = shared.now_us();
-                let decoded = decoder.decode(&frame.data);
+                let decoded = decoder.decode(&frame.data, &mut picture);
                 let decode_us = shared.now_us() - decode_start;
                 match decoded {
-                    Ok(Some(decoded)) => {
+                    Ok(true) => {
                         need_key = false;
                         if announced != Some(transform) && !shared.quiet {
                             announced = Some(transform);
                             println!("\n{}", describe(transform, view));
                         }
-                        let mut picture = free.try_recv().unwrap_or_default();
-                        picture.copy_from(&decoded);
+                        // Known for sure once a picture is out (VA-API may refuse a stream).
+                        if announced_decoder != Some(decoder.name()) && !shared.quiet {
+                            announced_decoder = Some(decoder.name());
+                            println!("\nDecoder: {}", decoder.name());
+                        }
+                        let next = free.try_recv().unwrap_or_default();
                         let job = Job {
-                            picture,
+                            picture: std::mem::replace(&mut picture, next),
                             transform,
                             capture_us: frame.timestamp,
                             arrival_us,
@@ -687,7 +694,7 @@ fn receive_loop(
                             return Err("the virtual camera stopped".into());
                         }
                     }
-                    Ok(None) => {}
+                    Ok(false) => {}
                     Err(_) => {
                         shared.errors_total.fetch_add(1, Ordering::Relaxed);
                         need_key = true;

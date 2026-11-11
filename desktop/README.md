@@ -8,8 +8,13 @@ Rust workspace.
 | `protocol` | **Protocol v0.2** ([`docs/protocol.typ`](../docs/protocol.typ)): preamble, header, messages, reader with the §14 limits, clock sync, `auto` rotation. Shared test vectors in [`tests/protocol/vectors`](../tests/protocol/vectors), fuzz target in `protocol/fuzz` |
 | `core`, `app-tauri` | Planned |
 
-No system library needed: OpenH264 (BSD-2-Clause) is compiled from source by Cargo
-(needs a C/C++ compiler: `sudo apt install build-essential`).
+Decoding: FFmpeg (libavcodec, LGPL, linked dynamically) with **hardware decoding** when the computer
+can (VA-API: AMD, Intel; NVDEC: NVIDIA with its proprietary driver, not tested yet), FFmpeg's software
+decoder otherwise, OpenH264 (BSD-2-Clause, compiled from source) as a last resort.
+`--decoder auto|vaapi|nvdec|software|openh264`; the decoder in use is printed when the stream starts. To build: `sudo apt install build-essential pkg-config libavcodec-dev libavutil-dev
+libclang-dev` (or `bash ../scripts/setup-dev.sh`); without FFmpeg: `cargo build --no-default-features`
+(OpenH264 only). AMD's own driver stack (`/opt/amdgpu`) is found automatically; check VA-API with
+`vainfo`.
 
 ## Use it
 

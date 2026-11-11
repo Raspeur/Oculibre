@@ -68,6 +68,11 @@ fi
 step "3. ffmpeg / ffplay (to look at the virtual camera: ffplay /dev/videoN)"
 if command -v ffplay > /dev/null; then ok "$(ffplay -version | head -1)"; else APT+=(ffmpeg); warn "ffmpeg will be installed"; fi
 
+# FFmpeg libraries for the desktop decoder (VA-API hardware decoding), and libclang for the bindings.
+for pkg in libavcodec-dev libavutil-dev libclang-dev pkg-config; do
+    if dpkg -s "$pkg" > /dev/null 2>&1; then ok "$pkg"; else APT+=("$pkg"); warn "$pkg will be installed"; fi
+done
+
 # ---------------------------------------------------------------- Rust
 step "4. Rust (desktop client)"
 if command -v cargo > /dev/null || [ -x "$HOME/.cargo/bin/cargo" ]; then
