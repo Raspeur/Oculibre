@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Oculibre — fenêtre principale</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./ui.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="oc-app oc-app--sidebar">
+
+  <nav class="oc-sidebar" aria-label="Oculibre">
+    <div class="oc-cluster">
+      <div class="oc-logo oc-logo--md"><img src="./oculibre_logo.svg" alt=""></div>
+      <span class="oc-brand">Oculibre</span>
+    </div>
+
+    <div class="oc-stack">
+      <span class="oc-label">Téléphones</span>
+      <button type="button" class="oc-nav-item" aria-current="true">
+        <span class="{{liveDot}}" aria-hidden="true"></span>
+        <span class="oc-row__label">
+          <span class="oc-nav-item__name">Redmi Note 9 Pro</span>
+          <span class="oc-small">{{phoneState}}</span>
+        </span>
+      </button>
+      <button type="button" class="oc-nav-item">
+        <span class="oc-dot oc-dot--lg oc-dot--off" aria-hidden="true"></span>
+        <span class="oc-row__label">
+          <span class="oc-nav-item__name">Galaxy S23 Ultra</span>
+          <span class="oc-small">Hors ligne · Wi-Fi</span>
+        </span>
+      </button>
+      <a href="Pairing-fts1.dc.html" class="oc-nav-add">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FE633C" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        Ajouter un téléphone
+      </a>
+    </div>
+
+    <div class="oc-stack" style="margin-top: auto; gap: 2px">
+      <a href="Settings.dc.html" class="oc-nav-link">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"></path></svg>
+        Réglages
+      </a>
+      <a href="Settings.dc.html" class="oc-nav-link">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+        À propos
+      </a>
+    </div>
+  </nav>
+
+  <main class="oc-main">
+    <section aria-label="Aperçu" class="oc-stack" style="flex: 999 1 520px; min-width: 0; padding: 24px; box-sizing: border-box; gap: 16px">
+      <header class="oc-cluster">
+        <h1 class="oc-title oc-title--md">Redmi Note 9 Pro</h1>
+        <span class="{{pillClass}}"><span class="{{pillDot}}" aria-hidden="true"></span>{{pillText}}</span>
+        <span class="oc-muted" style="font-size: var(--oc-text-md)">Câble USB</span>
+      </header>
+
+      <div class="oc-preview">
+        <div class="oc-stack" style="align-items: center; gap: 12px; color: var(--oc-text-faint)">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#3A4C70" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2"></rect></svg>
+          <span class="oc-text">{{previewText}}</span>
+        </div>
+        <span class="oc-chip" style="position: absolute; top: 12px; left: 12px">1080p · 60 i/s</span>
+      </div>
+
+      <div class="oc-stats">
+        <div class="oc-stat"><span class="oc-stat__label">Latence</span><span class="oc-stat__value">{{latency}}</span></div>
+        <div class="oc-stat"><span class="oc-stat__label">Images/s</span><span class="oc-stat__value">{{fps}}</span></div>
+        <div class="oc-stat"><span class="oc-stat__label">Débit</span><span class="oc-stat__value">{{bitrate}}</span></div>
+        <div class="oc-stat"><span class="oc-stat__label">Connexion</span><span class="oc-stat__value">USB</span></div>
+      </div>
+    </section>
+
+    <aside class="oc-panel" aria-label="Réglages de la caméra">
+      <div class="oc-panel__section" style="gap: 10px">
+        <span class="oc-label">Source</span>
+        <div class="oc-segmented" role="group" aria-label="Caméra du téléphone">
+          <sc-for list="{{cameras}}" as="c" hint-placeholder-count="3">
+            <button type="button" class="oc-segmented__item" aria-pressed="{{c.pressed}}" onClick="{{c.pick}}">{{c.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div class="oc-panel__section">
+        <span class="oc-label" style="padding-bottom: 6px">Vidéo</span>
+        <div class="oc-row oc-row--panel">
+          <label for="res" class="oc-row__label">Résolution</label>
+          <select id="res" class="oc-select"><option>720p</option><option selected>1080p</option><option>4K</option></select>
+        </div>
+        <div class="oc-row oc-row--panel">
+          <label for="fps" class="oc-row__label">Images/s</label>
+          <select id="fps" class="oc-select"><option>30</option><option selected>60 (plus réactif)</option></select>
+        </div>
+      </div>
+
+      <div class="oc-panel__section">
+        <span class="oc-label" style="padding-bottom: 6px">Image</span>
+        <div class="oc-row oc-row--panel">
+          <label for="rot" class="oc-row__label">Rotation</label>
+          <select id="rot" class="oc-select"><option selected>Automatique</option><option>0°</option><option>90°</option><option>180°</option><option>270°</option></select>
+        </div>
+        <div class="oc-row oc-row--panel">
+          <span id="mirror-label" class="oc-row__label">Miroir</span>
+          <button type="button" class="oc-switch" aria-pressed="{{mirror}}" aria-labelledby="mirror-label" onClick="{{toggleMirror}}"><span class="oc-switch__knob" aria-hidden="true"></span></button>
+        </div>
+      </div>
+
+      <div class="oc-panel__section">
+        <span class="oc-label" style="padding-bottom: 6px">Sortie</span>
+        <div class="oc-row oc-row--panel oc-row--info">
+          <span class="oc-row__label">Nom dans les applications</span>
+          <span class="oc-row__value">Oculibre</span>
+        </div>
+        <div class="oc-row oc-row--panel oc-row--info">
+          <span class="oc-row__label">Format envoyé</span>
+          <span class="oc-row__value">1920 × 1080</span>
+        </div>
+      </div>
+
+      <div class="oc-panel__section" style="flex-direction: row">
+        <button type="button" class="{{liveButtonClass}}" onClick="{{toggleLive}}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{liveIcon}}"></path></svg>
+          {{liveButtonText}}
+        </button>
+      </div>
+    </aside>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { camera: 'back', mirror: false, live: true };
+  }
+  renderVals() {
+    const s = this.state;
+    const cameras = [['back', 'Arrière'], ['front', 'Avant'], ['wide', 'Grand-angle']].map(([id, label]) => ({
+      label,
+      pressed: s.camera === id ? 'true' : 'false',
+      pick: () => this.setState({ camera: id }),
+    }));
+    return {
+      cameras,
+      liveDot: s.live ? 'oc-dot oc-dot--lg' : 'oc-dot oc-dot--lg oc-dot--paused',
+      phoneState: s.live ? 'En direct · USB' : 'Connecté · USB',
+      pillClass: s.live ? 'oc-pill' : 'oc-pill oc-pill--paused',
+      pillDot: s.live ? 'oc-dot' : 'oc-dot oc-dot--paused',
+      pillText: s.live ? 'En direct' : 'En pause',
+      previewText: s.live ? 'Aperçu de la caméra du téléphone' : 'Caméra arrêtée',
+      latency: s.live ? '68 ms' : '—',
+      fps: s.live ? '60' : '—',
+      bitrate: s.live ? '12 Mbit/s' : '—',
+      mirror: s.mirror ? 'true' : 'false',
+      toggleMirror: () => this.setState({ mirror: !s.mirror }),
+      toggleLive: () => this.setState({ live: !s.live }),
+      liveButtonText: s.live ? 'Arrêter' : 'Démarrer',
+      liveIcon: s.live ? 'M6 6h12v12H6z' : 'M8 5v14l11-7z',
+      liveButtonClass: s.live ? 'oc-btn oc-btn--secondary' : 'oc-btn oc-btn--primary',
+    };
+  }
+}
+</script>
+</body>
+</html>

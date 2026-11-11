@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Oculibre — réglages et vérifications</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./ui.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="oc-phone">
+
+  <header class="oc-header">
+    <a href="PhoneHome.dc.html" class="oc-icon-btn oc-icon-btn--lg" aria-label="Retour">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </a>
+    <h1 class="oc-title oc-title--sm">Réglages</h1>
+  </header>
+
+  <div class="oc-stack" style="padding: 16px 16px 20px; gap: 18px">
+
+    <section class="oc-stack">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px">
+        <h2 class="oc-label">Vérifications</h2>
+        <span class="{{summaryClass}}">{{summary}}</span>
+      </div>
+      <ul class="oc-card oc-list">
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="3">
+          <li>
+            <button type="button" class="oc-row oc-row--action" style="min-height: 68px; padding: 12px 14px; gap: 14px" onClick="{{r.act}}">
+              <span class="{{r.badgeClass}}" aria-hidden="true">{{r.mark}}</span>
+              <span class="oc-row__label" style="flex: 1 1 auto; gap: 3px">
+                <span class="oc-strong">{{r.title}}</span>
+                <span class="oc-row__hint">{{r.text}}</span>
+              </span>
+              <span class="{{r.valueClass}}">{{r.state}}</span>
+            </button>
+          </li>
+        </sc-for>
+      </ul>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label" style="padding: 0 4px">Ordinateur</h2>
+      <div class="oc-card" style="overflow: hidden">
+        <div class="oc-row" style="min-height: 64px; padding: 12px 14px; justify-content: flex-start; gap: 14px">
+          <span class="oc-badge" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9D3E3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
+          </span>
+          <span class="oc-row__label" style="gap: 3px">
+            <span class="oc-strong">raspeur-ubuntu-studio</span>
+            <span class="oc-row__hint">Code 46B5 EE53 · relié le 11 nov.</span>
+          </span>
+        </div>
+        <button type="button" class="oc-row oc-row--action oc-accent-text oc-strong" style="min-height: 48px; padding: 0 14px; font-size: var(--oc-text-base); border-top: 1px solid var(--oc-border)">Oublier cet ordinateur</button>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label" style="padding: 0 4px">Application</h2>
+      <div class="oc-card" style="overflow: hidden">
+        <button type="button" class="oc-row oc-row--action" style="min-height: 52px; padding: 0 14px" onClick="{{toggleLanguage}}">
+          <span>Langue</span><span class="oc-row__value oc-row__value--muted">{{language}} ›</span>
+        </button>
+        <button type="button" class="oc-row oc-row--action" style="min-height: 52px; padding: 0 14px">
+          <span>À propos d'Oculibre</span><span class="oc-row__value oc-row__value--muted">Version 0.3.0 ›</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label" style="padding: 0 4px">Avancé</h2>
+      <div class="oc-card" style="overflow: hidden">
+        <button type="button" class="oc-row oc-row--action" style="min-height: 52px; padding: 0 14px">
+          <span>Adresse de l'ordinateur</span><span class="oc-row__value oc-row__value--muted">Automatique ›</span>
+        </button>
+        <button type="button" class="oc-row oc-row--action" style="min-height: 52px; padding: 0 14px">
+          <span>Lab et diagnostics</span><span class="oc-row__value oc-row__value--muted">›</span>
+        </button>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    // Shown as reached from the home screen's warning: one permission has been withdrawn.
+    this.state = { camera: true, battery: false, paired: true, english: false };
+  }
+  renderVals() {
+    const s = this.state;
+    const defs = [
+      { key: 'camera', title: 'Caméra', okText: 'Autorisée', todoText: 'Android a retiré l’autorisation.' },
+      { key: 'battery', title: 'Rester actif écran éteint', okText: 'La webcam ne sera pas coupée en plein appel.', todoText: 'Android peut couper la webcam écran éteint.' },
+      { key: 'paired', title: 'Relié à l’ordinateur', okText: 'raspeur-ubuntu-studio', todoText: 'Scannez le QR code affiché sur l’ordinateur.' },
+    ];
+    const rows = defs.map((d) => {
+      const ok = s[d.key];
+      return {
+        title: d.title,
+        text: ok ? d.okText : d.todoText,
+        act: () => this.setState({ [d.key]: true }),
+        mark: ok ? '✓' : '!',
+        state: ok ? 'OK' : 'Corriger ›',
+        badgeClass: ok ? 'oc-badge oc-badge--ok' : 'oc-badge oc-badge--todo',
+        valueClass: ok ? 'oc-row__value oc-row__value--ok' : 'oc-row__value oc-row__value--todo',
+      };
+    });
+    const missing = defs.filter((d) => !s[d.key]).length;
+    return {
+      rows,
+      // Follows the phone's language by default; this is the user's override.
+      language: s.english ? 'English' : 'Français',
+      toggleLanguage: () => this.setState({ english: !s.english }),
+      summary: missing === 0 ? 'Tout est en ordre' : missing === 1 ? '1 à corriger' : missing + ' à corriger',
+      summaryClass: missing === 0 ? 'oc-row__value oc-row__value--ok' : 'oc-row__value oc-row__value--todo',
+    };
+  }
+}
+</script>
+</body>
+</html>

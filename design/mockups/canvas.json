@@ -1,0 +1,120 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Main2.dc.html": {
+      "expand": "fill",
+      "h": 800,
+      "is_interactive": true,
+      "title": "PC — main window 2",
+      "w": 1280,
+      "x": 0,
+      "y": 0
+    },
+    "Pairing-fts1.dc.html": {
+      "expand": "fill",
+      "h": 800,
+      "is_interactive": true,
+      "title": "PC — add a phone 2",
+      "w": 1280,
+      "x": 1360,
+      "y": 0
+    },
+    "PhoneHome.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Phone — everyday screen",
+      "w": 390,
+      "x": 470,
+      "y": 1127
+    },
+    "PhoneWelcomeA.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Phone — first launch",
+      "w": 390,
+      "x": 0,
+      "y": 1127
+    },
+    "PhoneWelcomeB.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Phone — settings · checks",
+      "w": 390,
+      "x": 940,
+      "y": 1127
+    },
+    "Settings.dc.html": {
+      "expand": "fill",
+      "h": 1100,
+      "is_interactive": true,
+      "title": "PC — settings",
+      "w": 1280,
+      "x": 2720,
+      "y": 0
+    },
+    "Tray-vy8x.dc.html": {
+      "h": 409,
+      "is_interactive": true,
+      "title": "PC — tray menu 2",
+      "w": 320,
+      "x": 4080,
+      "y": 0
+    },
+    "UIKit.dc.html": {
+      "expand": "fill",
+      "h": 1500,
+      "is_interactive": true,
+      "title": "UI kit (ui.css)",
+      "w": 1280,
+      "x": 1500,
+      "y": 1127
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-12T10:00:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "pc": {
+      "kind": "title1",
+      "maxW": 4400,
+      "text": "Desktop app (Tauri)",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "phone": {
+      "kind": "title1",
+      "maxW": 1800,
+      "text": "Android app",
+      "w": 240,
+      "x": 0,
+      "y": 908
+    },
+    "kit": {
+      "kind": "title1",
+      "maxW": 1400,
+      "text": "UI kit",
+      "w": 240,
+      "x": 1500,
+      "y": 908
+    }
+  },
+  "order": [
+    "Main2.dc.html",
+    "PhoneHome.dc.html",
+    "Pairing-fts1.dc.html",
+    "Tray-vy8x.dc.html",
+    "PhoneWelcomeA.dc.html",
+    "PhoneWelcomeB.dc.html",
+    "Settings.dc.html",
+    "UIKit.dc.html"
+  ],
+  "pages": [],
+  "title": "Oculibre UI mockups"
+}

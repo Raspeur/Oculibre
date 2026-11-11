@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Oculibre — réglages</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./ui.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="oc-app" style="display: flex; flex-direction: column">
+
+  <header class="oc-header">
+    <a href="Main2.dc.html" class="oc-icon-btn" aria-label="Retour">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </a>
+    <h1 class="oc-title oc-title--sm">Réglages</h1>
+  </header>
+
+  <div class="oc-container">
+
+    <section aria-labelledby="s-general" class="oc-stack">
+      <h2 id="s-general" class="oc-label" style="padding: 0 4px">Général</h2>
+      <div class="oc-card">
+        <div class="oc-row">
+          <label for="lang" class="oc-row__label">Langue</label>
+          <select id="lang" class="oc-select oc-select--wide"><option selected>Français</option><option>English</option></select>
+        </div>
+        <sc-for list="{{general}}" as="t" hint-placeholder-count="2">
+          <div class="oc-row" style="border-top: 1px solid var(--oc-border)">
+            <span class="oc-row__label">
+              <span id="{{t.id}}">{{t.label}}</span>
+              <span class="oc-row__hint">{{t.hint}}</span>
+            </span>
+            <button type="button" class="oc-switch" onClick="{{t.toggle}}" aria-pressed="{{t.pressed}}" aria-labelledby="{{t.id}}"><span class="oc-switch__knob" aria-hidden="true"></span></button>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section aria-labelledby="s-vcam" class="oc-stack">
+      <h2 id="s-vcam" class="oc-label" style="padding: 0 4px">Caméra virtuelle</h2>
+      <div class="oc-card">
+        <div class="oc-row">
+          <span class="oc-row__label">État</span>
+          <span class="oc-status oc-strong"><span class="oc-dot" style="width: 7px; height: 7px" aria-hidden="true"></span>Installée</span>
+        </div>
+        <div class="oc-row">
+          <span class="oc-row__label">Nom dans les applications</span>
+          <span class="oc-row__value">Oculibre</span>
+        </div>
+        <div class="oc-row">
+          <label for="shape" class="oc-row__label">Forme de l'image</label>
+          <select id="shape" class="oc-select oc-select--wide"><option selected>Paysage (comme une webcam)</option><option>Portrait</option></select>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="s-net" class="oc-stack">
+      <h2 id="s-net" class="oc-label" style="padding: 0 4px">Téléphones et Wi-Fi</h2>
+      <div class="oc-card">
+        <sc-for list="{{network}}" as="t" hint-placeholder-count="1">
+          <div class="oc-row">
+            <span class="oc-row__label">
+              <span id="{{t.id}}">{{t.label}}</span>
+              <span class="oc-row__hint">{{t.hint}}</span>
+            </span>
+            <button type="button" class="oc-switch" onClick="{{t.toggle}}" aria-pressed="{{t.pressed}}" aria-labelledby="{{t.id}}"><span class="oc-switch__knob" aria-hidden="true"></span></button>
+          </div>
+        </sc-for>
+        <div class="oc-row" style="border-top: 1px solid var(--oc-border)">
+          <span class="oc-row__label">Téléphones reliés</span>
+          <a href="#" class="oc-row__value" style="text-decoration: none">2 · Gérer ›</a>
+        </div>
+        <div class="oc-row">
+          <span class="oc-row__label">Code de cet ordinateur</span>
+          <span class="oc-row__value" style="letter-spacing: 1px">46B5 EE53</span>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="s-perf" class="oc-stack">
+      <h2 id="s-perf" class="oc-label" style="padding: 0 4px">Performances</h2>
+      <div class="oc-card">
+        <div class="oc-row">
+          <span class="oc-row__label">
+            <label for="dec">Décodage de la vidéo</label>
+            <span class="oc-row__hint">Utilisé : carte graphique (Radeon RX 7800 XT)</span>
+          </span>
+          <select id="dec" class="oc-select oc-select--wide"><option selected>Automatique</option><option>Carte graphique</option><option>Processeur</option></select>
+        </div>
+      </div>
+    </section>
+
+    <section id="about" aria-labelledby="s-about" class="oc-stack">
+      <h2 id="s-about" class="oc-label" style="padding: 0 4px">À propos</h2>
+      <div class="oc-card oc-card--padded oc-cluster" style="gap: 16px">
+        <div class="oc-logo oc-logo--lg"><img src="./oculibre_logo.svg" alt=""></div>
+        <div class="oc-stack" style="flex: 1 1 260px; gap: 3px">
+          <span class="oc-title" style="font-size: var(--oc-text-xl)">Oculibre 0.3.0</span>
+          <span class="oc-muted" style="font-size: var(--oc-text-md)">Libre et gratuit, licence MIT. Aucune donnée ne quitte votre réseau.</span>
+          <span class="oc-cluster" style="gap: 14px; padding-top: 4px; font-size: var(--oc-text-md)">
+            <a href="#">Code source</a><a href="#">Signaler un problème</a><a href="#">Licences des composants</a>
+          </span>
+        </div>
+        <button type="button" class="oc-btn oc-btn--secondary" onClick="{{check}}">{{checkText}}</button>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { autostart: true, tray: true, wifi: true, checked: false };
+  }
+  renderVals() {
+    const s = this.state;
+    const sw = (key, id, label, hint) => ({
+      id, label, hint,
+      pressed: s[key] ? 'true' : 'false',
+      toggle: () => this.setState({ [key]: !s[key] }),
+    });
+    return {
+      general: [
+        sw('autostart', 'sw-autostart', 'Démarrer avec l’ordinateur', 'Oculibre attend vos téléphones dès l’ouverture de session.'),
+        sw('tray', 'sw-tray', 'Rester dans la barre des tâches', 'Fermer la fenêtre ne quitte pas Oculibre.'),
+      ],
+      network: [
+        sw('wifi', 'sw-wifi', 'Accepter les téléphones en Wi-Fi', 'Seulement les téléphones reliés, connexion chiffrée.'),
+      ],
+      check: () => this.setState({ checked: true }),
+      checkText: s.checked ? 'À jour' : 'Vérifier les mises à jour',
+    };
+  }
+}
+</script>
+</body>
+</html>

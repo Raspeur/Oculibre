@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Oculibre — UI kit</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./ui.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="oc-app">
+  <header class="oc-header">
+    <div class="oc-logo oc-logo--md"><img src="./oculibre_logo.svg" alt=""></div>
+    <h1 class="oc-title oc-title--sm">Oculibre · UI kit</h1>
+    <span class="oc-small">Tokens et composants de ui.css</span>
+  </header>
+
+  <div style="max-width: 1180px; margin: 0 auto; padding: 32px 24px 48px; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px">
+
+    <section class="oc-stack" style="grid-column: 1 / -1">
+      <h2 class="oc-label">Couleurs</h2>
+      <div class="oc-card oc-card--padded" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px">
+        <sc-for list="{{colors}}" as="c" hint-placeholder-count="16">
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="{{c.swatch}}" aria-hidden="true"></span>
+            <span style="font-size: 13px; font-weight: 600">{{c.name}}</span>
+            <span class="oc-small">{{c.value}} · {{c.use}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label">Texte</h2>
+      <div class="oc-card oc-card--padded oc-stack" style="gap: 14px">
+        <span class="oc-title oc-title--lg">Titre large · 26 px</span>
+        <span class="oc-title oc-title--md">Titre d'écran · 24 px</span>
+        <span class="oc-title oc-title--sm">Titre d'en-tête · 20 px</span>
+        <span class="oc-text oc-text--lg">Texte d'introduction · 16 px</span>
+        <span class="oc-text">Texte courant, lignes de réglage · 14 px</span>
+        <span style="font-size: 13px">Contrôles et panneau latéral · 13 px</span>
+        <span class="oc-small">Aide et légendes · 12 px</span>
+        <span class="oc-label">Libellé de section · 11 px</span>
+        <span class="oc-small">Titres : Space Grotesk 700 · texte : Inter 400 / 600</span>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label">Coins et dimensions</h2>
+      <div class="oc-card oc-card--padded oc-stack" style="gap: 14px">
+        <div class="oc-cluster">
+          <span style="width: 56px; height: 40px; border: 1px solid var(--oc-border-control); border-radius: var(--oc-r-xs)" aria-hidden="true"></span>
+          <span class="oc-small">--oc-r-xs · 4 px · pastilles</span>
+        </div>
+        <div class="oc-cluster">
+          <span style="width: 56px; height: 40px; border: 1px solid var(--oc-border-control); border-radius: var(--oc-r-sm)" aria-hidden="true"></span>
+          <span class="oc-small">--oc-r-sm · 6 px · boutons, champs, éléments de liste</span>
+        </div>
+        <div class="oc-cluster">
+          <span style="width: 56px; height: 40px; border: 1px solid var(--oc-border-control); border-radius: var(--oc-r-md)" aria-hidden="true"></span>
+          <span class="oc-small">--oc-r-md · 8 px · cartes, panneaux, aperçu</span>
+        </div>
+        <span class="oc-small">Hauteurs : contrôles 36 px (PC), boutons 48 px (téléphone), lignes 56 px, en-tête 64 px</span>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label">Boutons</h2>
+      <div class="oc-card oc-card--padded oc-stack" style="gap: 14px">
+        <div class="oc-cluster">
+          <button type="button" class="oc-btn oc-btn--primary">Démarrer</button>
+          <button type="button" class="oc-btn oc-btn--secondary">Arrêter</button>
+          <button type="button" class="oc-btn oc-btn--ghost">Plus tard</button>
+          <button type="button" class="oc-btn oc-btn--dashed">Maquette</button>
+        </div>
+        <div class="oc-cluster">
+          <a href="#" class="oc-icon-btn" aria-label="Retour"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></a>
+          <span class="oc-small">.oc-icon-btn · 36 px (44 px sur téléphone)</span>
+        </div>
+        <button type="button" class="oc-btn oc-btn--primary oc-btn--lg oc-btn--block">Bouton téléphone · 48 px</button>
+        <span class="oc-small">Un seul bouton orange par écran : l'action principale.</span>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label">Contrôles</h2>
+      <div class="oc-card oc-card--padded oc-stack" style="gap: 14px">
+        <div class="oc-segmented" role="group" aria-label="Exemple">
+          <sc-for list="{{segments}}" as="s" hint-placeholder-count="3">
+            <button type="button" class="oc-segmented__item" aria-pressed="{{s.pressed}}" onClick="{{s.pick}}">{{s.label}}</button>
+          </sc-for>
+        </div>
+        <div class="oc-row oc-row--panel">
+          <label for="kit-select" class="oc-row__label">Liste déroulante</label>
+          <select id="kit-select" class="oc-select"><option>1080p</option><option>4K</option></select>
+        </div>
+        <div class="oc-row oc-row--panel">
+          <span id="kit-switch" class="oc-row__label">Interrupteur</span>
+          <button type="button" class="oc-switch" aria-pressed="{{switchOn}}" aria-labelledby="kit-switch" onClick="{{toggleSwitch}}"><span class="oc-switch__knob" aria-hidden="true"></span></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label">Cartes et lignes</h2>
+      <div class="oc-card">
+        <div class="oc-row">
+          <span class="oc-row__label">Ligne avec aide<span class="oc-row__hint">Une phrase d'explication courte.</span></span>
+          <span class="oc-row__value">Valeur</span>
+        </div>
+        <div class="oc-row">
+          <span class="oc-row__label">À corriger</span>
+          <span class="oc-row__value oc-row__value--todo">Corriger ›</span>
+        </div>
+        <div class="oc-row">
+          <span class="oc-row__label">En ordre</span>
+          <span class="oc-row__value oc-row__value--ok">OK</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label">États</h2>
+      <div class="oc-card oc-card--padded oc-stack" style="gap: 14px">
+        <div class="oc-cluster">
+          <span class="oc-pill"><span class="oc-dot"></span>En direct</span>
+          <span class="oc-pill oc-pill--paused"><span class="oc-dot oc-dot--paused"></span>En pause</span>
+          <span class="oc-cluster" style="gap: 8px"><span class="oc-dot oc-dot--lg oc-dot--off"></span><span class="oc-small">Hors ligne</span></span>
+        </div>
+        <div class="oc-cluster">
+          <span class="oc-badge oc-badge--round">1</span>
+          <span class="oc-badge">2</span>
+          <span class="oc-badge oc-badge--ok">✓</span>
+          <span class="oc-badge oc-badge--todo">!</span>
+          <span class="oc-chip">1080p · 60 i/s</span>
+        </div>
+        <a href="#" class="oc-banner">
+          <span class="oc-badge oc-badge--todo" style="width: 28px; height: 28px">!</span>
+          <span class="oc-row__label" style="flex: 1 1 auto"><span class="oc-strong">Bandeau d'alerte</span><span class="oc-row__hint">Quelque chose demande une action.</span></span>
+          <span class="oc-row__value oc-row__value--todo">Corriger ›</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="oc-stack">
+      <h2 class="oc-label">Logo et progression</h2>
+      <div class="oc-card oc-card--padded oc-stack" style="gap: 16px">
+        <div class="oc-cluster" style="align-items: flex-end">
+          <span class="oc-logo oc-logo--sm"><img src="./oculibre_logo.svg" alt=""></span>
+          <span class="oc-logo oc-logo--md"><img src="./oculibre_logo.svg" alt=""></span>
+          <span class="oc-logo oc-logo--lg"><img src="./oculibre_logo.svg" alt=""></span>
+          <span class="oc-logo oc-logo--xl"><img src="./oculibre_logo.svg" alt=""></span>
+        </div>
+        <div class="oc-progress" aria-hidden="true">
+          <span class="oc-progress__seg oc-progress__seg--done"></span>
+          <span class="oc-progress__seg oc-progress__seg--current"></span>
+          <span class="oc-progress__seg"></span>
+        </div>
+        <span class="oc-small">Le logo bleu marine se pose toujours sur une pastille claire.</span>
+      </div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1500}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { segment: 'a', switchOn: true };
+  }
+  renderVals() {
+    const s = this.state;
+    const colors = [
+      ['--oc-bg', '#0B1220', 'fond'], ['--oc-surface-1', '#0E1729', 'menu, en-tête'], ['--oc-surface-2', '#111A2C', 'cartes'],
+      ['--oc-surface-3', '#131E33', 'contrôles'], ['--oc-surface-4', '#1A2741', 'bouton secondaire'], ['--oc-selected', '#24365A', 'segment actif'],
+      ['--oc-border', '#22314F', 'traits'], ['--oc-border-control', '#33476E', 'bord des contrôles'],
+      ['--oc-text', '#E9EEF6', 'texte'], ['--oc-text-2', '#C9D3E3', 'texte secondaire'], ['--oc-text-muted', '#A3B1C7', 'aide'],
+      ['--oc-accent', '#FE633C', 'action, actif'], ['--oc-accent-text', '#FE8A6A', 'orange sur fond sombre'],
+      ['--oc-live', '#3DDC97', 'en direct, OK'], ['--oc-off', '#5D6F90', 'hors ligne'], ['--oc-logo-tile', '#F3F5F9', 'pastille du logo'],
+    ].map(([name, value, use]) => ({
+      name, value, use,
+      swatch: 'display: block; height: 44px; border-radius: 6px; border: 1px solid #33476E; background: ' + value,
+    }));
+    const segments = [['a', 'Arrière'], ['b', 'Avant'], ['c', 'Grand-angle']].map(([id, label]) => ({
+      label, pressed: s.segment === id ? 'true' : 'false', pick: () => this.setState({ segment: id }),
+    }));
+    return {
+      colors, segments,
+      switchOn: s.switchOn ? 'true' : 'false',
+      toggleSwitch: () => this.setState({ switchOn: !s.switchOn }),
+    };
+  }
+}
+</script>
+</body>
+</html>

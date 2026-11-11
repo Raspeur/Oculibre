@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Oculibre — menu de la barre des tâches</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="./ui.css">
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div class="oc-menu" role="menu">
+
+  <div class="oc-cluster" style="flex-wrap: nowrap; padding: 12px">
+    <div class="oc-logo oc-logo--md" style="border-radius: var(--oc-r-sm)"><img src="./oculibre_logo.svg" alt=""></div>
+    <div class="oc-row__label" style="gap: 3px">
+      <span class="oc-strong" style="font-size: var(--oc-text-lg)">Redmi Note 9 Pro</span>
+      <span class="{{statusClass}}"><span class="{{statusDot}}" aria-hidden="true"></span>{{statusText}}</span>
+    </div>
+  </div>
+
+  <hr class="oc-divider">
+
+  <button type="button" class="oc-menu__item" style="justify-content: flex-start" onClick="{{toggleLive}}">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FE633C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2"></rect></svg>
+    {{liveText}}
+  </button>
+  <button type="button" class="oc-menu__item"><span>Caméra</span><span class="oc-muted">Arrière ›</span></button>
+  <button type="button" class="oc-menu__item"><span>Qualité</span><span class="oc-muted">1080p · 60 ›</span></button>
+
+  <hr class="oc-divider">
+
+  <a href="Main2.dc.html" class="oc-menu__item">Ouvrir Oculibre</a>
+  <a href="Pairing-fts1.dc.html" class="oc-menu__item">Ajouter un téléphone…</a>
+
+  <hr class="oc-divider">
+
+  <button type="button" class="oc-menu__item oc-menu__item--quiet">Quitter Oculibre</button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":320,"height":409}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { live: true };
+  }
+  renderVals() {
+    const live = this.state.live;
+    return {
+      statusText: live ? 'En direct · 68 ms' : 'En pause',
+      statusClass: live ? 'oc-status' : 'oc-status oc-status--paused',
+      statusDot: live ? 'oc-dot' : 'oc-dot oc-dot--paused',
+      liveText: live ? 'Mettre la caméra en pause' : 'Reprendre la caméra',
+      toggleLive: () => this.setState({ live: !live }),
+    };
+  }
+}
+</script>
+</body>
+</html>
