@@ -9,7 +9,6 @@ use oculibre_protocol::{
     features, streams, write_message, Bye, Hello, Message, MessageReader, Preamble, Role,
     StreamConfig, VideoFrame,
 };
-use openh264::decoder::DecodedYUV;
 use openh264::encoder::Encoder;
 use openh264::formats::{YUVBuffer, YUVSource};
 use openh264::nal_units;
@@ -32,7 +31,7 @@ struct Counter {
 impl Sink for Counter {
     fn show(
         &mut self,
-        picture: &DecodedYUV<'_>,
+        picture: &crate::yuv::Picture,
         transform: Transform,
     ) -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(picture.dimensions(), (W, H));
@@ -550,7 +549,7 @@ fn tls_phone(
 fn wifi_phone_pairs_once_then_strangers_are_refused() {
     use crate::{pairing, tls};
     let host = tls::Identity::generate().unwrap();
-    let config = tls::server_config(&host).unwrap();
+    let config = tls::server_config(&host, false).unwrap();
     let path = std::env::temp_dir().join(format!("oculibre-wifi-test-{}.json", std::process::id()));
     let pairings = pairing::Pairings::load(path.clone());
     let token = pairings.open_offer(pairing::OFFER_TTL).unwrap();

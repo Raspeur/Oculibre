@@ -25,10 +25,10 @@ use oculibre_protocol::{
     bye_reasons, error_codes, features, streams, write_message, Bye, Event, Hello, Message,
     MessageReader, Preamble, Request, Response, Role, StreamConfig,
 };
-use openh264::decoder::{DecodedYUV, Decoder};
+use openh264::decoder::Decoder;
 use serde_json::{json, Value};
 
-use crate::yuv::Transform;
+use crate::yuv::{Picture, Transform};
 
 /// The byte stream of a session: a TCP socket (USB, through `adb reverse`) or the plaintext side of
 /// a TLS connection (Wi-Fi, see `tls.rs`).
@@ -81,11 +81,7 @@ pub type Authorize<'a> = &'a (dyn Fn(&Hello) -> Result<(), String> + Sync);
 /// Where decoded pictures go (the virtual camera, or a test).
 pub trait Sink {
     /// `transform`: rotation and mirror to apply (it can change from one picture to the next).
-    fn show(
-        &mut self,
-        picture: &DecodedYUV<'_>,
-        transform: Transform,
-    ) -> Result<(), Box<dyn Error>>;
+    fn show(&mut self, picture: &Picture, transform: Transform) -> Result<(), Box<dyn Error>>;
 }
 
 /// `--rotate`.
@@ -170,6 +166,8 @@ struct Latency {
     total_max: i64,
     /// Fully received → written to the virtual camera (decode, rotation, conversion, write).
     pc_sum: i64,
+    /// The H.264 decoding part of `pc_sum`.
+    decode_sum: i64,
     count: u32,
     /// Frames whose latency came out absurd (< 0 or ≥ 10 s): the phone's clocks disagree.
     rejected: u32,
@@ -338,7 +336,7 @@ pub fn run(
     stream: impl Link,
     hello: &Hello,
     view: View,
-    sink: &mut dyn Sink,
+    sink: &mut (dyn Sink + Send),
     quiet: bool,
 ) -> Result<End, Box<dyn Error>> {
     run_driven(stream, hello, view, sink, quiet, None, None)
@@ -353,7 +351,7 @@ pub fn run_driven(
     stream: impl Link,
     hello: &Hello,
     view: View,
-    sink: &mut dyn Sink,
+    sink: &mut (dyn Sink + Send),
     quiet: bool,
     driver: Option<Driver<'_>>,
     authorize: Option<Authorize<'_>>,
@@ -513,12 +511,60 @@ pub fn run_driven(
     result
 }
 
+/// A decoded picture on its way to the sink, with what the latency measurement needs.
+struct Job {
+    picture: Picture,
+    transform: Transform,
+    capture_us: u64,
+    arrival_us: u64,
+    decode_us: u64,
+}
+
+/// Reads and decodes on this thread; rotates, converts and writes on an output thread, so that
+/// the next frame is decoded while this one is written: the frame rate is limited by the slower of
+/// the two, not by their sum (4K: decoding alone takes most of a 30 fps frame interval). At most
+/// one picture waits between them: latency does not pile up.
 fn receive(
     reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
     shared: &Shared,
     view: View,
-    sink: &mut dyn Sink,
+    sink: &mut (dyn Sink + Send),
     clock_enabled: bool,
+) -> Result<End, Box<dyn Error>> {
+    let (jobs, jobs_rx) = mpsc::sync_channel::<Job>(0);
+    let (free_tx, free) = mpsc::channel::<Picture>();
+    thread::scope(|scope| {
+        let output = thread::Builder::new()
+            .name("oculibre-output".into())
+            .spawn_scoped(scope, move || -> Result<(), String> {
+                for job in jobs_rx {
+                    sink.show(&job.picture, job.transform)
+                        .map_err(|e| e.to_string())?;
+                    shared.decoded.fetch_add(1, Ordering::Relaxed);
+                    if clock_enabled {
+                        record_latency(shared, job.capture_us, job.arrival_us, job.decode_us);
+                    }
+                    let _ = free_tx.send(job.picture); // reused for a later frame
+                }
+                Ok(())
+            })?;
+        let result = receive_loop(reader, shared, view, &jobs, &free);
+        drop(jobs);
+        match output.join() {
+            Ok(Ok(())) => result,
+            // The sink's error explains why the loop stopped.
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err("the output thread panicked".into()),
+        }
+    })
+}
+
+fn receive_loop(
+    reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
+    shared: &Shared,
+    view: View,
+    jobs: &mpsc::SyncSender<Job>,
+    free: &mpsc::Receiver<Picture>,
 ) -> Result<End, Box<dyn Error>> {
     let mut decoder = Decoder::new()?;
     let mut orientation = Orientation::default();
@@ -618,17 +664,27 @@ fn receive(
                     ask_keyframe(&mut last_key_request)?;
                     continue;
                 }
-                match decoder.decode(&frame.data) {
-                    Ok(Some(picture)) => {
+                let decode_start = shared.now_us();
+                let decoded = decoder.decode(&frame.data);
+                let decode_us = shared.now_us() - decode_start;
+                match decoded {
+                    Ok(Some(decoded)) => {
                         need_key = false;
                         if announced != Some(transform) && !shared.quiet {
                             announced = Some(transform);
                             println!("\n{}", describe(transform, view));
                         }
-                        sink.show(&picture, transform)?;
-                        shared.decoded.fetch_add(1, Ordering::Relaxed);
-                        if clock_enabled {
-                            record_latency(shared, frame.timestamp, arrival_us);
+                        let mut picture = free.try_recv().unwrap_or_default();
+                        picture.copy_from(&decoded);
+                        let job = Job {
+                            picture,
+                            transform,
+                            capture_us: frame.timestamp,
+                            arrival_us,
+                            decode_us,
+                        };
+                        if jobs.send(job).is_err() {
+                            return Err("the virtual camera stopped".into());
                         }
                     }
                     Ok(None) => {}
@@ -712,7 +768,7 @@ fn describe(t: Transform, view: View) -> String {
 }
 
 /// Capture-to-display latency (§11): the phone's capture time brought to our clock.
-fn record_latency(shared: &Shared, capture_us: u64, arrival_us: u64) {
+fn record_latency(shared: &Shared, capture_us: u64, arrival_us: u64, decode_us: u64) {
     let Some(best) = shared.clock.lock().unwrap().best() else {
         return; // no PONG yet: the clocks are not synchronised
     };
@@ -725,6 +781,7 @@ fn record_latency(shared: &Shared, capture_us: u64, arrival_us: u64) {
         l.total_sum += total;
         l.total_max = l.total_max.max(total);
         l.pc_sum += shown_us - arrival_us as i64;
+        l.decode_sum += decode_us as i64;
         l.count += 1;
     } else {
         shared.latency.lock().unwrap().rejected += 1;
@@ -806,6 +863,9 @@ struct Totals {
     latency_sum: i64,
     latency_count: u64,
     latency_max: i64,
+    /// PC share and its decoding part, µs, summed over the measured frames.
+    pc_sum: i64,
+    decode_sum: i64,
     dropped: Option<u64>,
     errors: u32,
     /// (sum, count) of the last [`AVERAGE_WINDOW`] seconds.
@@ -818,6 +878,8 @@ impl Totals {
         self.frames += u64::from(frames);
         self.latency_sum += latency.total_sum;
         self.latency_count += u64::from(latency.count);
+        self.pc_sum += latency.pc_sum;
+        self.decode_sum += latency.decode_sum;
         if latency.count > 0 {
             self.latency_max = self.latency_max.max(latency.total_max);
         }
@@ -858,6 +920,15 @@ impl Totals {
             line += &format!(" · dropped by phone {d}");
         }
         line += &format!(" · decode errors {}", self.errors);
+        if self.latency_count > 0 && self.pc_sum > 0 {
+            // Where the PC share goes: if it nears the frame interval, the PC falls behind.
+            let per_frame = |us: i64| us as f64 / self.latency_count as f64 / 1000.0;
+            line += &format!(
+                "\nPC per frame: decode {:.1} ms + rotation, conversion and write {:.1} ms",
+                per_frame(self.decode_sum),
+                per_frame(self.pc_sum - self.decode_sum)
+            );
+        }
         line
     }
 }

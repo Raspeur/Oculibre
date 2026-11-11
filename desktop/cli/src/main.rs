@@ -19,7 +19,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-use openh264::decoder::DecodedYUV;
 use openh264::formats::YUVSource;
 
 const USAGE: &str = "\
@@ -37,6 +36,7 @@ OPTIONS:
         --no-adb            Don't run `adb reverse`
     -w, --wifi              Also accept paired phones over the network (Wi-Fi), encrypted
         --pair              Pair a new phone: shows a QR code to scan (implies --wifi)
+        --tls12-only        Testing: Wi-Fi with TLS 1.2 only, as with Android 5-9 phones
     -r, --rotate <ROTATION> auto, 0, 90, 180 or 270 (degrees, clockwise) [default: auto]
                             auto: upright whatever the way you hold the phone.
                             A number: fixed, the picture never turns.
@@ -61,6 +61,8 @@ struct Args {
     adb: bool,
     wifi: bool,
     pair: bool,
+    /// Testing: offer TLS 1.2 only (the path of Android 5–9 phones).
+    tls12_only: bool,
     view: session::View,
     portrait: bool,
     /// `oculibre bench`.
@@ -79,6 +81,7 @@ fn parse_args() -> Result<Args, String> {
         adb: true,
         wifi: false,
         pair: false,
+        tls12_only: false,
         view: session::View::default(),
         portrait: false,
         bench: None,
@@ -141,6 +144,7 @@ fn parse_args() -> Result<Args, String> {
             }
             "--no-adb" => args.adb = false,
             "-w" | "--wifi" => args.wifi = true,
+            "--tls12-only" => args.tls12_only = true,
             "--pair" => {
                 args.pair = true;
                 args.wifi = true;
@@ -311,22 +315,21 @@ fn run() -> Result<(), Box<dyn Error>> {
     } else {
         IpAddr::V4(Ipv4Addr::LOCALHOST)
     };
-    let listener = TcpListener::bind((bind_ip, args.port))
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::AddrInUse {
-                format!(
-                    "port {} is already used, probably by another `oculibre` still running: \
+    let listener = TcpListener::bind((bind_ip, args.port)).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AddrInUse {
+            format!(
+                "port {} is already used, probably by another `oculibre` still running: \
                      stop it first (or use --port)",
-                    args.port
-                )
-            } else {
-                format!("cannot listen on port {}: {e}", args.port)
-            }
-        })?;
+                args.port
+            )
+        } else {
+            format!("cannot listen on port {}: {e}", args.port)
+        }
+    })?;
     let wifi = if args.wifi {
         let identity = tls::Identity::load_or_create(&config_dir())?;
         let wifi = Wifi {
-            config: tls::server_config(&identity)?,
+            config: tls::server_config(&identity, args.tls12_only)?,
             pairings: pairing::Pairings::load(config_dir().join("paired-phones.json")),
         };
         let addresses = pairing::lan_addresses();
@@ -567,7 +570,7 @@ impl<'a> VirtualCamera<'a> {
 impl session::Sink for VirtualCamera<'_> {
     fn show(
         &mut self,
-        picture: &DecodedYUV<'_>,
+        picture: &yuv::Picture,
         transform: yuv::Transform,
     ) -> Result<(), Box<dyn Error>> {
         let (pw, ph) = picture.dimensions();

@@ -27,6 +27,66 @@ impl Transform {
     }
 }
 
+/// A decoded I420 picture that we own (planes packed, no padding), so that the decoder can go on
+/// with the next frame while this one is converted and written. Its allocation is reused.
+#[derive(Debug, Default)]
+pub struct Picture {
+    w: usize,
+    h: usize,
+    data: Vec<u8>,
+}
+
+impl Picture {
+    /// Copies `src` (any strides) into this picture.
+    pub fn copy_from(&mut self, src: &impl YUVSource) {
+        let (w, h) = src.dimensions();
+        let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
+        let (sy, su, sv) = src.strides();
+        self.w = w;
+        self.h = h;
+        self.data.clear();
+        self.data.reserve(w * h + 2 * cw * ch);
+        for r in 0..h {
+            self.data.extend_from_slice(&src.y()[r * sy..r * sy + w]);
+        }
+        for r in 0..ch {
+            self.data.extend_from_slice(&src.u()[r * su..r * su + cw]);
+        }
+        for r in 0..ch {
+            self.data.extend_from_slice(&src.v()[r * sv..r * sv + cw]);
+        }
+    }
+
+    fn chroma_len(&self) -> usize {
+        self.w.div_ceil(2) * self.h.div_ceil(2)
+    }
+}
+
+impl YUVSource for Picture {
+    fn dimensions(&self) -> (usize, usize) {
+        (self.w, self.h)
+    }
+
+    fn strides(&self) -> (usize, usize, usize) {
+        let cw = self.w.div_ceil(2);
+        (self.w, cw, cw)
+    }
+
+    fn y(&self) -> &[u8] {
+        &self.data[..self.w * self.h]
+    }
+
+    fn u(&self) -> &[u8] {
+        let start = self.w * self.h;
+        &self.data[start..start + self.chroma_len()]
+    }
+
+    fn v(&self) -> &[u8] {
+        let start = self.w * self.h + self.chroma_len();
+        &self.data[start..start + self.chroma_len()]
+    }
+}
+
 /// (luma index, chroma index) contributed by a source row or column.
 type Offsets = (usize, usize);
 
@@ -153,6 +213,29 @@ mod tests {
     /// Luma plane of a YUYV frame.
     fn luma(out: &[u8]) -> Vec<u8> {
         out.as_chunks::<2>().0.iter().map(|p| p[0]).collect()
+    }
+
+    #[test]
+    fn picture_copy_drops_the_stride_padding() {
+        // 4x2 picture stored with strides 6 (luma) and 4 (chroma), like a decoder may.
+        let y = [1, 2, 3, 4, 0, 0, 5, 6, 7, 8, 0, 0];
+        let u = [9, 10, 0, 0];
+        let v = [11, 12, 0, 0];
+        let src = YUVSlices::new((&y, &u, &v), (4, 2), (6, 4, 4));
+        let mut p = Picture::default();
+        p.copy_from(&src);
+        assert_eq!(p.dimensions(), (4, 2));
+        assert_eq!(p.strides(), (4, 2, 2));
+        assert_eq!(p.y(), &[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(p.u(), &[9, 10]);
+        assert_eq!(p.v(), &[11, 12]);
+        // Reused for a smaller picture: no stale bytes.
+        let small = YUVSlices::new((&[1, 2, 3, 4][..], &[5][..], &[6][..]), (2, 2), (2, 1, 1));
+        p.copy_from(&small);
+        assert_eq!(
+            (p.y(), p.u(), p.v()),
+            (&[1, 2, 3, 4][..], &[5][..], &[6][..])
+        );
     }
 
     #[test]

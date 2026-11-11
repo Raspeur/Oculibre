@@ -116,10 +116,16 @@ pub(crate) fn crypto() -> Arc<CryptoProvider> {
 }
 
 /// TLS 1.3 and 1.2 (rustls only has ECDHE + AEAD suites), client certificate required.
-pub fn server_config(identity: &Identity) -> Result<Arc<ServerConfig>, String> {
+/// `tls12_only`: for testing the path of Android 5–9 phones on a recent phone.
+pub fn server_config(identity: &Identity, tls12_only: bool) -> Result<Arc<ServerConfig>, String> {
     let crypto = crypto();
+    let versions: &[&rustls::SupportedProtocolVersion] = if tls12_only {
+        &[&rustls::version::TLS12]
+    } else {
+        &[&rustls::version::TLS13, &rustls::version::TLS12]
+    };
     let config = ServerConfig::builder_with_provider(crypto.clone())
-        .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+        .with_protocol_versions(versions)
         .map_err(|e| e.to_string())?
         .with_client_cert_verifier(Arc::new(AnyClientCert(crypto)))
         .with_single_cert(
@@ -446,7 +452,7 @@ pub(crate) mod tests {
         for version in [&rustls::version::TLS13, &rustls::version::TLS12] {
             let host = Identity::generate().unwrap();
             let phone = Identity::generate().unwrap();
-            let config = server_config(&host).unwrap();
+            let config = server_config(&host, false).unwrap();
             let (c, s) = pair_of_sockets();
             let host_fp = host.fingerprint();
             let phone_side = thread::spawn(move || {
@@ -488,11 +494,41 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn tls12_only_server_makes_a_recent_phone_use_tls12() {
+        let host = Identity::generate().unwrap();
+        let phone = Identity::generate().unwrap();
+        let config = server_config(&host, true).unwrap();
+        let (c, s) = pair_of_sockets();
+        let host_fp = host.fingerprint();
+        let phone_side = thread::spawn(move || {
+            let crypto = crypto();
+            let config = ClientConfig::builder_with_provider(crypto.clone())
+                .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+                .unwrap()
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(Pinned(host_fp, crypto)))
+                .with_client_auth_cert(
+                    vec![CertificateDer::from(phone.cert.clone())],
+                    PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(phone.key.clone())),
+                )
+                .unwrap();
+            let conn = ClientConnection::new(Arc::new(config), ServerName::try_from("x").unwrap())
+                .unwrap();
+            let mut tls = StreamOwned::new(conn, c);
+            tls.write_all(b"hi").unwrap();
+            tls.flush().unwrap();
+        });
+        let accepted = accept(s, config).unwrap();
+        assert_eq!(accepted.version, "TLSv1_2");
+        phone_side.join().unwrap();
+    }
+
+    #[test]
     fn a_phone_pinning_another_computer_fails() {
         let host = Identity::generate().unwrap();
         let other = Identity::generate().unwrap();
         let phone = Identity::generate().unwrap();
-        let config = server_config(&host).unwrap();
+        let config = server_config(&host, false).unwrap();
         let (c, s) = pair_of_sockets();
         let other_fp = other.fingerprint();
         let phone_side = thread::spawn(move || {
