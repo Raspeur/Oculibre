@@ -31,6 +31,7 @@ import android.util.Range
 import android.util.Size
 import android.view.Surface
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -103,6 +104,22 @@ class LabActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
+            // #12: latency settings, applied at the next Start of the stream.
+            addView(TextView(context).apply {
+                text = "Latency settings (#12) — applied at the next Start; compare the " +
+                    "\"Phone per frame\" line of oculibre with and without"
+            })
+            Tuning.ITEMS.forEach { item ->
+                addView(CheckBox(context).apply {
+                    text = item.description
+                    isChecked = Tuning.isOn(context, item.key)
+                    setOnCheckedChangeListener { _, on -> Tuning.set(context, item.key, on) }
+                })
+            }
+            addView(TextView(context).apply {
+                text = "60 fps tests"
+                setPadding(0, pad, 0, 0)
+            })
             addView(runButton)
             addView(copyButton)
             addView(output)

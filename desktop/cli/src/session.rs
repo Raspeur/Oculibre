@@ -221,6 +221,35 @@ impl Shared {
     }
 }
 
+/// Where the phone's share of the latency goes (its `stats` event, ms): the camera finishing the
+/// picture, the H.264 encoder, the send queue (#12).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct PhoneSplit {
+    pub camera: f64,
+    pub encoder: f64,
+    pub queue: f64,
+}
+
+impl PhoneSplit {
+    /// From the phone's `stats` data; `None` for apps that do not send the split (before 0.3).
+    fn from_stats(stats: &Value) -> Option<Self> {
+        let get = |k: &str| stats.get(k).and_then(Value::as_f64);
+        Some(Self {
+            camera: get("camera_ms")?,
+            encoder: get("encoder_ms")?,
+            queue: get("queue_ms")?,
+        })
+    }
+
+    /// `camera 30 + encoder 45 + queue 2`
+    pub fn text(&self) -> String {
+        format!(
+            "camera {:.0} + encoder {:.0} + queue {:.0}",
+            self.camera, self.encoder, self.queue
+        )
+    }
+}
+
 /// What the host measured during one second (ticker period), for a [`Control`] driver.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Second {
@@ -238,6 +267,8 @@ pub struct Second {
     pub pc_sum_us: i64,
     /// Capture → network on the phone (its last `stats`), ms.
     pub phone_latency_ms: Option<f64>,
+    /// The same, split (its last `stats`).
+    pub phone_split: Option<PhoneSplit>,
     pub rtt_ms: Option<f64>,
     /// Totals since the start of the session.
     pub dropped_total: Option<u64>,
@@ -807,6 +838,8 @@ struct Status {
     /// Rolling average over the last [`AVERAGE_WINDOW`] seconds, ms.
     latency_avg: Option<f64>,
     phone: Option<f64>,
+    /// The phone share split (newer apps).
+    split: Option<PhoneSplit>,
     pc: Option<f64>,
     rtt: Option<f64>,
     dropped: Option<u64>,
@@ -816,7 +849,8 @@ struct Status {
 }
 
 impl Status {
-    /// `60 fps (camera 60) · 11.8 Mbit/s · latency 48 ms (phone 30 + network 6 + PC 12, max 61) · …`
+    /// `60 fps (camera 60) · 11.8 Mbit/s · latency 48 ms (phone 30 + network 6 + PC 12, max 61) · …`;
+    /// with a newer app the phone share is split: `(camera 10 + encoder 18 + queue 2 + network 6 …`
     fn line(&self) -> String {
         let mut line = format!("{:>3.0} fps", self.shown_fps);
         if let Some(c) = self.camera_fps {
@@ -829,7 +863,11 @@ impl Status {
                 if let (Some(phone), Some(pc)) = (self.phone, self.pc) {
                     // The network share is what remains: transfer, waiting in buffers, clock error.
                     let network = (total - phone - pc).max(0.0);
-                    line += &format!(" (phone {phone:.0} + network {network:.0} + PC {pc:.0}");
+                    let phone_text = match self.split {
+                        Some(split) => split.text(),
+                        None => format!("phone {phone:.0}"),
+                    };
+                    line += &format!(" ({phone_text} + network {network:.0} + PC {pc:.0}");
                     if let Some(max) = self.latency_max {
                         line += &format!(", max {max:.0}");
                     }
@@ -873,6 +911,9 @@ struct Totals {
     /// PC share and its decoding part, µs, summed over the measured frames.
     pc_sum: i64,
     decode_sum: i64,
+    /// Sum of the phone's per-second splits, and how many seconds had one.
+    phone_split_sum: PhoneSplit,
+    phone_split_seconds: u32,
     dropped: Option<u64>,
     errors: u32,
     /// (sum, count) of the last [`AVERAGE_WINDOW`] seconds.
@@ -894,6 +935,15 @@ impl Totals {
             self.window.pop_front();
         }
         self.window.push_back((latency.total_sum, latency.count));
+    }
+
+    fn add_phone(&mut self, split: Option<PhoneSplit>) {
+        if let Some(p) = split {
+            self.phone_split_sum.camera += p.camera;
+            self.phone_split_sum.encoder += p.encoder;
+            self.phone_split_sum.queue += p.queue;
+            self.phone_split_seconds += 1;
+        }
     }
 
     /// Average latency of the last seconds, weighted by frames, ms.
@@ -927,6 +977,15 @@ impl Totals {
             line += &format!(" · dropped by phone {d}");
         }
         line += &format!(" · decode errors {}", self.errors);
+        if self.phone_split_seconds > 0 {
+            let n = f64::from(self.phone_split_seconds);
+            let average = PhoneSplit {
+                camera: self.phone_split_sum.camera / n,
+                encoder: self.phone_split_sum.encoder / n,
+                queue: self.phone_split_sum.queue / n,
+            };
+            line += &format!("\nPhone per frame: {} ms", average.text());
+        }
         if self.latency_count > 0 && self.pc_sum > 0 {
             // Where the PC share goes: if it nears the frame interval, the PC falls behind.
             let per_frame = |us: i64| us as f64 / self.latency_count as f64 / 1000.0;
@@ -1012,6 +1071,9 @@ fn ticker(shared: &Shared) -> Totals {
             .clone()
             .unwrap_or_default();
         totals.dropped = phone.get("dropped").and_then(Value::as_u64);
+        if latency.count > 0 {
+            totals.add_phone(PhoneSplit::from_stats(&phone));
+        }
         let mbits = bytes as f64 * 8.0 / secs / 1e6;
         if let Some(tx) = &seconds {
             let _ = tx.send(Second {
@@ -1024,6 +1086,7 @@ fn ticker(shared: &Shared) -> Totals {
                 latency_count: latency.count,
                 pc_sum_us: latency.pc_sum,
                 phone_latency_ms: phone.get("latency_ms").and_then(Value::as_f64),
+                phone_split: PhoneSplit::from_stats(&phone),
                 rtt_ms,
                 dropped_total: totals.dropped,
                 errors_total: errors,
@@ -1039,6 +1102,7 @@ fn ticker(shared: &Shared) -> Totals {
                 latency_max: latency_ms.map(|_| latency.total_max as f64 / 1000.0),
                 latency_avg: totals.rolling_ms(),
                 phone: phone.get("latency_ms").and_then(Value::as_f64),
+                split: PhoneSplit::from_stats(&phone),
                 pc: avg_ms(latency.pc_sum),
                 rtt: rtt_ms,
                 dropped: totals.dropped,
@@ -1056,7 +1120,7 @@ fn ticker(shared: &Shared) -> Totals {
 
 #[cfg(test)]
 mod status_tests {
-    use super::Status;
+    use super::{PhoneSplit, Status};
 
     #[test]
     fn full_line() {
@@ -1068,6 +1132,7 @@ mod status_tests {
             latency_max: Some(61.0),
             latency_avg: Some(50.6),
             phone: Some(30.4),
+            split: None,
             pc: Some(11.9),
             rtt: Some(1.23),
             dropped: Some(0),
@@ -1078,6 +1143,28 @@ mod status_tests {
             s.line(),
             " 60 fps (camera 60) · 11.8 Mbit/s · latency 48 ms \
              (phone 30 + network 6 + PC 12, max 61) · avg 10 s: 51 ms · rtt 1.2 ms"
+        );
+    }
+
+    #[test]
+    fn line_with_the_phone_split() {
+        let s = Status {
+            shown_fps: 60.0,
+            mbits: 12.0,
+            latency: Some(90.0),
+            phone: Some(80.0),
+            split: Some(PhoneSplit {
+                camera: 31.2,
+                encoder: 46.6,
+                queue: 2.4,
+            }),
+            pc: Some(7.0),
+            ..Default::default()
+        };
+        assert_eq!(
+            s.line(),
+            " 60 fps · 12.0 Mbit/s · latency 90 ms \
+             (camera 31 + encoder 47 + queue 2 + network 3 + PC 7)"
         );
     }
 

@@ -15,7 +15,7 @@ use oculibre_protocol::{
     SetMode,
 };
 
-use crate::session::{Control, Second};
+use crate::session::{Control, PhoneSplit, Second};
 
 /// How long each mode runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +75,8 @@ pub struct Measure {
     pub latency_max_ms: Option<f64>,
     /// Capture → network, on the phone, ms.
     pub phone_ms: Option<f64>,
+    /// The phone share split into camera, encoder and queue (apps from 0.3 on), ms.
+    pub phone_split: Option<PhoneSplit>,
     /// Received → virtual camera, on the PC, ms.
     pub pc_ms: Option<f64>,
     pub rtt_ms: Option<f64>,
@@ -107,6 +109,18 @@ impl Measure {
                 .max()
                 .map(|us| us as f64 / 1000.0),
             phone_ms: mean(seconds.iter().filter_map(|s| s.phone_latency_ms).collect()),
+            phone_split: {
+                let splits: Vec<PhoneSplit> =
+                    seconds.iter().filter_map(|s| s.phone_split).collect();
+                (!splits.is_empty()).then(|| {
+                    let n = splits.len() as f64;
+                    PhoneSplit {
+                        camera: splits.iter().map(|p| p.camera).sum::<f64>() / n,
+                        encoder: splits.iter().map(|p| p.encoder).sum::<f64>() / n,
+                        queue: splits.iter().map(|p| p.queue).sum::<f64>() / n,
+                    }
+                })
+            },
             pc_ms: (count > 0).then(|| pc_sum as f64 / count as f64 / 1000.0),
             rtt_ms: mean(seconds.iter().filter_map(|s| s.rtt_ms).collect()),
             dropped: match (base.dropped_total, last.dropped_total) {
@@ -376,7 +390,7 @@ fn fmt_opt(v: Option<f64>, decimals: usize) -> String {
 pub fn table(rows: &[Row]) -> String {
     let mut t = String::from(
         "| Camera | Mode | Capture | Camera fps | Shown fps | Latency avg / max | \
-         Phone + network + PC | Mbit/s | Dropped | Decode errors |\n\
+         Camera + encoder + queue + network + PC | Mbit/s | Dropped | Decode errors |\n\
          |---|---|---|---|---|---|---|---|---|---|\n",
     );
     for r in rows {
@@ -389,7 +403,14 @@ pub fn table(rows: &[Row]) -> String {
                     _ => "—".into(),
                 };
                 let split = match (m.phone_ms, m.network_ms(), m.pc_ms) {
-                    (Some(p), Some(n), Some(c)) => format!("{p:.0} + {n:.0} + {c:.0}"),
+                    (Some(p), Some(n), Some(c)) => match m.phone_split {
+                        Some(s) => format!(
+                            "{:.0} + {:.0} + {:.0} + {n:.0} + {c:.0}",
+                            s.camera, s.encoder, s.queue
+                        ),
+                        // Older app: the phone share in one piece.
+                        None => format!("({p:.0}) + {n:.0} + {c:.0}"),
+                    },
                     _ => "—".into(),
                 };
                 t += &format!(
@@ -458,8 +479,10 @@ pub fn section(outcome: &Outcome, ctx: &Context<'_>) -> String {
     s += "\n- *Latency*: capture on the phone → frame written to the virtual camera, measured by \
           the PC (§11 of the protocol). The app showing the camera and the screen add one or two \
           frames more (glass-to-glass).\n\
-          - *Phone + network + PC*: capture → network on the phone (camera, encoder, queue), \
-          what remains, and decode → virtual camera on the PC.\n\
+          - *Camera + encoder + queue + network + PC*, ms: on the phone, capture → picture \
+          finished by the camera → out of the H.264 encoder → handed to the network; then what \
+          remains (network); then decode → virtual camera on the PC. In brackets: the phone share \
+          in one piece (app older than 0.3).\n\
           - *Camera fps*: frames the camera really delivers; *shown fps*: frames written to the \
           virtual camera.\n";
     s += &end;
@@ -617,6 +640,11 @@ mod tests {
             latency_count: frames,
             pc_sum_us: 10_000 * i64::from(frames),
             phone_latency_ms: Some(40.0),
+            phone_split: Some(PhoneSplit {
+                camera: 15.0,
+                encoder: 22.0,
+                queue: 3.0,
+            }),
             rtt_ms: Some(2.0),
             dropped_total: Some(dropped),
             errors_total: errors,
@@ -680,9 +708,9 @@ mod tests {
         assert_eq!(
             table(&rows()),
             "| Camera | Mode | Capture | Camera fps | Shown fps | Latency avg / max | \
-             Phone + network + PC | Mbit/s | Dropped | Decode errors |\n\
+             Camera + encoder + queue + network + PC | Mbit/s | Dropped | Decode errors |\n\
              |---|---|---|---|---|---|---|---|---|---|\n\
-             | 0 back | 1920×1080 @ 60 | unlisted | 60.0 | 60.0 | 82 / 92 ms | 40 + 32 + 10 | 12.0 | 0 | 0 |\n\
+             | 0 back | 1920×1080 @ 60 | unlisted | 60.0 | 60.0 | 82 / 92 ms | 15 + 22 + 3 + 32 + 10 | 12.0 | 0 | 0 |\n\
              | 1 front | 3840×2160 @ 30 | normal | ❌ failed (camera / refused) | | | | | | |\n"
         );
     }

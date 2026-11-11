@@ -115,9 +115,32 @@ class StreamSession(
         fun onStopped(session: StreamSession, error: String?)
     }
 
-    /** An encoded message ready to send; [ptsUs] = capture time of a frame, -1 otherwise. */
-    private class Packet(val bytes: ByteArray, val ptsUs: Long = -1) {
+    /**
+     * An encoded message ready to send; [ptsUs] = capture time of a frame, -1 otherwise;
+     * [encodedUs] = when the encoder output it (same clock).
+     */
+    private class Packet(val bytes: ByteArray, val ptsUs: Long = -1, val encodedUs: Long = -1) {
         val isFrame get() = ptsUs >= 0
+    }
+
+    /** Average of the delays of the last second (µs in, ms out), shared between threads. */
+    private class Delay {
+        private val sum = AtomicLong()
+        private val count = AtomicInteger()
+
+        fun add(us: Long) {
+            if (us in 0..10_000_000) {
+                sum.addAndGet(us)
+                count.incrementAndGet()
+            }
+        }
+
+        /** Average in ms (0.1 ms steps) since the last call, null if nothing was measured. */
+        fun takeMs(): Double? {
+            val n = count.getAndSet(0)
+            val total = sum.getAndSet(0)
+            return if (n == 0) null else Math.round(total / n / 100.0) / 10.0
+        }
     }
 
     private val appContext = context.applicationContext
@@ -143,6 +166,8 @@ class StreamSession(
     @Volatile private var pairingToken: String? = null
     /** " · encrypted (TLSv1.3)" on Wi-Fi, for the status line. */
     @Volatile private var linkLabel = ""
+    /** "\nLab settings: qcom low latency off" when Lab settings differ from the defaults. */
+    @Volatile private var tuningLabel = ""
 
     @Volatile private var setupThread: Thread? = null
     @Volatile private var senderThread: Thread? = null
@@ -191,8 +216,21 @@ class StreamSession(
     private val framesDropped = AtomicInteger()
     private val cameraFrames = AtomicInteger()
     private val bytesSent = AtomicLong()
-    private val phoneDelaySum = AtomicLong()
-    private val phoneDelayCount = AtomicInteger()
+    /** Capture → handed to the network (camera + encoder + queue). */
+    private val phoneDelay = Delay()
+    /** Capture → the camera has finished the picture (onCaptureCompleted). */
+    private val cameraDelay = Delay()
+    /** Capture → out of the encoder (camera + encoder). */
+    private val encodedDelay = Delay()
+    /** Out of the encoder → handed to the network. */
+    private val queueDelay = Delay()
+
+    /**
+     * Clock of SENSOR_TIMESTAMP for the current camera: boot time (true) or monotonic, decided on
+     * its first picture (SENSOR_INFO_TIMESTAMP_SOURCE is not reliable, see checkClock); null =
+     * not decided yet.
+     */
+    @Volatile private var sensorRealtime: Boolean? = null
 
     // What the computer reports (its `stats` event).
     @Volatile private var hostStats: Map<*, *>? = null
@@ -645,7 +683,7 @@ class StreamSession(
 
     // ------------------------------------------------------------------ encoder
 
-    private fun baseFormat(cfg: StreamConfig): MediaFormat =
+    private fun baseFormat(cfg: StreamConfig, tuning: Tuning): MediaFormat =
         MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, cfg.width, cfg.height).apply {
             setInteger(
                 MediaFormat.KEY_COLOR_FORMAT,
@@ -661,6 +699,9 @@ class StreamSession(
             // High-speed capture (e.g. 120 fps): drop frames before the encoder to reach cfg.fps.
             // Public as KEY_MAX_FPS_TO_ENCODER since API 29, understood by older versions too.
             if (cfg.highSpeedFps > 0) setFloat("max-fps-to-encoder", cfg.fps.toFloat())
+            // Qualcomm's own low-latency mode (#12): their encoders otherwise keep ~3 frames
+            // (Redmi Note 9 Pro 1080p60: encoder 50 → 21 ms). Ignored by other encoders.
+            if (tuning.qcomLowLatency) setInteger("vendor.qti-ext-enc-low-latency.enable", 1)
         }
 
     private fun configureEncoder(format: MediaFormat, name: String?): MediaCodec {
@@ -684,7 +725,13 @@ class StreamSession(
     private class PipelineException(message: String) : IOException(message)
 
     /** Camera + encoder of one mode. `set_mode` replaces it as a whole. */
-    private inner class Pipeline(val cfg: StreamConfig, val cameraId: String, val chars: CameraCharacteristics) {
+    private inner class Pipeline(
+        val cfg: StreamConfig,
+        val cameraId: String,
+        val chars: CameraCharacteristics,
+        /** Latency experiments (#12) read when this pipeline started. */
+        val tuning: Tuning,
+    ) {
         @Volatile var active = true
         @Volatile var codec: MediaCodec? = null
         @Volatile var surface: Surface? = null
@@ -747,6 +794,7 @@ class StreamSession(
         realtimeClock = Build.VERSION.SDK_INT >= 23 &&
             chars.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
             CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+        sensorRealtime = null
         firstSensorNs = -1L
         cameraInfo = Protocol.CameraInfo(
             id = cameraId,
@@ -761,7 +809,9 @@ class StreamSession(
         activeConfig = cfg
         pipelineStartMs = SystemClock.elapsedRealtime()
 
-        val p = Pipeline(cfg, cameraId, chars)
+        val tuning = Tuning.load(appContext)
+        tuningLabel = if (tuning.label.isEmpty()) "" else "\nLab settings: ${tuning.label}"
+        val p = Pipeline(cfg, cameraId, chars, tuning)
         pipeline = p
         try {
             if (!running.get()) throw PipelineException("stopped")
@@ -784,7 +834,7 @@ class StreamSession(
         // Baseline = no B-frames = lowest latency, with the level matching size × fps.
         // Some encoders refuse an explicit profile, so fall back to the vendor default.
         val c = if (cfg.baseline) {
-            val baseline = baseFormat(cfg).apply {
+            val baseline = baseFormat(cfg, p.tuning).apply {
                 setInteger(
                     MediaFormat.KEY_PROFILE,
                     MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline,
@@ -794,10 +844,10 @@ class StreamSession(
             try {
                 configureEncoder(baseline, cfg.encoderName)
             } catch (e: Exception) {
-                configureEncoder(baseFormat(cfg), cfg.encoderName)
+                configureEncoder(baseFormat(cfg, p.tuning), cfg.encoderName)
             }
         } else {
-            configureEncoder(baseFormat(cfg), cfg.encoderName)
+            configureEncoder(baseFormat(cfg, p.tuning), cfg.encoderName)
         }
         p.codec = c
         p.surface = c.createInputSurface()
@@ -879,10 +929,12 @@ class StreamSession(
         }
         if (!clockChecked.get()) checkClock(ptsUs)
         val timestampUs = ptsUs - timestampShiftUs
+        val encodedUs = nowUs()
+        encodedDelay.add(encodedUs - timestampUs)
         val bytes = Protocol.encodeVideoFrame(
             Protocol.STREAM_VIDEO, timestampUs, isKey, pendingDiscontinuity, number, configId, data, 0, size,
         )
-        if (queue.offer(Packet(bytes, timestampUs))) {
+        if (queue.offer(Packet(bytes, timestampUs, encodedUs))) {
             pendingDiscontinuity = false
         } else {
             framesDropped.incrementAndGet()
@@ -912,11 +964,9 @@ class StreamSession(
                         framesSent.incrementAndGet()
                         // Capture → handed to the network: camera, encoder and queue.
                         if (clockChecked.get()) {
-                            val delay = nowUs() - packet.ptsUs
-                            if (delay in 0..10_000_000) {
-                                phoneDelaySum.addAndGet(delay)
-                                phoneDelayCount.incrementAndGet()
-                            }
+                            val now = nowUs()
+                            phoneDelay.add(now - packet.ptsUs)
+                            queueDelay.add(now - packet.encodedUs)
                         }
                     }
                 }
@@ -1078,9 +1128,15 @@ class StreamSession(
             result: TotalCaptureResult,
         ) {
             cameraFrames.incrementAndGet()
-            if (firstSensorNs < 0) {
-                result.get(CaptureResult.SENSOR_TIMESTAMP)?.let { firstSensorNs = it }
-            }
+            val sensorNs = result.get(CaptureResult.SENSOR_TIMESTAMP) ?: return
+            if (firstSensorNs < 0) firstSensorNs = sensorNs
+            // How long the camera took to finish this picture, on the sensor's own clock: the one
+            // closest to the timestamp of its first picture (they differ by the time spent asleep).
+            val bootNs = SystemClock.elapsedRealtimeNanos()
+            val monotonicNs = System.nanoTime()
+            val realtime = sensorRealtime
+                ?: (Math.abs(bootNs - sensorNs) < Math.abs(monotonicNs - sensorNs)).also { sensorRealtime = it }
+            cameraDelay.add(((if (realtime) bootNs else monotonicNs) - sensorNs) / 1000)
         }
     }
 
@@ -1137,8 +1193,10 @@ class StreamSession(
                     lastCameraFrames = camera
                     lastBytes = bytes
 
-                    val delayCount = phoneDelayCount.getAndSet(0)
-                    val delaySum = phoneDelaySum.getAndSet(0)
+                    val phoneMs = phoneDelay.takeMs()
+                    val cameraMs = cameraDelay.takeMs()
+                    val encodedMs = encodedDelay.takeMs()
+                    val queueMs = queueDelay.takeMs()
                     if (Protocol.Feature.STATS in shared) {
                         val data = linkedMapOf<String, Any?>(
                             "camera_fps" to cameraFps.toLong(),
@@ -1147,10 +1205,13 @@ class StreamSession(
                             "dropped" to framesDropped.get().toLong(),
                             "queue" to queue.size.toLong(),
                         )
-                        if (delayCount > 0) {
-                            // Average capture → network delay of the last second, 0.1 ms steps.
-                            data["latency_ms"] = Math.round(delaySum / delayCount / 100.0) / 10.0
+                        // Averages of the last second, ms: capture → network, and its parts.
+                        phoneMs?.let { data["latency_ms"] = it }
+                        cameraMs?.let { data["camera_ms"] = it }
+                        if (encodedMs != null && cameraMs != null) {
+                            data["encoder_ms"] = Math.round(maxOf(0.0, encodedMs - cameraMs) * 10) / 10.0
                         }
+                        queueMs?.let { data["queue_ms"] = it }
                         runCatching { writer?.write(Message.Event("stats", data)) }
                     }
 
@@ -1176,7 +1237,7 @@ class StreamSession(
                         }
                     } ?: ""
                     status(
-                        "Streaming ${cfg.width}x${cfg.height}$linkLabel\n" +
+                        "Streaming ${cfg.width}x${cfg.height}$linkLabel$tuningLabel\n" +
                             "camera $cameraFps fps · sent $sentFps fps · ${"%.1f".format(bitrate / 1_000_000.0)} Mbit/s\n" +
                             "dropped: ${framesDropped.get()}" + pc + warning,
                     )

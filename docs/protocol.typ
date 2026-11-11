@@ -426,7 +426,7 @@ Unsolicited notifications, no response.
   columns: (auto, auto, 1fr, auto),
   table.header([`event`], [Direction], [`data`], [Since]),
   [`orientation`], [camera → host], [`{"device_rotation"}`: `0`, `90`, `180`, `270` or `null` (@orientation)], [0.1],
-  [`stats`], [camera → host, every 1 s], [`{"camera_fps", "sent_fps", "bitrate", "dropped", "queue", "latency_ms"?}`; `latency_ms`: average delay from capture to handing the frame to the network (camera, encoder, queue)], [0.1],
+  [`stats`], [camera → host, every 1 s], [`{"camera_fps", "sent_fps", "bitrate", "dropped", "queue", "latency_ms"?, "camera_ms"?, "encoder_ms"?, "queue_ms"?}`; `latency_ms`: average delay from capture to handing the frame to the network; its parts: `camera_ms` capture → picture finished by the camera, `encoder_ms` → out of the encoder, `queue_ms` → handed to the network (0.3)], [0.1],
   [`stats`], [host → camera, every 1 s], [`{"received_fps", "decoded_fps", "decode_errors", "rtt_ms"?, "latency_ms"?}`; `latency_ms`: average capture-to-output latency (§11)], [0.1],
   [`thermal`], [camera → host], [`{"status", "battery_temp_c"?, "battery_pct"?, "charging"?}`; `status` is one of `none`, `light`, `moderate`, `severe`, `critical`, `emergency`, `shutdown` (Android thermal status)], [reserved],
   [`mode_changed`], [camera → host], [`{"reason": "thermal"|"user"|"camera", …}`, followed by a new `STREAM_CONFIG`], [reserved],
@@ -656,7 +656,8 @@ USB, Redmi Note 9 Pro, 1080p60 (`→` camera to host, `←` host to camera):
   [0.3], [Wi-Fi secured: TLS (1.3, or 1.2 with ECDHE + AEAD) with pinned self-signed keys on every
     non-loopback connection, pairing through a QR code (`oculibre://pair?v=1&…`), `HELLO.pairing_token`,
     host checks the camera's `HELLO` before sending its own. Plaintext stays for loopback (USB).
-    Discovery: `_oculibre-host._tcp` with TXT `v`, `k`.],
+    Discovery: `_oculibre-host._tcp` with TXT `v`, `k`. Camera `stats`: `camera_ms`, `encoder_ms`,
+    `queue_ms`.],
   [0.2], [`set_mode` command and feature `control.mode` (the host picks the camera and the mode;
     used by `oculibre bench`), `STREAM_END` reason `mode_change`, capabilities list every camera. A
     0.1 peer still works, without `set_mode`. Encryption moves to the version that adds pairing.],
