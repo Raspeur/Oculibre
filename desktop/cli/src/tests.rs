@@ -304,7 +304,9 @@ fn fixed_rotation_ignores_the_phone() {
 }
 
 /// A phone that obeys `set_mode` (protocol 0.2): one camera, two modes; it streams the first one
-/// and refuses the second one, like a camera that cannot open.
+/// and refuses the second one, like a camera that cannot open. Like the real app, it needs a moment
+/// to open its camera after the handshake and answers `busy` meanwhile, then streams on its own.
+/// Returns the `set_mode` arguments it received, `busy` answers included.
 fn obedient_phone(s: TcpStream, codec_data: Vec<u8>, frames: Vec<Vec<u8>>) -> Vec<Value> {
     use std::sync::mpsc;
     use std::sync::{Arc, Mutex};
@@ -361,12 +363,26 @@ fn obedient_phone(s: TcpStream, codec_data: Vec<u8>, frames: Vec<Vec<u8>>) -> Ve
     let mut streaming = false;
     let mut config_id = 0u16;
     let mut n = 0u32;
+    let camera_ready = std::time::Instant::now() + Duration::from_millis(300);
     loop {
+        if !streaming && config_id == 0 && std::time::Instant::now() >= camera_ready {
+            config_id = 1;
+            if send(&writer, &config(config_id, &codec_data)).is_err() {
+                break;
+            }
+            streaming = true;
+        }
         match rx.try_recv() {
             Ok(req) => {
                 assert_eq!(req.cmd, "set_mode");
                 asked.push(req.args.clone());
-                let response = if req.args["fps"] == 30 {
+                let response = if config_id == 0 {
+                    oculibre_protocol::Response::error(
+                        req.id,
+                        "busy",
+                        Some("opening camera".into()),
+                    )
+                } else if req.args["fps"] == 30 {
                     oculibre_protocol::Response::ok(req.id)
                 } else {
                     oculibre_protocol::Response::error(

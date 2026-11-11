@@ -172,6 +172,10 @@ pub fn run(control: &Control, settings: Settings) -> Result<Outcome, String> {
         total % 60
     );
 
+    // The phone opens its camera after Start and answers `busy` meanwhile: wait for its first
+    // stream, so that it is not taken for the stream of the first mode.
+    wait_first_picture(control)?;
+
     let mut outcome = Outcome {
         phone: control.phone.clone(),
         rows: Vec::new(),
@@ -218,6 +222,19 @@ pub fn run(control: &Control, settings: Settings) -> Result<Outcome, String> {
     Ok(outcome)
 }
 
+/// Waits until the phone shows pictures (its stream from Start).
+fn wait_first_picture(control: &Control) -> Result<(), String> {
+    for _ in 0..FIRST_PICTURE_SECONDS {
+        let s = control.next_second().ok_or("the phone left")?;
+        if s.stream_seq > 0 && s.shown_fps > 0.0 {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "no picture from the phone within {FIRST_PICTURE_SECONDS} s"
+    ))
+}
+
 /// Why a mode has no measurement.
 enum Stop {
     /// This mode failed; the bench goes on.
@@ -227,9 +244,10 @@ enum Stop {
 }
 
 fn measure(control: &Control, settings: Settings, set: &SetMode) -> Result<Measure, Stop> {
-    let before = control.stream_seq();
+    let mut before;
     let mut busy_retries = 0;
     let response = loop {
+        before = control.stream_seq();
         let r = control
             .call(commands::SET_MODE, set.to_value(), SET_MODE_TIMEOUT)
             .map_err(Stop::Session)?;
