@@ -30,15 +30,33 @@ rate an app can request in a regular session; "high-speed" modes are slow-motion
 
 ## Oculibre results
 
-<!-- Fill in after testing. -->
-
-- Oculibre version:
+- Oculibre version: Android app 0.1.0, protocol 0.1 (2026-11-11)
 - Modes offered by the app:
 - 720p30 / 1080p30 / 4K30:
-- 60 fps (normal or high-speed) and picture quality:
-- Latency (glass-to-glass), USB / Wi-Fi:
+- 60 fps (normal or high-speed) and picture quality: **1080p60 works** through the unlisted
+  `[60,60]` AE range ("unlisted capture"): the camera delivers 59–61 fps and the PC shows 58–61 fps.
+- Latency (glass-to-glass), USB / Wi-Fi: see below, **1080p60: ~112 ms USB, ~103 ms Wi-Fi**
 - Temperature after 30 min:
-- Notes:
+- Notes: the H.264 bitrate measured over USB went from 11 to 34 Mbit/s, well above the
+  12 Mbit/s planned for 1080p60 (to investigate).
+
+### Latency, 1080p60, back camera
+
+| Link | Measured by the PC (capture → virtual camera) | Glass-to-glass (stopwatch) | Display share |
+|---|---|---|---|
+| USB (`adb reverse`) | 82 ms | 112 ms | 30 ms |
+| Wi-Fi (`--insecure-lan`) | 92 ms | 103 ms | 11 ms |
+
+- *Measured by the PC*: average latency shown by `oculibre` (§11 of the protocol: capture time on
+  the phone brought to the PC's clock by `PING`/`PONG`, until the frame is written to v4l2loopback).
+  Round trip: about 2 ms over USB, about 4 ms over Wi-Fi.
+- *Glass-to-glass*: a millisecond stopwatch shown on the PC screen, filmed by the phone, with the
+  virtual camera displayed next to it; difference between the two stopwatches on a screenshot.
+- *Display share*: what the PC measurement does not include, i.e. the app showing the virtual camera
+  and the screen refresh (one or two frames at 60 Hz). It varies with the moment the frame falls in
+  the screen refresh, which explains 11 ms on one side and 30 ms on the other.
+- Wi-Fi only costs about 10 ms more than USB (PC measurement); the glass-to-glass figures of both
+  links are within the spread of the method.
 
 
 # Labs Result 
