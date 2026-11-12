@@ -93,6 +93,7 @@
     <string name="scan_camera_denied">Oculibre a besoin de la caméra pour lire le QR code affiché par l\'ordinateur.</string>
     <string name="scan_allow">Autoriser dans les réglages</string>
     <string name="scan_camera_error">Impossible d\'ouvrir la caméra. Fermez les autres applications qui l\'utilisent, puis réessayez.</string>
+    <string name="scan_other_computer">Relier à un autre ordinateur</string>
     <string name="retry">Réessayer</string>
     <string name="pair_title">Relier à %1$s ?</string>
     <string name="pair_text">Le direct en Wi-Fi vers cet ordinateur sera chiffré, et seul cet ordinateur pourra le recevoir.\n\nVérifiez que l\'ordinateur affiche le même code :\n%1$s\n\nAdresse : %2$s</string>

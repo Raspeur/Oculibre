@@ -99,6 +99,7 @@
     <string name="scan_camera_denied">Oculibre needs the camera to read the QR code shown by the computer.</string>
     <string name="scan_allow">Allow in the settings</string>
     <string name="scan_camera_error">The camera could not be opened. Close the other apps using it, then try again.</string>
+    <string name="scan_other_computer">Pair with another computer</string>
     <string name="retry">Try again</string>
     <string name="pair_title">Pair with %1$s?</string>
     <string name="pair_text">Wi-Fi streaming to this computer will be encrypted, and only this computer will be able to receive it.\n\nCheck that the computer shows the same code:\n%1$s\n\nAddress: %2$s</string>

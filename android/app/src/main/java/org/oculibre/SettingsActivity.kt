@@ -123,6 +123,11 @@ class SettingsActivity : Activity() {
                     })
                 }))
             })
+            // Scan again at any time: another computer, or the same one after it lost its key.
+            addView(Ui.actionRow(this@SettingsActivity,
+                getString(if (paired == null) R.string.scan_title else R.string.scan_other_computer), null) {
+                startActivity(Intent(this@SettingsActivity, ScannerActivity::class.java))
+            })
             if (paired != null) {
                 addView(Ui.actionRow(this@SettingsActivity, getString(R.string.forget_computer), "", R.color.oc_accent_text) {
                     AlertDialog.Builder(this@SettingsActivity)
