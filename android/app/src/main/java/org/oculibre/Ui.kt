@@ -149,6 +149,60 @@ object Ui {
             setOnClickListener { onClick() }
         }
 
+    /** .oc-label: a section title, small capitals. */
+    fun sectionLabel(context: Context, label: String) = text(context, TEXT_SM, R.color.oc_text_muted, strong = true).apply {
+        text = label.uppercase()
+        letterSpacing = 0.08f
+        setPadding(dp(context, 4f), 0, dp(context, 4f), 0)
+    }
+
+    /** .oc-card .oc-list: rows in a card, separated by thin lines. */
+    fun listCard(context: Context) = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        background = rounded(context, R.color.oc_surface_3, RADIUS_MD, R.color.oc_border)
+        showDividers = LinearLayout.SHOW_DIVIDER_MIDDLE
+        dividerDrawable = GradientDrawable().apply {
+            setColor(color(context, R.color.oc_border))
+            setSize(0, dp(context, 1f))
+        }
+        clipToOutline = true
+    }
+
+    /** A check of the settings: ✓ OK, or ! and "Fix ›". */
+    fun checkRow(context: Context, title: String, detail: String, ok: Boolean, fix: String, onClick: () -> Unit) =
+        row(context, 14f).apply {
+            val p = dp(context, 14f)
+            setPadding(p, dp(context, 12f), p, dp(context, 12f))
+            minimumHeight = dp(context, 68f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            addView(
+                if (ok) badge(context, "✓", R.color.oc_live_soft, R.color.oc_live)
+                else badge(context, "!", R.color.oc_accent_soft, R.color.oc_accent_text),
+            )
+            addView(grow(column(context, 3f).apply {
+                addView(text(context, TEXT_LG, strong = true).apply { text = title })
+                addView(text(context, TEXT_MD, R.color.oc_text_muted).apply { text = detail })
+            }))
+            addView(text(context, TEXT_MD, if (ok) R.color.oc_live else R.color.oc_accent_text, strong = true).apply {
+                text = if (ok) context.getString(R.string.check_ok) else fix
+            })
+        }
+
+    /** A row that opens something: a label, and a quiet value with ›. */
+    fun actionRow(context: Context, label: String, value: String?, colorId: Int = R.color.oc_text, onClick: () -> Unit) =
+        row(context, 12f).apply {
+            val p = dp(context, 14f)
+            setPadding(p, 0, p, 0)
+            minimumHeight = dp(context, 52f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            addView(grow(text(context, TEXT_LG, colorId).apply { text = label }))
+            addView(text(context, TEXT_MD, R.color.oc_text_muted).apply { text = if (value == null) "›" else "$value ›" })
+        }
+
     /** Takes the remaining width in a row. */
     fun grow(view: View) = view.apply {
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)

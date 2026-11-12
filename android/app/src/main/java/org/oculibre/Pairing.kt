@@ -59,6 +59,8 @@ data class PairedComputer(
     /** Still to send in the next HELLO; cleared once the computer accepted it. */
     val token: String?,
     val addresses: List<String>,
+    /** When it was paired ("2026-11-12"), if known (pairings before 0.3.2 don't say). */
+    val pairedOn: String? = null,
 )
 
 object PairingStore {
@@ -74,6 +76,7 @@ object PairingStore {
             fingerprint = fp,
             token = p.getString("pair_token", null),
             addresses = p.getString("pair_addresses", null)?.split(',')?.filter { it.isNotEmpty() } ?: emptyList(),
+            pairedOn = p.getString("pair_date", null),
         )
     }
 
@@ -83,6 +86,7 @@ object PairingStore {
             .putString("pair_fingerprint", offer.fingerprint)
             .putString("pair_token", offer.token)
             .putString("pair_addresses", offer.addresses.joinToString(","))
+            .putString("pair_date", java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(java.util.Date()))
             .apply()
     }
 
@@ -107,6 +111,9 @@ object PairingStore {
     fun forget(context: Context) {
         prefs(context).edit()
             .remove("pair_name").remove("pair_fingerprint").remove("pair_token").remove("pair_addresses")
+            .remove("pair_date")
+            // Back to the cable: the computer's network address is of no use any more.
+            .putString(HOST_PREF, "127.0.0.1")
             .apply()
     }
 }

@@ -46,6 +46,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".SettingsActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false" />
+
+        <activity
             android:name=".AdvancedActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="false" />

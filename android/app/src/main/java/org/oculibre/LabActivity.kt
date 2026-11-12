@@ -52,6 +52,8 @@ import kotlin.concurrent.thread
  */
 class LabActivity : Activity() {
 
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
+
     private class Strategy(
         val name: String,
         /** Pass the request as session parameters (SessionConfiguration, API 28+). */

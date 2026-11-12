@@ -51,4 +51,41 @@
     <string name="welcome_ready_text">Next time, just open Oculibre and press Start.</string>
     <string name="welcome_ready_action">Let\'s go</string>
     <string name="ok">OK</string>
+
+    <!-- Settings with the checks (design/mockups/PhoneWelcomeB) -->
+    <string name="settings_title">Settings</string>
+    <string name="checks">Checks</string>
+    <string name="checks_all_good">All good</string>
+    <string name="checks_to_fix">%1$d to fix</string>
+    <string name="check_ok">OK</string>
+    <string name="check_camera">Camera</string>
+    <string name="check_camera_ok">Allowed</string>
+    <string name="check_camera_todo">Oculibre cannot film without it.</string>
+    <string name="check_notifications">Notifications</string>
+    <string name="check_notifications_ok">You see when the camera films.</string>
+    <string name="check_notifications_todo">Off: nothing shows that the camera films.</string>
+    <string name="check_battery">Stay active with the screen off</string>
+    <string name="check_battery_ok">The webcam won\'t be cut in the middle of a call.</string>
+    <string name="check_battery_todo">Android may cut the webcam with the screen off.</string>
+    <string name="check_paired">Connected to the computer over Wi-Fi</string>
+    <string name="check_paired_todo">Scan the QR code shown by the computer. Over USB, nothing is needed.</string>
+    <string name="section_computer">Computer</string>
+    <string name="computer_code">Code %1$s</string>
+    <string name="computer_paired_on">paired on %1$s</string>
+    <string name="computer_none">Not paired for Wi-Fi</string>
+    <string name="computer_none_text">Over the USB cable, nothing is needed.</string>
+    <string name="forget_computer">Forget this computer</string>
+    <string name="forget_computer_confirm">Forget %1$s? Wi-Fi will need a new pairing. The USB cable keeps working.</string>
+    <string name="forget">Forget</string>
+    <string name="cancel">Cancel</string>
+    <string name="section_app">App</string>
+    <string name="language">Language</string>
+    <string name="language_auto">The phone\'s language</string>
+    <string name="about">About Oculibre</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_text">Free and open source (MIT licence). Your phone becomes the webcam of your computer: nothing leaves your network, no account, no cloud.</string>
+    <string name="section_advanced">Advanced</string>
+    <string name="advanced_settings">Technical settings</string>
+    <string name="advanced_settings_value">Address, quality</string>
+    <string name="lab">Lab and diagnostics</string>
 </resources>

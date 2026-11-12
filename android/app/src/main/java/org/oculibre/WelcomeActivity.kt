@@ -27,6 +27,8 @@ import android.widget.TextView
  */
 class WelcomeActivity : Activity() {
 
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
+
     private enum class Step { CAMERA, NOTIFICATIONS, BATTERY, CONNECT, READY }
 
     private lateinit var steps: List<Step>

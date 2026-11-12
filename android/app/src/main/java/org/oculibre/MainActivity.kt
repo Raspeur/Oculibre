@@ -32,6 +32,8 @@ import kotlin.concurrent.thread
  */
 class MainActivity : Activity() {
 
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
+
     private lateinit var alert: LinearLayout
     private lateinit var alertTitle: TextView
     private lateinit var alertText: TextView
@@ -73,7 +75,7 @@ class MainActivity : Activity() {
             addView(Ui.logo(c, 36f))
             addView(Ui.grow(Ui.text(c, 19f, display = true).apply { text = getString(R.string.app_name) }))
             addView(Ui.iconButton(c, "☰", getString(R.string.menu)) {
-                startActivity(Intent(c, AdvancedActivity::class.java))
+                startActivity(Intent(c, SettingsActivity::class.java))
             })
         }
 

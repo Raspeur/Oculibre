@@ -28,6 +28,8 @@ import kotlin.concurrent.thread
  */
 class AdvancedActivity : Activity() {
 
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
+
     private lateinit var hostInput: EditText
     private lateinit var qualitySpinner: Spinner
     private lateinit var status: TextView
