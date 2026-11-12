@@ -7,15 +7,11 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use oculibre_protocol::{
-    commands, error_codes, features, CameraCapabilities, Capabilities, Hello, ModeCapabilities,
-    SetMode,
-};
+use oculibre_protocol::{CameraCapabilities, Hello, ModeCapabilities, SetMode};
 
-use crate::session::{Control, PhoneSplit, Second};
+use crate::session::{Control, ModeError, PhoneSplit, Second};
 
 /// How long each mode runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,8 +31,6 @@ impl Default for Settings {
     }
 }
 
-/// Time allowed for the phone to switch mode (closing and opening a camera takes ~1 s).
-const SET_MODE_TIMEOUT: Duration = Duration::from_secs(15);
 /// Seconds to wait for the first picture of a new stream.
 const FIRST_PICTURE_SECONDS: u32 = 10;
 
@@ -140,24 +134,6 @@ impl Measure {
     }
 }
 
-/// The capabilities of the phone: from its `HELLO`, else asked with `get_capabilities`.
-fn capabilities(control: &Control) -> Result<Capabilities, String> {
-    if let Some(value) = &control.phone.capabilities {
-        return Capabilities::from_value(value).map_err(|e| format!("bad capabilities: {e}"));
-    }
-    let response = control.call(
-        commands::GET_CAPABILITIES,
-        serde_json::Value::Null,
-        Duration::from_secs(5),
-    )?;
-    match (response.ok, response.result) {
-        (true, Some(value)) => {
-            Capabilities::from_value(&value).map_err(|e| format!("bad capabilities: {e}"))
-        }
-        _ => Err("the phone did not give its capabilities".into()),
-    }
-}
-
 /// Where the bench is, for the front-end to show.
 #[derive(Debug)]
 pub enum Progress<'a> {
@@ -188,13 +164,13 @@ pub fn run(
     settings: Settings,
     progress: &dyn Fn(Progress<'_>),
 ) -> Result<Outcome, String> {
-    if !control.phone.has_feature(features::CONTROL_MODE) {
+    if !control.can_set_mode() {
         return Err(format!(
             "the phone app ({} {}) cannot switch mode on request: update it (protocol 0.2)",
             control.phone.app, control.phone.app_version
         ));
     }
-    let caps = capabilities(control)?;
+    let caps = control.capabilities()?;
     let plan: Vec<(&CameraCapabilities, &ModeCapabilities)> = caps
         .cameras
         .iter()
@@ -278,31 +254,11 @@ enum Stop {
 }
 
 fn measure(control: &Control, settings: Settings, set: &SetMode) -> Result<Measure, Stop> {
-    let mut before;
-    let mut busy_retries = 0;
-    let response = loop {
-        before = control.stream_seq();
-        let r = control
-            .call(commands::SET_MODE, set.to_value(), SET_MODE_TIMEOUT)
-            .map_err(Stop::Session)?;
-        let busy = !r.ok
-            && r.error
-                .as_ref()
-                .is_some_and(|e| e.code == error_codes::BUSY);
-        if busy && busy_retries < 5 {
-            busy_retries += 1; // e.g. the encoder is still starting
-            thread::sleep(Duration::from_secs(1));
-            continue;
-        }
-        break r;
-    };
-    if !response.ok {
-        let e = response.error.unwrap_or_default();
-        return Err(Stop::Mode(match e.message {
-            Some(m) if !m.is_empty() => format!("{} ({m})", e.code),
-            _ => e.code,
-        }));
-    }
+    let before = control.stream_seq();
+    control.set_mode(set).map_err(|e| match e {
+        ModeError::Refused(e) => Stop::Mode(e),
+        ModeError::Session(e) => Stop::Session(e),
+    })?;
 
     let gone = || Stop::Session("the phone left".into());
     // Wait for the new stream and its first pictures.

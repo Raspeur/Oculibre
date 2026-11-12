@@ -3,8 +3,10 @@
 //! - Main thread: reads messages, decodes video, hands pictures to a [`Sink`].
 //! - Ticker thread: every second, a `PING` (keep-alive + clock), the host `stats` event and the
 //!   status line.
-//! - Optional driver thread ([`run_driven`]): sends commands to the phone through a [`Control`]
-//!   and reads the per-second measurements (`oculibre bench`).
+//! - Any thread holding a [`Remote`]: commands to the phone (`set_mode`…), rotation and mirror,
+//!   while the session runs (the desktop app).
+//! - Optional driver thread ([`run_driven`]): a [`Remote`] plus the per-second measurements
+//!   ([`Control`], `oculibre bench`).
 //!
 //! Nothing here prints or touches v4l2: what happens is reported as [`Event`]s to the front-end
 //! (console, desktop app), pictures go to a [`Sink`]. The tests drive it with a simulated phone
@@ -24,8 +26,9 @@ use std::time::{Duration, Instant};
 use oculibre_protocol::clock::{self, ClockSync};
 use oculibre_protocol::orientation::auto_rotation;
 use oculibre_protocol::{
-    bye_reasons, error_codes, features, streams, write_message, Bye, Event as WireEvent, Hello,
-    Message, MessageReader, Preamble, Request, Response, Role, StreamConfig,
+    bye_reasons, commands, error_codes, features, streams, write_message, Bye, Capabilities,
+    Event as WireEvent, Hello, Message, MessageReader, Preamble, Request, Response, Role, SetMode,
+    StreamConfig,
 };
 use serde_json::{json, Value};
 
@@ -203,6 +206,9 @@ struct Shared {
     seconds: Mutex<Option<mpsc::Sender<Second>>>,
     /// We are closing the session ourselves: a read error is the expected end.
     finished: AtomicBool,
+    /// Rotation and mirror, changed by [`Remote::set_view`]; `view_changed` tells the reader.
+    view: Mutex<View>,
+    view_changed: AtomicBool,
 }
 
 impl Shared {
@@ -284,17 +290,51 @@ pub struct Second {
     pub errors_total: u32,
 }
 
-/// The driver's handle on a running session (see [`run_driven`]).
-pub struct Control {
+/// A handle on a running session, for any thread: commands to the phone, rotation and mirror.
+/// Cheap to clone; every call fails once the session is over.
+#[derive(Clone)]
+pub struct Remote {
     shared: Arc<Shared>,
-    seconds: mpsc::Receiver<Second>,
     /// The phone's `HELLO`.
     pub phone: Hello,
 }
 
-impl Control {
+impl std::fmt::Debug for Remote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Remote")
+            .field("phone", &self.phone.name)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Why [`Remote::set_mode`] failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModeError {
+    /// The phone could not use this mode and went back to the previous one: the session goes on.
+    Refused(String),
+    /// The session is over (or the phone never answered).
+    Session(String),
+}
+
+impl std::fmt::Display for ModeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ModeError::Refused(e) | ModeError::Session(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+/// How long the phone may take to switch modes (closing and opening a camera).
+const SET_MODE_TIMEOUT: Duration = Duration::from_secs(15);
+/// Short commands (`request_keyframe`, `get_capabilities`).
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+
+impl Remote {
     /// Sends a `REQUEST` and waits for its `RESPONSE` (§9.1).
     pub fn call(&self, cmd: &str, args: Value, timeout: Duration) -> Result<Response, String> {
+        if self.shared.stop.load(Ordering::Relaxed) {
+            return Err("the session ended".into());
+        }
         let id = self.shared.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel();
         self.shared.pending.lock().unwrap().insert(id, tx);
@@ -320,6 +360,80 @@ impl Control {
         }
     }
 
+    /// Whether the phone takes mode changes (`control.mode`, apps 0.2 and newer).
+    pub fn can_set_mode(&self) -> bool {
+        self.phone.has_feature(features::CONTROL_MODE)
+    }
+
+    /// What the phone's cameras can do: from its `HELLO`, else asked with `get_capabilities`.
+    pub fn capabilities(&self) -> Result<Capabilities, String> {
+        if let Some(value) = &self.phone.capabilities {
+            return Capabilities::from_value(value).map_err(|e| format!("bad capabilities: {e}"));
+        }
+        let response = self.call(commands::GET_CAPABILITIES, Value::Null, COMMAND_TIMEOUT)?;
+        match (response.ok, response.result) {
+            (true, Some(value)) => {
+                Capabilities::from_value(&value).map_err(|e| format!("bad capabilities: {e}"))
+            }
+            _ => Err("the phone did not give its capabilities".into()),
+        }
+    }
+
+    /// Switches the phone to another camera, size, frame rate or capture path (§9.2), and returns
+    /// once the phone streams in it (a [`Event::Stream`] follows). While a camera is still
+    /// starting the phone answers `busy`: retried for a few seconds.
+    pub fn set_mode(&self, mode: &SetMode) -> Result<(), ModeError> {
+        if !self.can_set_mode() {
+            return Err(ModeError::Refused(format!(
+                "the phone app ({} {}) cannot switch mode on request: update it (protocol 0.2)",
+                self.phone.app, self.phone.app_version
+            )));
+        }
+        let mut busy_retries = 0;
+        let response = loop {
+            let r = self
+                .call(commands::SET_MODE, mode.to_value(), SET_MODE_TIMEOUT)
+                .map_err(ModeError::Session)?;
+            let busy = !r.ok
+                && r.error
+                    .as_ref()
+                    .is_some_and(|e| e.code == error_codes::BUSY);
+            if busy && busy_retries < 5 {
+                busy_retries += 1; // e.g. the encoder is still starting
+                thread::sleep(Duration::from_secs(1));
+                continue;
+            }
+            break r;
+        };
+        if response.ok {
+            return Ok(());
+        }
+        let e = response.error.unwrap_or_default();
+        Err(ModeError::Refused(match e.message {
+            Some(m) if !m.is_empty() => format!("{} ({m})", e.code),
+            _ => e.code,
+        }))
+    }
+
+    /// Asks the phone for a keyframe (normally the session does it by itself after a loss).
+    pub fn request_keyframe(&self) -> Result<(), String> {
+        self.shared
+            .request(commands::REQUEST_KEYFRAME)
+            .map(drop)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Rotation and mirror in use.
+    pub fn view(&self) -> View {
+        *self.shared.view.lock().unwrap()
+    }
+
+    /// Changes rotation and mirror from the next picture on (a [`Event::Transform`] follows).
+    pub fn set_view(&self, view: View) {
+        *self.shared.view.lock().unwrap() = view;
+        self.shared.view_changed.store(true, Ordering::Relaxed);
+    }
+
     /// Increases by one at every video `STREAM_CONFIG` (a new stream, e.g. after `set_mode`).
     pub fn stream_seq(&self) -> u64 {
         self.shared.stream_seq.load(Ordering::Relaxed)
@@ -328,11 +442,6 @@ impl Control {
     /// The last video `STREAM_CONFIG`.
     pub fn stream(&self) -> Option<StreamConfig> {
         self.shared.stream.lock().unwrap().clone()
-    }
-
-    /// Waits for the next second of measurements; `None` once the session is over.
-    pub fn next_second(&self) -> Option<Second> {
-        self.seconds.recv().ok()
     }
 
     /// Says goodbye (`BYE user_stop`) and ends the session: [`run_driven`] returns
@@ -349,8 +458,56 @@ impl Control {
     }
 }
 
+/// The driver's handle (see [`run_driven`]): a [`Remote`], plus the measurements of every second.
+pub struct Control {
+    remote: Remote,
+    seconds: mpsc::Receiver<Second>,
+}
+
+/// `control.set_mode(…)`, `control.phone`…: a `Control` can be used as its [`Remote`].
+impl std::ops::Deref for Control {
+    type Target = Remote;
+    fn deref(&self) -> &Remote {
+        &self.remote
+    }
+}
+
+impl Control {
+    /// Waits for the next second of measurements; `None` once the session is over.
+    pub fn next_second(&self) -> Option<Second> {
+        self.seconds.recv().ok()
+    }
+}
+
 /// Code that drives a session from its own thread (see [`run_driven`]).
 pub type Driver<'a> = Box<dyn FnOnce(Control) + Send + 'a>;
+
+/// Everything [`run_driven`] can be given besides the connection, the `HELLO` and the sink.
+pub struct Setup<'a> {
+    /// Rotation and mirror at the start (then [`Remote::set_view`]).
+    pub view: View,
+    /// What happens, for the front-end.
+    pub events: Events,
+    /// Code run on its own thread once the phone is in (the bench).
+    pub driver: Option<Driver<'a>>,
+    /// Wi-Fi: checked on the phone's `HELLO` before we send ours.
+    pub authorize: Option<Authorize<'a>>,
+    /// Called with the session's [`Remote`] once the phone is in, before [`Event::Phone`].
+    pub on_start: Option<Box<dyn FnOnce(Remote) + 'a>>,
+}
+
+impl Setup<'_> {
+    /// Default view, nothing else: set the other fields with `Setup { …, ..Setup::new(events) }`.
+    pub fn new(events: Events) -> Self {
+        Setup {
+            view: View::default(),
+            events,
+            driver: None,
+            authorize: None,
+            on_start: None,
+        }
+    }
+}
 
 /// Our `HELLO`.
 pub fn host_hello(id: String, name: String, os_version: Option<String>) -> Hello {
@@ -378,24 +535,29 @@ pub fn run(
     view: View,
     sink: &mut (dyn Sink + Send),
 ) -> Result<End, Box<dyn Error>> {
-    run_driven(stream, hello, view, sink, ignore_events(), None, None)
+    let setup = Setup {
+        view,
+        ..Setup::new(ignore_events())
+    };
+    run_driven(stream, hello, sink, setup)
 }
 
-/// [`run`], plus a `driver` started on its own thread once the phone's `HELLO` is in. The session
-/// ends when the phone leaves or when the driver calls [`Control::finish`]; the driver is always
-/// finished when this returns.
-///
-/// `events`: what happens, for the front-end. `authorize` (Wi-Fi): checked on the phone's `HELLO`
-/// before we send ours.
+/// Runs a session until the phone leaves or someone calls [`Remote::finish`]. See [`Setup`] for
+/// the view, the events, the driver (always finished when this returns), the pairing check and
+/// the [`Remote`] handed to `on_start`.
 pub fn run_driven(
     stream: impl Link,
     hello: &Hello,
-    view: View,
     sink: &mut (dyn Sink + Send),
-    events: Events,
-    driver: Option<Driver<'_>>,
-    authorize: Option<Authorize<'_>>,
+    setup: Setup<'_>,
 ) -> Result<End, Box<dyn Error>> {
+    let Setup {
+        view,
+        events,
+        driver,
+        authorize,
+        on_start,
+    } = setup;
     stream.set_read_timeout_link(Some(SILENCE))?;
     let shared = Arc::new(Shared {
         writer: Mutex::new(stream.try_clone_link()?),
@@ -416,6 +578,8 @@ pub fn run_driven(
         stream: Mutex::new(None),
         seconds: Mutex::new(None),
         finished: AtomicBool::new(false),
+        view: Mutex::new(view),
+        view_changed: AtomicBool::new(false),
     });
     let mut reader = MessageReader::new(io::BufReader::with_capacity(
         256 * 1024,
@@ -472,15 +636,21 @@ pub fn run_driven(
         Ordering::Relaxed,
     );
     let clock_enabled = shared_features.contains(&features::CLOCK);
+    let remote = Remote {
+        shared: Arc::clone(&shared),
+        phone: phone.clone(),
+    };
+    if let Some(on_start) = on_start {
+        on_start(remote.clone());
+    }
     shared.emit(Event::Phone(phone.clone()));
 
     let control = driver.is_some().then(|| {
         let (tx, rx) = mpsc::channel();
         *shared.seconds.lock().unwrap() = Some(tx);
         Control {
-            shared: Arc::clone(&shared),
+            remote: remote.clone(),
             seconds: rx,
-            phone: phone.clone(),
         }
     });
 
@@ -497,7 +667,7 @@ pub fn run_driven(
                 .name("oculibre-driver".into())
                 .spawn_scoped(scope, move || driver(control))?;
         }
-        let result = receive(&mut reader, &shared, view, sink, clock_enabled);
+        let result = receive(&mut reader, &shared, sink, clock_enabled);
         // Unblock the driver before the scope waits for it: no more responses or seconds.
         shared.stop.store(true, Ordering::Relaxed);
         shared.pending.lock().unwrap().clear();
@@ -541,7 +711,6 @@ struct Job {
 fn receive(
     reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
     shared: &Shared,
-    view: View,
     sink: &mut (dyn Sink + Send),
     clock_enabled: bool,
 ) -> Result<End, Box<dyn Error>> {
@@ -562,7 +731,7 @@ fn receive(
                 }
                 Ok(())
             })?;
-        let result = receive_loop(reader, shared, view, &jobs, &free);
+        let result = receive_loop(reader, shared, &jobs, &free);
         drop(jobs);
         match output.join() {
             Ok(Ok(())) => result,
@@ -576,7 +745,6 @@ fn receive(
 fn receive_loop(
     reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
     shared: &Shared,
-    view: View,
     jobs: &mpsc::SyncSender<Job>,
     free: &mpsc::Receiver<Picture>,
 ) -> Result<End, Box<dyn Error>> {
@@ -584,6 +752,7 @@ fn receive_loop(
     let mut announced_decoder: Option<&'static str> = None;
     // Picture being filled by the decoder (recycled from the output thread).
     let mut picture = Picture::default();
+    let mut view = *shared.view.lock().unwrap();
     let mut orientation = Orientation::default();
     let mut transform = orientation.transform(view);
     let mut announced: Option<Transform> = None;
@@ -648,6 +817,10 @@ fn receive_loop(
             }
             Message::VideoFrame(frame) if frame.stream == streams::VIDEO => {
                 let arrival_us = shared.now_us();
+                if shared.view_changed.swap(false, Ordering::Relaxed) {
+                    view = *shared.view.lock().unwrap();
+                    transform = orientation.transform(view);
+                }
                 shared.received.fetch_add(1, Ordering::Relaxed);
                 shared
                     .bytes

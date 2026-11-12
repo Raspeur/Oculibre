@@ -247,11 +247,10 @@ fn the_front_end_is_told_what_happens() {
     let end = session::run_driven(
         stream,
         &hello,
-        View::default(),
         &mut sink,
-        events,
-        None,
-        None,
+        session::Setup {
+            ..session::Setup::new(events)
+        },
     );
     phone.join().unwrap();
     assert!(matches!(end.unwrap(), End::Bye { .. }));
@@ -521,11 +520,11 @@ fn bench_drives_the_phone_through_every_mode() {
     let end = session::run_driven(
         stream,
         &hello,
-        View::default(),
         &mut sink,
-        crate::ignore_events(),
-        Some(driver),
-        None,
+        session::Setup {
+            driver: Some(driver),
+            ..session::Setup::new(crate::ignore_events())
+        },
     );
     assert_eq!(end.map_err(|e| e.to_string()).unwrap(), End::Finished);
     let asked = phone.join().unwrap();
@@ -576,11 +575,11 @@ fn bench_needs_a_phone_that_switches_modes() {
     let end = session::run_driven(
         stream,
         &hello,
-        View::default(),
         &mut sink,
-        crate::ignore_events(),
-        Some(driver),
-        None,
+        session::Setup {
+            driver: Some(driver),
+            ..session::Setup::new(crate::ignore_events())
+        },
     );
     assert_eq!(end.map_err(|e| e.to_string()).unwrap(), End::Finished);
     phone.join().unwrap();
@@ -652,11 +651,11 @@ fn wifi_phone_pairs_once_then_strangers_are_refused() {
             session::run_driven(
                 accepted.link,
                 &hello,
-                View::default(),
                 &mut sink,
-                crate::ignore_events(),
-                None,
-                Some(&authorize),
+                session::Setup {
+                    authorize: Some(&authorize),
+                    ..session::Setup::new(crate::ignore_events())
+                },
             )
             .map_err(|e| e.to_string()),
         );
@@ -806,4 +805,134 @@ fn stop_ends_the_running_session() {
         .unwrap()
         .iter()
         .any(|e| matches!(e, crate::Event::SessionEnded(_))));
+}
+
+#[test]
+fn rotation_and_mirror_change_while_the_session_runs() {
+    let (codec_data, frames) = encode(15);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let phone = thread::spawn(move || {
+        obedient_phone(TcpStream::connect(addr).unwrap(), codec_data, frames)
+    });
+    let (stream, _) = listener.accept().unwrap();
+    let hello = session::host_hello("host-id".into(), "test-host".into(), None);
+    let mut sink = Counter::default();
+    let turned = View {
+        rotate: Rotate::Fixed(90),
+        mirror: true,
+    };
+    let driver: session::Driver<'_> = Box::new(move |control| {
+        // Once pictures flow, turn the picture, let a few more frames through, then stop.
+        while control.next_second().is_some_and(|s| s.shown_fps == 0.0) {}
+        control.set_view(turned);
+        assert_eq!(control.view(), turned);
+        control.next_second();
+        control.finish("done");
+    });
+    let end = session::run_driven(
+        stream,
+        &hello,
+        &mut sink,
+        session::Setup {
+            driver: Some(driver),
+            ..session::Setup::new(crate::ignore_events())
+        },
+    );
+    assert_eq!(end.map_err(|e| e.to_string()).unwrap(), End::Finished);
+    phone.join().unwrap();
+    let first = sink.transforms.first().copied().unwrap();
+    let last = sink.transforms.last().copied().unwrap();
+    assert_eq!((first.rotation, first.mirror), (0, false));
+    assert_eq!((last.rotation, last.mirror), (90, true));
+}
+
+#[test]
+fn the_host_drives_the_phone_being_served() {
+    use oculibre_protocol::SetMode;
+
+    let (events, seen) = recorder();
+    let device =
+        std::env::temp_dir().join(format!("oculibre-test-vcam-{}-drive", std::process::id()));
+    std::fs::write(&device, b"").unwrap();
+    let config = crate::host::Config {
+        port: 0,
+        device: Some(device.clone()),
+        adb: false,
+        discard_pictures: true,
+        ..Default::default()
+    };
+    let host = std::sync::Arc::new(crate::host::Host::start(config, events).unwrap());
+    let runner = {
+        let host = host.clone();
+        thread::spawn(move || host.run())
+    };
+    assert!(host.remote().is_none());
+    let (codec_data, frames) = encode(15);
+    let addr = host.address();
+    let phone = thread::spawn(move || {
+        obedient_phone(TcpStream::connect(addr).unwrap(), codec_data, frames)
+    });
+    let remote = loop {
+        if let Some(r) = host.remote() {
+            break r;
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+
+    // Like a user, wait for the picture before changing the mode (while its camera starts, the
+    // phone answers `busy`: set_mode would retry, and the phone would see one more request).
+    while !seen
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|e| matches!(e, crate::Event::Stream(_)))
+    {
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    // Camera and quality, as the panel of the desktop app will do it.
+    assert!(remote.can_set_mode());
+    let caps = remote.capabilities().unwrap();
+    let camera = &caps.cameras[0];
+    assert_eq!(camera.modes.len(), 2);
+    remote
+        .set_mode(&SetMode::new(camera, &camera.modes[0]))
+        .unwrap();
+    assert_eq!(
+        remote.set_mode(&SetMode::new(camera, &camera.modes[1])),
+        Err(session::ModeError::Refused(
+            "failed (camera refused)".into()
+        ))
+    );
+
+    // Rotation and mirror: at once, and kept for the next phone.
+    let turned = View {
+        rotate: Rotate::Fixed(180),
+        mirror: true,
+    };
+    host.set_view(turned);
+    assert_eq!((remote.view(), host.view()), (turned, turned));
+    let mirrored = || {
+        seen.lock().unwrap().iter().any(|e| {
+            matches!(e, crate::Event::Transform { transform, .. } if transform.mirror && transform.rotation == 180)
+        })
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !mirrored() && std::time::Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(mirrored(), "{:?}", seen.lock().unwrap());
+
+    host.stop();
+    runner.join().unwrap();
+    let asked = phone.join().unwrap();
+    assert_eq!(asked.len(), 2, "{asked:?}");
+    assert!(host.remote().is_none());
+    // The session is over: its Remote refuses every command.
+    assert_eq!(
+        remote.call("get_capabilities", Value::Null, Duration::from_millis(100)),
+        Err("the session ended".into())
+    );
+    std::fs::remove_file(device).unwrap();
 }

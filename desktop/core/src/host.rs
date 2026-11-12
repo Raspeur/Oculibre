@@ -2,8 +2,9 @@
 //! TLS), run one session at a time into the virtual camera, offer pairings, stop on request.
 //!
 //! A front-end creates a [`Host`] with [`Host::start`], then either calls [`Host::run`] (the
-//! console: until Ctrl+C) or runs it on a thread and calls [`Host::stop`] from elsewhere (the
-//! desktop app). What happens comes back as [`Event`]s.
+//! console: until Ctrl+C) or runs it on a thread and drives it from elsewhere (the desktop app):
+//! [`Host::remote`] for the phone being served (camera, quality), [`Host::set_view`] for rotation
+//! and mirror, [`Host::stop`]. What happens comes back as [`Event`]s.
 
 use std::error::Error;
 use std::fs;
@@ -19,7 +20,7 @@ use rustls::ServerConfig;
 use crate::discovery::{self, Announcer};
 use crate::events::{Event, Events, Refusal, Via, WifiInfo};
 use crate::pairing::{self, Pairings};
-use crate::session::{self, Driver, End, Link, View};
+use crate::session::{self, Driver, End, Link, Remote, Setup, Sink, View};
 use crate::vcam::VirtualCamera;
 use crate::{adb, tls, v4l2};
 
@@ -39,6 +40,9 @@ pub struct Config {
     pub view: View,
     /// Portrait virtual camera (landscape by default, like every webcam).
     pub portrait: bool,
+    /// Tests: pictures are dropped instead of being written to a v4l2 device.
+    #[cfg(test)]
+    pub discard_pictures: bool,
 }
 
 impl Default for Config {
@@ -51,6 +55,8 @@ impl Default for Config {
             tls12_only: false,
             view: View::default(),
             portrait: false,
+            #[cfg(test)]
+            discard_pictures: false,
         }
     }
 }
@@ -98,6 +104,10 @@ pub struct Host {
     stopping: AtomicBool,
     /// The running session's connection, to end it from [`Host::stop`].
     current: Mutex<Option<Box<dyn Link>>>,
+    /// The running session, once the phone is in.
+    remote: Mutex<Option<Remote>>,
+    /// Rotation and mirror: for the running session and the next ones.
+    view: Mutex<View>,
 }
 
 impl Host {
@@ -168,6 +178,7 @@ impl Host {
             None
         };
 
+        let view = config.view;
         Ok(Host {
             hello: session::host_hello(host_id(), host_name(), os_version()),
             config,
@@ -178,12 +189,32 @@ impl Host {
             events,
             stopping: AtomicBool::new(false),
             current: Mutex::new(None),
+            remote: Mutex::new(None),
+            view: Mutex::new(view),
         })
     }
 
     /// Where phones connect.
     pub fn address(&self) -> SocketAddr {
         self.address
+    }
+
+    /// The phone being served, to send it commands (`set_mode`…); `None` between sessions.
+    pub fn remote(&self) -> Option<Remote> {
+        self.remote.lock().unwrap().clone()
+    }
+
+    /// Rotation and mirror in use, or for the next phone.
+    pub fn view(&self) -> View {
+        *self.view.lock().unwrap()
+    }
+
+    /// Changes rotation and mirror: at once for the phone being served, and for the next ones.
+    pub fn set_view(&self, view: View) {
+        *self.view.lock().unwrap() = view;
+        if let Some(remote) = self.remote() {
+            remote.set_view(view);
+        }
     }
 
     /// A one-time pairing offer (Wi-Fi only): show its URI as a QR code. Over USB, it is also
@@ -305,17 +336,26 @@ impl Host {
         if self.stopping.load(Ordering::Relaxed) {
             return Ok(End::Finished);
         }
-        let mut sink =
-            VirtualCamera::new(self.device.clone(), self.config.portrait, events.clone());
-        let end = session::run_driven(
-            link,
-            &self.hello,
-            self.config.view,
-            &mut sink,
-            events,
+        let mut sink: Box<dyn Sink + Send> = Box::new(VirtualCamera::new(
+            self.device.clone(),
+            self.config.portrait,
+            events.clone(),
+        ));
+        #[cfg(test)]
+        if self.config.discard_pictures {
+            sink = Box::new(Discard);
+        }
+        let setup = Setup {
+            view: self.view(),
             driver,
-            authorize.as_ref().map(|a| a as session::Authorize<'_>),
-        );
+            authorize: authorize.as_ref().map(|a| a as session::Authorize<'_>),
+            on_start: Some(Box::new(|remote| {
+                *self.remote.lock().unwrap() = Some(remote)
+            })),
+            ..Setup::new(events)
+        };
+        let end = session::run_driven(link, &self.hello, &mut *sink, setup);
+        *self.remote.lock().unwrap() = None;
         *self.current.lock().unwrap() = None;
         end
     }
@@ -387,4 +427,19 @@ pub fn os_version() -> Option<String> {
     fs::read_to_string("/proc/sys/kernel/osrelease")
         .ok()
         .map(|s| s.trim().to_string())
+}
+
+/// Tests: a virtual camera that drops every picture.
+#[cfg(test)]
+struct Discard;
+
+#[cfg(test)]
+impl Sink for Discard {
+    fn show(
+        &mut self,
+        _: &crate::yuv::Picture,
+        _: crate::yuv::Transform,
+    ) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
 }
