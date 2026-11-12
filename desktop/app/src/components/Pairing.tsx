@@ -1,10 +1,15 @@
-// "Add a phone" (mockup design/mockups/Pairing-fts1): a one-time QR code to scan with the phone,
-// the code to compare, then "<phone> is ready". Problem 201 when the code expires.
+// "Add a phone" (mockup design/mockups/Pairing-fts1). Over the USB cable there is nothing to do
+// (the cable is trusted); the QR code pairs a phone for Wi-Fi: a one-time code to scan, the code
+// to compare, then "<phone> is ready". Problem 201 when the code expires. With Wi-Fi off in the
+// settings, a card offers to turn it on instead of the QR code.
 
 import { useEffect, useRef, useState } from "react";
-import { type PairingOffer, onEngineEvent, pairingOffer } from "../engine";
+import { type AppSettings, type PairingOffer, onEngineEvent, pairingOffer, setSettings, settings as loadSettings } from "../engine";
 
-export function Pairing({ computerKey, onDone }: { computerKey: string | null; onDone: () => void }) {
+export function Pairing(props: { computerKey: string | null; phoneLive: boolean; onDone: () => void }) {
+  const { computerKey, onDone } = props;
+  const [values, setValues] = useState<AppSettings | null>(null);
+  const [turningOn, setTurningOn] = useState(false);
   const [offer, setOffer] = useState<PairingOffer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -21,15 +26,35 @@ export function Pairing({ computerKey, onDone }: { computerKey: string | null; o
     }
   }
 
-  // A first offer when the screen opens. Once only: while developing, React runs effects twice
-  // (StrictMode), and a second offer would cancel the first (and invite a USB phone twice).
+  // A first offer when the screen opens, if Wi-Fi is on. Once only: while developing, React runs
+  // effects twice (StrictMode), and a second offer would cancel the first (and invite a USB phone
+  // twice).
   const asked = useRef(false);
   useEffect(() => {
-    if (!asked.current) {
-      asked.current = true;
-      newOffer();
-    }
+    if (asked.current) return;
+    asked.current = true;
+    loadSettings().then((s) => {
+      setValues(s);
+      if (s.wifi) newOffer();
+    });
   }, []);
+
+  /** Wi-Fi on (a new receiver, at once), then the QR code. */
+  async function turnWifiOn() {
+    if (!values) return;
+    setTurningOn(true);
+    setError(null);
+    try {
+      const next = { ...values, wifi: true };
+      await setSettings(next, true);
+      setValues(next);
+      await newOffer();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setTurningOn(false);
+    }
+  }
 
   // The phone that takes the offer is announced by the engine.
   useEffect(() => {
@@ -82,8 +107,15 @@ export function Pairing({ computerKey, onDone }: { computerKey: string | null; o
       ) : (
         <div style={contentStyle}>
           <section className="oc-stack" style={{ flex: "999 1 420px", minWidth: 0, gap: 24 }}>
+            <div className="oc-card oc-card--raised oc-cluster" style={{ flexWrap: "nowrap", gap: 14, padding: "14px 16px", borderRadius: "var(--oc-r-sm)" }}>
+              <span className="oc-badge oc-badge--ok" aria-hidden="true">✓</span>
+              <span className="oc-row__label" style={{ gap: 4 }}>
+                <span className="oc-text oc-text--lg oc-strong">Par câble USB : rien à faire</span>
+                <span className="oc-text oc-muted">Branchez le téléphone et appuyez sur « Démarrer » dans l'app Oculibre du téléphone.</span>
+              </span>
+            </div>
             <p className="oc-text oc-text--lg oc-muted">
-              Une seule fois par téléphone. Ensuite, il se reconnecte tout seul, par câble ou en Wi-Fi.
+              Pour l'utiliser aussi en Wi-Fi, reliez-le une seule fois. Ensuite, il se reconnecte tout seul.
             </p>
             <ol className="oc-stack" style={{ margin: 0, padding: 0, listStyle: "none", gap: 14 }}>
               {steps.map((s, i) => (
@@ -107,7 +139,22 @@ export function Pairing({ computerKey, onDone }: { computerKey: string | null; o
           </section>
 
           <section aria-label="QR code d'appairage" className="oc-card oc-card--raised oc-stack" style={qrCardStyle}>
-            {error ? (
+            {values && !values.wifi ? (
+              <div className="oc-stack" style={{ alignItems: "center", gap: 12, textAlign: "center" }}>
+                <span className="oc-text oc-strong">Le Wi-Fi est désactivé</span>
+                <span className="oc-text oc-muted">
+                  Oculibre n'accepte pour l'instant que le câble. Activez le Wi-Fi pour relier ce téléphone.
+                </span>
+                {props.phoneLive && (
+                  <span className="oc-small">
+                    La vidéo du téléphone en direct va s'interrompre : appuyez ensuite à nouveau sur « Démarrer » sur le téléphone.
+                  </span>
+                )}
+                <button type="button" className="oc-btn oc-btn--primary" disabled={turningOn} onClick={turnWifiOn}>
+                  {turningOn ? "Activation…" : "Activer le Wi-Fi"}
+                </button>
+              </div>
+            ) : error ? (
               <div className="oc-alert oc-alert--error" role="alert">
                 <span className="oc-alert__icon" aria-hidden="true">×</span>
                 <div className="oc-alert__body">

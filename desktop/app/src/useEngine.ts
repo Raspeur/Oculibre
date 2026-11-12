@@ -7,7 +7,7 @@ import { useEffect, useReducer } from "react";
 import {
   type EngineEvent,
   type Hello,
-  type PairedPhone,
+  type KnownPhone,
   type Status,
   type StreamConfig,
   type Transform,
@@ -16,7 +16,7 @@ import {
   onEngineEvent,
   onPhonesChanged,
   onReceiver,
-  pairedPhones,
+  knownPhones,
   start,
 } from "./engine";
 
@@ -39,8 +39,8 @@ export interface EngineState {
   decoder: string | null;
   /** Size of the virtual camera (it may be locked by an app). */
   outputSize: [number, number] | null;
-  /** Phones paired for Wi-Fi. */
-  paired: PairedPhone[];
+  /** Phones this computer knows (paired for Wi-Fi, or seen over USB). */
+  known: KnownPhone[];
   /** Short code of this computer, shown when pairing (Wi-Fi on). */
   key: string | null;
 }
@@ -57,7 +57,7 @@ const initial: EngineState = {
   transform: null,
   decoder: null,
   outputSize: null,
-  paired: [],
+  known: [],
   key: null,
 };
 
@@ -66,7 +66,7 @@ type Action =
   | { type: "event"; event: EngineEvent }
   | { type: "started"; address: string }
   | { type: "startFailed"; error: string }
-  | { type: "paired"; phones: PairedPhone[] };
+  | { type: "known"; phones: KnownPhone[] };
 
 /** The phone left: forget everything about it. */
 const noPhone = {
@@ -86,8 +86,8 @@ export function reduce(state: EngineState, action: Action): EngineState {
       return { ...state, running: true, address: action.address, startError: null };
     case "startFailed":
       return { ...state, running: false, startError: action.error };
-    case "paired":
-      return { ...state, paired: action.phones };
+    case "known":
+      return { ...state, known: action.phones };
     case "event":
       return reduceEvent(state, action.event);
   }
@@ -125,13 +125,12 @@ export function useEngine(): EngineState {
   const [state, dispatch] = useReducer(reduce, initial);
 
   useEffect(() => {
+    const refreshPhones = () => knownPhones().then((phones) => dispatch({ type: "known", phones }));
     const unlisten = onEngineEvent((event) => {
       dispatch({ type: "event", event });
-      if (event.kind === "Paired") {
-        pairedPhones().then((phones) => dispatch({ type: "paired", phones }));
-      }
+      // A new pairing, or a phone that came (its visit is now known).
+      if (event.kind === "Paired" || event.kind === "Phone") refreshPhones();
     });
-    const refreshPhones = () => pairedPhones().then((phones) => dispatch({ type: "paired", phones }));
     refreshPhones();
     const unlistenPhones = onPhonesChanged(refreshPhones);
     // The receiver restarted after a change of settings (Wi-Fi, shape of the virtual camera).

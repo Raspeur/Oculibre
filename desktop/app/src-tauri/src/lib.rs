@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use oculibre_core::decoder::{self, Choice};
-use oculibre_core::host::{self, Config, Host};
+use oculibre_core::host::{self, Config, Host, KnownPhone};
 use oculibre_core::pairing::{self, Pairings};
 use oculibre_core::preview::{Rate, Viewer, Watch};
 use oculibre_core::protocol::{Capabilities, SetMode};
@@ -175,12 +175,14 @@ enum Applied {
 }
 
 /// Saves the settings and applies them: the decoder from the next stream; Wi-Fi and the shape of
-/// the virtual camera with a new receiver, at once or, while a phone streams, after it.
+/// the virtual camera with a new receiver, at once or, while a phone streams, after it — unless
+/// `now` (turning Wi-Fi on to pair the phone streaming: its video stops, it must start again).
 #[tauri::command(async)]
 fn set_settings(
     app: AppHandle,
     receiver: State<Receiver>,
     settings: AppSettings,
+    now: Option<bool>,
 ) -> Result<Applied, String> {
     let before = std::mem::replace(&mut *receiver.settings.lock().unwrap(), settings.clone());
     settings.save()?;
@@ -188,7 +190,7 @@ fn set_settings(
     if !before.needs_restart(&settings) || receiver.host.lock().unwrap().is_none() {
         return Ok(Applied::Now);
     }
-    if running(&receiver)?.remote().is_some() {
+    if running(&receiver)?.remote().is_some() && now != Some(true) {
         receiver.restart_pending.store(true, Ordering::Relaxed);
         return Ok(Applied::AfterThisPhone);
     }
@@ -238,27 +240,42 @@ fn finish(receiver: State<Receiver>) {
     }
 }
 
-/// The phones paired for Wi-Fi.
+/// Every phone this computer knows: paired for Wi-Fi, or seen over USB.
 #[tauri::command]
-fn paired_phones(receiver: State<Receiver>) -> Vec<pairing::Phone> {
+fn known_phones(receiver: State<Receiver>) -> Vec<KnownPhone> {
     match running(&receiver) {
-        Ok(host) => host.paired_phones(),
-        Err(_) => Pairings::load(host::paired_phones_file()).phones(),
+        Ok(host) => host.known_phones(),
+        // Not running (it could not start): the paired ones at least.
+        Err(_) => Pairings::load(host::paired_phones_file())
+            .phones()
+            .into_iter()
+            .map(|p| KnownPhone {
+                id: p.id,
+                name: p.name,
+                fingerprint: Some(p.fingerprint),
+                paired_on: Some(p.paired_on),
+                last_seen: None,
+                last_via: None,
+            })
+            .collect(),
     }
 }
 
-/// Forgets a paired phone: it needs a new pairing to connect over Wi-Fi; if it streams over
-/// Wi-Fi now, it is disconnected. The page hears `phones`.
+/// Forgets a phone: its settings, and its Wi-Fi pairing if it has one (then, streaming over
+/// Wi-Fi now, it is disconnected). The page hears `phones`.
 #[tauri::command(async)]
 fn forget_phone(
     app: AppHandle,
     receiver: State<Receiver>,
-    fingerprint: String,
+    id: String,
+    fingerprint: Option<String>,
 ) -> Result<(), String> {
     match running(&receiver) {
-        Ok(host) => host.forget_phone(&fingerprint)?,
+        Ok(host) => host.forget_phone(&id, fingerprint.as_deref())?,
         Err(_) => {
-            Pairings::load(host::paired_phones_file()).forget(&fingerprint)?;
+            if let Some(fingerprint) = &fingerprint {
+                Pairings::load(host::paired_phones_file()).forget(fingerprint)?;
+            }
         }
     }
     let _ = app.emit("phones", ());
@@ -334,7 +351,7 @@ pub fn run() {
             capabilities,
             set_mode,
             finish,
-            paired_phones,
+            known_phones,
             pairing_offer,
             preview,
             set_preview_mode,

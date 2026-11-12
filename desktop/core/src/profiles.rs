@@ -14,12 +14,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::session::View;
 
-/// The settings of one phone. A field stays `None` until the user changes it.
+/// What this computer knows about one phone. The settings stay `None` until the user changes
+/// them; `name`, `last_seen` and `last_via` are updated at every visit.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Profile {
     pub view: Option<View>,
     pub mode: Option<SetMode>,
+    /// Its name at the last visit (`HELLO`).
+    pub name: Option<String>,
+    /// Date of the last visit ("2026-11-12").
+    pub last_seen: Option<String>,
+    /// "usb" or "wifi".
+    pub last_via: Option<String>,
 }
 
 /// Every phone's settings, saved at each change.
@@ -43,6 +50,26 @@ impl Profiles {
 
     pub fn get(&self, phone_id: &str) -> Option<Profile> {
         self.phones.lock().unwrap().get(phone_id).cloned()
+    }
+
+    /// Every known phone, by install id.
+    pub fn all(&self) -> Vec<(String, Profile)> {
+        self.phones
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(id, p)| (id.clone(), p.clone()))
+            .collect()
+    }
+
+    /// Forgets a phone's settings and visits.
+    pub fn forget(&self, phone_id: &str) -> Result<(), String> {
+        let mut phones = self.phones.lock().unwrap();
+        if phones.remove(phone_id).is_none() {
+            return Ok(());
+        }
+        let text = serde_json::to_string_pretty(&*phones).map_err(|e| e.to_string())?;
+        crate::store::save_private(&self.path, text.as_bytes())
     }
 
     /// Changes a phone's settings and saves the file.
@@ -93,10 +120,14 @@ mod tests {
             again.get("phone-a"),
             Some(Profile {
                 view: Some(view),
-                mode: Some(mode)
+                mode: Some(mode),
+                ..Profile::default()
             })
         );
         assert_eq!(again.get("phone-b").unwrap().mode, None);
+        assert_eq!(again.all().len(), 2);
+        again.forget("phone-b").unwrap();
+        assert_eq!(Profiles::load(path.clone()).get("phone-b"), None);
         fs::remove_file(&path).unwrap();
     }
 }

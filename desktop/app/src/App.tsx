@@ -16,7 +16,7 @@ function App() {
   const [screen, setScreen] = useState<"main" | "pairing" | "settings" | "about">("main");
 
   if (screen === "pairing") {
-    return <Pairing computerKey={engine.key} onDone={() => setScreen("main")} />;
+    return <Pairing computerKey={engine.key} phoneLive={engine.phone !== null} onDone={() => setScreen("main")} />;
   }
   if (screen === "settings" || screen === "about") {
     return (

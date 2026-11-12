@@ -12,8 +12,8 @@ export function Sidebar(props: {
 }) {
   const { engine, onAddPhone } = props;
   const { phone, via, stream, paused } = engine;
-  // Paired phones other than the one being served are offline (or not started).
-  const others = engine.paired.filter((p) => p.id !== phone?.id);
+  // Known phones other than the one being served are offline (or not started).
+  const others = engine.known.filter((p) => p.id !== phone?.id);
   const link = via?.kind === "Wifi" ? "Wi-Fi" : "USB";
 
   return (
@@ -44,11 +44,11 @@ export function Sidebar(props: {
         )}
 
         {others.map((p) => (
-          <button key={p.fingerprint} type="button" className="oc-nav-item">
+          <button key={p.id} type="button" className="oc-nav-item">
             <span className="oc-dot oc-dot--lg oc-dot--off" aria-hidden="true" />
             <span className="oc-row__label">
               <span className="oc-nav-item__name">{p.name}</span>
-              <span className="oc-small">Hors ligne · Wi-Fi</span>
+              <span className="oc-small">Hors ligne · {p.last_via === "usb" ? "USB" : "Wi-Fi"}</span>
             </span>
           </button>
         ))}

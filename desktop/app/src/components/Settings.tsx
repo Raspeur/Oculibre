@@ -7,6 +7,7 @@ import logo from "../../../../oculibre_logo.svg";
 import {
   type AppSettings,
   type DecoderChoice,
+  type KnownPhone,
   forgetPhone,
   inApp,
   setSettings,
@@ -128,15 +129,13 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
               <span className="oc-switch__knob" aria-hidden="true" />
             </button>
           </div>
-          {engine.paired.length === 0 ? (
+          {engine.known.length === 0 ? (
             <div className="oc-row">
-              <span className="oc-row__label">Téléphones reliés</span>
+              <span className="oc-row__label">Téléphones connus</span>
               <span className="oc-row__value oc-row__value--muted">Aucun</span>
             </div>
           ) : (
-            engine.paired.map((p) => (
-              <PairedPhoneRow key={p.fingerprint} name={p.name} pairedOn={p.paired_on} fingerprint={p.fingerprint} onError={setError} />
-            ))
+            engine.known.map((p) => <KnownPhoneRow key={p.id} phone={p} onError={setError} />)
           )}
           <div className="oc-row">
             <span className="oc-row__label">
@@ -213,16 +212,24 @@ function Section(props: { id: string; title: string; children: React.ReactNode }
   );
 }
 
-/** A paired phone, with "Forget" asked twice: it will need a new pairing to come back. */
-function PairedPhoneRow(props: { name: string; pairedOn: string; fingerprint: string; onError: (e: string) => void }) {
+/**
+ * A known phone, with "Forget" asked twice. Forgetting erases its settings; a phone paired for
+ * Wi-Fi also needs a new pairing to come back over Wi-Fi. USB keeps working (the cable is trusted).
+ */
+function KnownPhoneRow({ phone, onError }: { phone: KnownPhone; onError: (e: string) => void }) {
   const [confirming, setConfirming] = useState(false);
+  const how = phone.fingerprint
+    ? `Relié en Wi-Fi${phone.paired_on ? ` le ${phone.paired_on}` : ""}`
+    : "Câble USB";
+  const seen = phone.last_seen ? ` · vu le ${phone.last_seen}` : "";
+  const warning = phone.fingerprint
+    ? "Ses réglages seront effacés, et il faudra le relier à nouveau pour le Wi-Fi."
+    : "Ses réglages seront effacés. Par câble, il reste utilisable.";
   return (
     <div className="oc-row">
       <span className="oc-row__label">
-        {props.name}
-        <span className="oc-row__hint">
-          {confirming ? "Il faudra le relier à nouveau pour l'utiliser en Wi-Fi." : `Relié le ${props.pairedOn}`}
-        </span>
+        {phone.name}
+        <span className="oc-row__hint">{confirming ? warning : how + seen}</span>
       </span>
       {confirming ? (
         <span className="oc-cluster" style={{ gap: 8 }}>
@@ -230,7 +237,7 @@ function PairedPhoneRow(props: { name: string; pairedOn: string; fingerprint: st
           <button
             type="button"
             className="oc-btn oc-btn--danger"
-            onClick={() => forgetPhone(props.fingerprint).catch((e) => props.onError(String(e)))}
+            onClick={() => forgetPhone(phone).catch((e) => onError(String(e)))}
           >
             Oublier
           </button>

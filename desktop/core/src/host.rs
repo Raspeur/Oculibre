@@ -78,6 +78,20 @@ pub struct Incoming {
     fingerprint: Option<String>,
 }
 
+/// A phone this computer knows ([`Host::known_phones`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct KnownPhone {
+    /// Its install id (random, from its `HELLO`).
+    pub id: String,
+    pub name: String,
+    /// Paired for Wi-Fi: its TLS fingerprint and the pairing date.
+    pub fingerprint: Option<String>,
+    pub paired_on: Option<String>,
+    /// Last visit: date and way ("usb", "wifi"), when visits are remembered.
+    pub last_seen: Option<String>,
+    pub last_via: Option<String>,
+}
+
 /// A one-time pairing offer ([`Host::pairing_offer`]): show `uri` as a QR code.
 #[derive(Debug, Clone)]
 pub struct Offer {
@@ -114,6 +128,8 @@ pub struct Host {
     current: Mutex<Option<Box<dyn Link>>>,
     /// Wi-Fi: the TLS fingerprint of the phone being served, to end its session if it is forgotten.
     current_fingerprint: Mutex<Option<String>>,
+    /// How the phone being served came (recorded with its visit).
+    current_via: Mutex<Option<Via>>,
     /// The running session, once the phone is in.
     remote: Mutex<Option<Remote>>,
     /// Rotation and mirror: for the running session and the next ones.
@@ -122,6 +138,8 @@ pub struct Host {
     viewers: ViewerSlot,
     /// Each phone's settings, when they are remembered.
     profiles: Option<Arc<Profiles>>,
+    /// Follows the USB phones (adb reverse); ends with the host.
+    usb: Mutex<Option<adb::Watch>>,
 }
 
 impl Host {
@@ -137,10 +155,6 @@ impl Host {
         events(Event::VirtualCamera {
             path: device.clone(),
         });
-
-        if config.adb {
-            events(Event::Usb(adb::reverse(config.port)));
-        }
 
         // §13: plaintext only on loopback (USB through adb reverse); the network needs Wi-Fi (TLS).
         let bind_ip = if config.wifi {
@@ -161,6 +175,13 @@ impl Host {
         })?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         let address = SocketAddr::new(bind_ip, port);
+
+        // USB: redo `adb reverse` for every phone plugged in, now and later (Android forgets it
+        // when the cable is unplugged).
+        let usb = config.adb.then(|| {
+            let events = events.clone();
+            adb::watch(port, move |result| events(Event::Usb(result)))
+        });
 
         let wifi = if config.wifi {
             let identity = tls::Identity::load_or_create(&config_dir())?;
@@ -208,10 +229,12 @@ impl Host {
             stopping: AtomicBool::new(false),
             current: Mutex::new(None),
             current_fingerprint: Mutex::new(None),
+            current_via: Mutex::new(None),
             remote: Mutex::new(None),
             view: Mutex::new(view),
             viewers: ViewerSlot::default(),
             profiles,
+            usb: Mutex::new(usb),
         })
     }
 
@@ -267,9 +290,23 @@ impl Host {
         }
     }
 
-    /// A phone is in: keep its handle, apply what was remembered for it.
+    /// A phone is in: keep its handle, note its visit, apply what was remembered for it.
     fn started(&self, remote: Remote) {
         *self.remote.lock().unwrap() = Some(remote.clone());
+        let via = match *self.current_via.lock().unwrap() {
+            Some(Via::Wifi { .. }) => "wifi",
+            _ => "usb",
+        };
+        let name = if remote.phone.name.is_empty() {
+            remote.phone.device.as_ref().and_then(|d| d.model.clone())
+        } else {
+            Some(remote.phone.name.clone())
+        };
+        self.remember(&remote, |p| {
+            p.name = name;
+            p.last_seen = Some(crate::bench::today());
+            p.last_via = Some(via.into());
+        });
         let Some(profile) = self
             .profiles
             .as_ref()
@@ -314,6 +351,51 @@ impl Host {
         })
     }
 
+    /// Every phone this computer knows: paired for Wi-Fi, or seen over USB (when visits are
+    /// remembered, `Config::settings_file`). Most recent first.
+    pub fn known_phones(&self) -> Vec<KnownPhone> {
+        let profiles = self.profiles.as_ref().map(|p| p.all()).unwrap_or_default();
+        let mut known: Vec<KnownPhone> = self
+            .paired_phones()
+            .into_iter()
+            .map(|p| KnownPhone {
+                id: p.id,
+                name: p.name,
+                fingerprint: Some(p.fingerprint),
+                paired_on: Some(p.paired_on),
+                last_seen: None,
+                last_via: None,
+            })
+            .collect();
+        for (id, profile) in profiles {
+            let seen = |k: &mut KnownPhone| {
+                k.last_seen.clone_from(&profile.last_seen);
+                k.last_via.clone_from(&profile.last_via);
+            };
+            match known.iter_mut().find(|k| k.id == id) {
+                Some(k) => seen(k),
+                None => {
+                    // Only phones that came at least once (settings alone have no name).
+                    let Some(name) = profile.name.clone() else {
+                        continue;
+                    };
+                    let mut k = KnownPhone {
+                        id,
+                        name,
+                        fingerprint: None,
+                        paired_on: None,
+                        last_seen: None,
+                        last_via: None,
+                    };
+                    seen(&mut k);
+                    known.push(k);
+                }
+            }
+        }
+        known.sort_by(|a, b| b.last_seen.cmp(&a.last_seen).then(a.name.cmp(&b.name)));
+        known
+    }
+
     /// The phones paired for Wi-Fi.
     pub fn paired_phones(&self) -> Vec<pairing::Phone> {
         match &self.wifi {
@@ -322,19 +404,24 @@ impl Host {
         }
     }
 
-    /// Forgets a paired phone (its TLS fingerprint): it can no longer connect over Wi-Fi without a
-    /// new pairing. If it is being served over Wi-Fi, its session ends now.
-    pub fn forget_phone(&self, fingerprint: &str) -> Result<(), String> {
-        let gone = match &self.wifi {
-            Some(wifi) => wifi.pairings.forget(fingerprint)?,
-            None => Pairings::load(paired_phones_file()).forget(fingerprint)?,
-        };
-        if gone.is_empty() {
-            return Err("this phone is not paired".into());
+    /// Forgets a phone: its settings and visits (`id`), and its Wi-Fi pairing if it has one
+    /// (`fingerprint`): it then needs a new pairing for Wi-Fi, and if it is being served over Wi-Fi,
+    /// its session ends now. USB keeps working (the cable is trusted).
+    pub fn forget_phone(&self, id: &str, fingerprint: Option<&str>) -> Result<(), String> {
+        if let Some(fingerprint) = fingerprint {
+            match &self.wifi {
+                Some(wifi) => wifi.pairings.forget(fingerprint)?,
+                None => Pairings::load(paired_phones_file()).forget(fingerprint)?,
+            };
+            if self.current_fingerprint.lock().unwrap().as_deref() == Some(fingerprint) {
+                if let Some(remote) = self.remote() {
+                    remote.finish("forgotten by this computer");
+                }
+            }
         }
-        if self.current_fingerprint.lock().unwrap().as_deref() == Some(fingerprint) {
-            if let Some(remote) = self.remote() {
-                remote.finish("forgotten by this computer");
+        if let Some(profiles) = &self.profiles {
+            if !id.is_empty() {
+                profiles.forget(id)?;
             }
         }
         Ok(())
@@ -415,8 +502,12 @@ impl Host {
         driver: Option<Driver<'_>>,
     ) -> Result<End, Box<dyn Error>> {
         let Incoming {
-            link, fingerprint, ..
+            link,
+            fingerprint,
+            via,
+            ..
         } = phone;
+        *self.current_via.lock().unwrap() = Some(via);
         // Wi-Fi phones must be paired (or bring a valid pairing token); USB phones need nothing.
         let authorize = match (&self.wifi, &fingerprint) {
             (Some(wifi), Some(fingerprint)) => Some(move |hello: &Hello| {
@@ -459,12 +550,14 @@ impl Host {
         *self.remote.lock().unwrap() = None;
         *self.current.lock().unwrap() = None;
         *self.current_fingerprint.lock().unwrap() = None;
+        *self.current_via.lock().unwrap() = None;
         end
     }
 
     /// Ends the running session (if any) and makes [`Host::run`] / [`Host::accept`] return.
     pub fn stop(&self) {
         self.stopping.store(true, Ordering::Relaxed);
+        drop(self.usb.lock().unwrap().take());
         if let Some(link) = self.current.lock().unwrap().as_ref() {
             let _ = link.shutdown_link();
         }

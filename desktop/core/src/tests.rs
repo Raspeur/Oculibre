@@ -1023,6 +1023,22 @@ fn a_phone_gets_its_settings_back_when_it_returns() {
         .skip_while(|e| !matches!(e, crate::Event::SessionEnded(_)))
         .any(|e| matches!(e, crate::Event::Transform { transform, .. } if transform.mirror));
     assert!(mirrored_after_return);
+
+    // Known without any pairing: it came over USB.
+    let id = phone_hello().id;
+    let known = host.known_phones();
+    let phone = known
+        .iter()
+        .find(|k| k.id == id)
+        .expect("the USB phone is known");
+    assert_eq!(phone.name, "Simulated");
+    assert_eq!(
+        (phone.fingerprint.as_deref(), phone.last_via.as_deref()),
+        (None, Some("usb"))
+    );
+    assert!(phone.last_seen.is_some());
+    host.forget_phone(&id, None).unwrap();
+    assert!(host.known_phones().iter().all(|k| k.id != id));
     std::fs::remove_file(device).unwrap();
     std::fs::remove_file(settings).unwrap();
 }
@@ -1031,7 +1047,8 @@ fn a_phone_gets_its_settings_back_when_it_returns() {
 /// one on the same port; a USB phone must reach the new one.
 #[test]
 fn a_new_host_takes_the_port_of_a_stopped_one() {
-    let device = std::env::temp_dir().join(format!("oculibre-test-vcam-{}-restart", std::process::id()));
+    let device =
+        std::env::temp_dir().join(format!("oculibre-test-vcam-{}-restart", std::process::id()));
     std::fs::write(&device, b"").unwrap();
     let port = {
         let probe = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1053,8 +1070,16 @@ fn a_new_host_takes_the_port_of_a_stopped_one() {
         let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
         let _r = handshake(&mut s);
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !seen.lock().unwrap().iter().any(|e| matches!(e, crate::Event::Phone(_))) {
-            assert!(std::time::Instant::now() < deadline, "round {round}: no session");
+        while !seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, crate::Event::Phone(_)))
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "round {round}: no session"
+            );
             thread::sleep(Duration::from_millis(10));
         }
         host.stop();

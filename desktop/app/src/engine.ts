@@ -92,13 +92,17 @@ export interface SetMode {
 /** Why `setMode` failed: refused (the phone keeps its previous mode) or the session is over. */
 export type ModeError = { kind: "Refused"; data: string } | { kind: "Session"; data: string };
 
-/** A phone paired for Wi-Fi, as stored on this computer. */
-export interface PairedPhone {
-  fingerprint: string;
-  name: string;
+/** A phone this computer knows: paired for Wi-Fi, or seen over USB. */
+export interface KnownPhone {
   /** Install id: the same as in its HELLO. */
   id: string;
-  paired_on: string;
+  name: string;
+  /** Paired for Wi-Fi: its key fingerprint and the pairing date. */
+  fingerprint: string | null;
+  paired_on: string | null;
+  /** Last visit: date ("2026-11-12") and way. */
+  last_seen: string | null;
+  last_via: "usb" | "wifi" | null;
 }
 
 export interface PhoneSplit {
@@ -213,13 +217,17 @@ export function settings(): Promise<AppSettings> {
     : Promise.resolve({ wifi: true, portrait: false, decoder: "auto" });
 }
 
-export function setSettings(settings: AppSettings): Promise<Applied> {
-  return invoke<Applied>("set_settings", { settings });
+/**
+ * Saves and applies the settings. `now`: restart the receiver at once even while a phone streams
+ * (turning Wi-Fi on to pair it): its video stops and it must be started again.
+ */
+export function setSettings(settings: AppSettings, now = false): Promise<Applied> {
+  return invoke<Applied>("set_settings", { settings, now });
 }
 
-/** Forgets a paired phone; if it streams over Wi-Fi now, it is disconnected. */
-export function forgetPhone(fingerprint: string): Promise<void> {
-  return invoke("forget_phone", { fingerprint });
+/** Forgets a phone: its settings, and its Wi-Fi pairing if any (then cut if it streams over Wi-Fi). */
+export function forgetPhone(phone: KnownPhone): Promise<void> {
+  return invoke("forget_phone", { id: phone.id, fingerprint: phone.fingerprint });
 }
 
 export function stop(): Promise<void> {
@@ -245,8 +253,8 @@ export function finish(): Promise<void> {
   return invoke("finish");
 }
 
-export function pairedPhones(): Promise<PairedPhone[]> {
-  return inApp ? invoke<PairedPhone[]>("paired_phones") : Promise.resolve([]);
+export function knownPhones(): Promise<KnownPhone[]> {
+  return inApp ? invoke<KnownPhone[]>("known_phones") : Promise.resolve([]);
 }
 
 /** A one-time pairing offer: show `qr`; valid `ttl_seconds`, for one phone. */
