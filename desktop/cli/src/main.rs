@@ -5,6 +5,8 @@
 //! shows up as a regular webcam. USB connections (loopback) are plaintext; Wi-Fi connections are
 //! TLS with pinned keys, for paired phones only. `oculibre bench` measures every camera × mode.
 
+mod console;
+
 use std::error::Error;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
@@ -404,7 +406,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             &hello,
             args.view,
             &mut sink,
-            false,
+            console::events(),
             None,
             authorize.as_ref().map(|a| a as session::Authorize<'_>),
         );
@@ -487,7 +489,7 @@ fn run_bench(
                 bench::Link::Wifi => "Wi-Fi",
             }
         );
-        let result = bench::run(&control, settings);
+        let result = bench::run(&control, settings, &console::bench_progress);
         control.finish("bench finished");
         *outcome.lock().unwrap() = Some(result);
     });
@@ -496,7 +498,8 @@ fn run_bench(
         hello,
         args.view,
         &mut sink,
-        true,
+        // The bench prints its own progress: no status line, no stream messages.
+        session::ignore_events(),
         Some(driver),
         authorize.as_ref().map(|a| a as session::Authorize<'_>),
     );

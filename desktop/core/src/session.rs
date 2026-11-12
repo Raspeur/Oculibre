@@ -6,7 +6,9 @@
 //! - Optional driver thread ([`run_driven`]): sends commands to the phone through a [`Control`]
 //!   and reads the per-second measurements (`oculibre bench`).
 //!
-//! Nothing here touches v4l2, so the tests drive it with a simulated phone over a real socket.
+//! Nothing here prints or touches v4l2: what happens is reported as [`Event`]s to the front-end
+//! (console, desktop app), pictures go to a [`Sink`]. The tests drive it with a simulated phone
+//! over a real socket.
 
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
@@ -22,8 +24,8 @@ use std::time::{Duration, Instant};
 use oculibre_protocol::clock::{self, ClockSync};
 use oculibre_protocol::orientation::auto_rotation;
 use oculibre_protocol::{
-    bye_reasons, error_codes, features, streams, write_message, Bye, Event, Hello, Message,
-    MessageReader, Preamble, Request, Response, Role, StreamConfig,
+    bye_reasons, error_codes, features, streams, write_message, Bye, Event as WireEvent, Hello,
+    Message, MessageReader, Preamble, Request, Response, Role, StreamConfig,
 };
 use serde_json::{json, Value};
 
@@ -158,6 +160,44 @@ pub enum End {
     Finished,
 }
 
+/// What happens during a session, for the front-end to show (console text, desktop app).
+///
+/// Events are sent from the session's threads (reader, output, ticker): the receiver must be
+/// quick and must not block.
+#[derive(Debug, Clone)]
+pub enum Event {
+    /// The phone's `HELLO`, once it is accepted (paired, H.264 offered).
+    Phone(Hello),
+    /// A new video stream: after Start, or after a mode change (`set_mode`).
+    Stream(StreamConfig),
+    /// The phone stopped the stream for a while (e.g. `mode_change`); a [`Event::Stream`] follows.
+    StreamPaused { reason: String },
+    /// Rotation and mirror applied from now on (sent when they change, with a picture).
+    /// `auto`: the rotation follows the way the phone is held (`--rotate auto`).
+    Transform { transform: Transform, auto: bool },
+    /// The video decoder in use, known for sure once a picture came out ("VA-API", "OpenH264"…).
+    Decoder { name: &'static str },
+    /// The phone refused one of our requests that nobody waited for (e.g. `request_keyframe`).
+    RequestRefused {
+        id: u32,
+        code: String,
+        message: Option<String>,
+    },
+    /// Every second while the phone is connected.
+    Status(Status),
+    /// When the session ends, if it lasted at least one second.
+    Summary(Summary),
+}
+
+/// Where a session sends its [`Event`]s. Shared with the session's threads, hence `Arc` and
+/// `Send + Sync`.
+pub type Events = Arc<dyn Fn(Event) + Send + Sync>;
+
+/// For a session nobody watches (tests).
+pub fn ignore_events() -> Events {
+    Arc::new(|_| {})
+}
+
 /// Latency of the frames shown during the last second, µs.
 #[derive(Debug, Default)]
 struct Latency {
@@ -188,7 +228,7 @@ struct Shared {
     latency: Mutex<Latency>,
     phone_stats: Mutex<Option<Value>>,
     stats_enabled: AtomicBool,
-    quiet: bool,
+    events: Events,
     /// Our requests waiting for their `RESPONSE`, by id.
     pending: Mutex<HashMap<u32, mpsc::Sender<Response>>>,
     /// Number of video `STREAM_CONFIG` received so far, and the last one.
@@ -201,6 +241,10 @@ struct Shared {
 }
 
 impl Shared {
+    fn emit(&self, event: Event) {
+        (self.events)(event)
+    }
+
     fn now_us(&self) -> u64 {
         self.epoch.elapsed().as_micros() as u64
     }
@@ -361,29 +405,29 @@ pub fn host_hello(id: String, name: String, os_version: Option<String>) -> Hello
     }
 }
 
-/// Runs a session until the phone leaves. `quiet` disables the status line (tests).
+/// Runs a session until the phone leaves, nobody watching (tests).
 #[cfg(test)]
 pub fn run(
     stream: impl Link,
     hello: &Hello,
     view: View,
     sink: &mut (dyn Sink + Send),
-    quiet: bool,
 ) -> Result<End, Box<dyn Error>> {
-    run_driven(stream, hello, view, sink, quiet, None, None)
+    run_driven(stream, hello, view, sink, ignore_events(), None, None)
 }
 
 /// [`run`], plus a `driver` started on its own thread once the phone's `HELLO` is in. The session
 /// ends when the phone leaves or when the driver calls [`Control::finish`]; the driver is always
 /// finished when this returns.
 ///
-/// `authorize` (Wi-Fi): checked on the phone's `HELLO` before we send ours.
+/// `events`: what happens, for the front-end. `authorize` (Wi-Fi): checked on the phone's `HELLO`
+/// before we send ours.
 pub fn run_driven(
     stream: impl Link,
     hello: &Hello,
     view: View,
     sink: &mut (dyn Sink + Send),
-    quiet: bool,
+    events: Events,
     driver: Option<Driver<'_>>,
     authorize: Option<Authorize<'_>>,
 ) -> Result<End, Box<dyn Error>> {
@@ -401,7 +445,7 @@ pub fn run_driven(
         latency: Mutex::new(Latency::default()),
         phone_stats: Mutex::new(None),
         stats_enabled: AtomicBool::new(false),
-        quiet,
+        events,
         pending: Mutex::new(HashMap::new()),
         stream_seq: AtomicU64::new(0),
         stream: Mutex::new(None),
@@ -463,33 +507,7 @@ pub fn run_driven(
         Ordering::Relaxed,
     );
     let clock_enabled = shared_features.contains(&features::CLOCK);
-    if !quiet {
-        let model = phone
-            .device
-            .as_ref()
-            .and_then(|d| d.model.clone())
-            .unwrap_or_default();
-        println!(
-            "Phone: {} ({} {}, {} {})",
-            if phone.name.is_empty() {
-                &model
-            } else {
-                &phone.name
-            },
-            phone.app,
-            phone.app_version,
-            phone
-                .device
-                .as_ref()
-                .and_then(|d| d.os.clone())
-                .unwrap_or_default(),
-            phone
-                .device
-                .as_ref()
-                .and_then(|d| d.os_version.clone())
-                .unwrap_or_default(),
-        );
-    }
+    shared.emit(Event::Phone(phone.clone()));
 
     let control = driver.is_some().then(|| {
         let (tx, rx) = mpsc::channel();
@@ -535,8 +553,8 @@ pub fn run_driven(
     shared.stop.store(true, Ordering::Relaxed);
     let _ = stream.shutdown_link();
     if let Ok(totals) = ticker.join() {
-        if !quiet && totals.seconds > 0 {
-            println!("\n{}", totals.summary());
+        if totals.seconds > 0 {
+            shared.emit(Event::Summary(totals.summary()));
         }
     }
     result
@@ -637,22 +655,7 @@ fn receive_loop(
                     return Err(format!("unsupported codec {:?}", config.codec).into());
                 }
                 let codec_data = config.codec_data_bytes()?;
-                if !shared.quiet {
-                    let camera = config
-                        .camera
-                        .as_ref()
-                        .map(|c| {
-                            format!(", {} camera, sensor at {}°", c.facing, c.sensor_orientation)
-                        })
-                        .unwrap_or_default();
-                    println!(
-                        "\nStream: {}x{} at {} fps ({} capture{camera})",
-                        config.width,
-                        config.height,
-                        config.fps,
-                        config.path.as_deref().unwrap_or("normal"),
-                    );
-                }
+                shared.emit(Event::Stream(config.clone()));
                 // A new stream may have another size or camera: start from a clean decoder.
                 decoder = VideoDecoder::new()?;
                 if !codec_data.is_empty() {
@@ -674,9 +677,7 @@ fn receive_loop(
             }
             Message::StreamEnd { stream, end } if stream == streams::VIDEO => {
                 // The phone stops this stream (e.g. to change mode); a new STREAM_CONFIG follows.
-                if !shared.quiet {
-                    println!("\nStream paused ({})", end.reason);
-                }
+                shared.emit(Event::StreamPaused { reason: end.reason });
                 config_id = None;
                 need_key = true;
             }
@@ -704,14 +705,19 @@ fn receive_loop(
                 match decoded {
                     Ok(true) => {
                         need_key = false;
-                        if announced != Some(transform) && !shared.quiet {
+                        if announced != Some(transform) {
                             announced = Some(transform);
-                            println!("\n{}", describe(transform, view));
+                            shared.emit(Event::Transform {
+                                transform,
+                                auto: view.rotate == Rotate::Auto,
+                            });
                         }
                         // Known for sure once a picture is out (VA-API may refuse a stream).
-                        if announced_decoder != Some(decoder.name()) && !shared.quiet {
+                        if announced_decoder != Some(decoder.name()) {
                             announced_decoder = Some(decoder.name());
-                            println!("\nDecoder: {}", decoder.name());
+                            shared.emit(Event::Decoder {
+                                name: decoder.name(),
+                            });
                         }
                         let next = free.try_recv().unwrap_or_default();
                         let job = Job {
@@ -746,7 +752,7 @@ fn receive_loop(
                 let s = clock::sample(p.t1, p.t2, p.t3, shared.now_us());
                 shared.clock.lock().unwrap().add(s);
             }
-            Message::Event(Event { event, data }) => match event.as_str() {
+            Message::Event(WireEvent { event, data }) => match event.as_str() {
                 "stats" => *shared.phone_stats.lock().unwrap() = Some(data),
                 "orientation" => {
                     // null (flat, unknown) or an invalid value: keep the previous one (§10).
@@ -773,14 +779,13 @@ fn receive_loop(
                 let waiting = shared.pending.lock().unwrap().remove(&r.id);
                 if let Some(tx) = waiting {
                     let _ = tx.send(r);
-                } else if !r.ok && !shared.quiet {
+                } else if !r.ok {
                     let e = r.error.unwrap_or_default();
-                    eprintln!(
-                        "\nphone refused request {}: {} {}",
-                        r.id,
-                        e.code,
-                        e.message.unwrap_or_default()
-                    );
+                    shared.emit(Event::RequestRefused {
+                        id: r.id,
+                        code: e.code,
+                        message: e.message,
+                    });
                 }
             }
             Message::Bye(b) => {
@@ -793,16 +798,6 @@ fn receive_loop(
             _ => {}
         }
     }
-}
-
-/// "Rotation: 90° (auto)" for the console.
-fn describe(t: Transform, view: View) -> String {
-    let mode = match view.rotate {
-        Rotate::Auto => " (auto: follows the phone)",
-        Rotate::Fixed(_) => "",
-    };
-    let mirror = if t.mirror { ", mirrored" } else { "" };
-    format!("Rotation: {}°{mode}{mirror}", t.rotation)
 }
 
 /// Capture-to-display latency (§11): the phone's capture time brought to our clock.
@@ -826,79 +821,53 @@ fn record_latency(shared: &Shared, capture_us: u64, arrival_us: u64, decode_us: 
     }
 }
 
-/// One line of the console status.
-#[derive(Debug, Default, PartialEq)]
-struct Status {
-    shown_fps: f64,
-    camera_fps: Option<u64>,
-    mbits: f64,
-    /// Averages over the last second, ms.
-    latency: Option<f64>,
-    latency_max: Option<f64>,
+/// The measurements of the last second ([`Event::Status`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Status {
+    /// Pictures written to the virtual camera.
+    pub shown_fps: f64,
+    /// What the phone's camera delivers (its `stats`).
+    pub camera_fps: Option<u64>,
+    pub mbits: f64,
+    /// Capture on the phone → virtual camera, average and max over the last second, ms.
+    pub latency: Option<f64>,
+    pub latency_max: Option<f64>,
     /// Rolling average over the last [`AVERAGE_WINDOW`] seconds, ms.
-    latency_avg: Option<f64>,
-    phone: Option<f64>,
-    /// The phone share split (newer apps).
-    split: Option<PhoneSplit>,
-    pc: Option<f64>,
-    rtt: Option<f64>,
-    dropped: Option<u64>,
-    errors: u32,
-    /// Latency samples were thrown away as absurd.
-    clock_mismatch: bool,
+    pub latency_avg: Option<f64>,
+    /// The phone's share (capture → network), ms.
+    pub phone: Option<f64>,
+    /// The phone share split (apps 0.3 and newer).
+    pub split: Option<PhoneSplit>,
+    /// The PC's share (received → virtual camera), ms. The network is what remains.
+    pub pc: Option<f64>,
+    pub rtt: Option<f64>,
+    /// Frames the phone dropped since the start (its `stats`).
+    pub dropped: Option<u64>,
+    /// Decoding errors since the start.
+    pub errors: u32,
+    /// Latency samples were thrown away as absurd: the phone's clocks disagree.
+    pub clock_mismatch: bool,
 }
 
-impl Status {
-    /// `60 fps (camera 60) · 11.8 Mbit/s · latency 48 ms (phone 30 + network 6 + PC 12, max 61) · …`;
-    /// with a newer app the phone share is split: `(camera 10 + encoder 18 + queue 2 + network 6 …`
-    fn line(&self) -> String {
-        let mut line = format!("{:>3.0} fps", self.shown_fps);
-        if let Some(c) = self.camera_fps {
-            line += &format!(" (camera {c})");
-        }
-        line += &format!(" · {:>4.1} Mbit/s", self.mbits);
-        match self.latency {
-            Some(total) => {
-                line += &format!(" · latency {total:.0} ms");
-                if let (Some(phone), Some(pc)) = (self.phone, self.pc) {
-                    // The network share is what remains: transfer, waiting in buffers, clock error.
-                    let network = (total - phone - pc).max(0.0);
-                    let phone_text = match self.split {
-                        Some(split) => split.text(),
-                        None => format!("phone {phone:.0}"),
-                    };
-                    line += &format!(" ({phone_text} + network {network:.0} + PC {pc:.0}");
-                    if let Some(max) = self.latency_max {
-                        line += &format!(", max {max:.0}");
-                    }
-                    line += ")";
-                } else if let Some(max) = self.latency_max {
-                    line += &format!(" (max {max:.0})");
-                }
-            }
-            None if self.clock_mismatch => {
-                line += " · latency: unavailable (the phone's frame times don't match its clock)"
-            }
-            None => line += " · latency: syncing clocks…",
-        }
-        if let (Some(_), Some(avg)) = (self.latency, self.latency_avg) {
-            line += &format!(" · avg {AVERAGE_WINDOW} s: {avg:.0} ms");
-        }
-        if let Some(rtt) = self.rtt {
-            line += &format!(" · rtt {rtt:.1} ms");
-        }
-        if let Some(d) = self.dropped.filter(|&d| d > 0) {
-            line += &format!(" · dropped by phone {d}");
-        }
-        if self.errors > 0 {
-            line += &format!(" · decode errors {}", self.errors);
-        }
-        line
-    }
+/// Whole-session figures ([`Event::Summary`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Summary {
+    pub seconds: u32,
+    pub fps: f64,
+    /// Capture → virtual camera over the whole session, ms (`None`: never measured).
+    pub latency_avg: Option<f64>,
+    pub latency_max: Option<f64>,
+    pub dropped: Option<u64>,
+    pub errors: u32,
+    /// The phone's share per frame, averaged (apps 0.3 and newer).
+    pub phone: Option<PhoneSplit>,
+    /// The PC's share per frame: decoding, then rotation + conversion + write, ms.
+    pub pc_decode: Option<f64>,
+    pub pc_output: Option<f64>,
 }
 
 /// Seconds of latency kept for the rolling average of the status line.
-const AVERAGE_WINDOW: usize = 10;
+pub const AVERAGE_WINDOW: usize = 10;
 
 /// Whole-session figures, printed when the phone stops.
 #[derive(Debug, Default)]
@@ -954,52 +923,31 @@ impl Totals {
         (n > 0).then(|| sum as f64 / n as f64 / 1000.0)
     }
 
-    /// `Session: 2 min 13 s · 59.4 fps · latency 83 ms on average (max 140 ms) · …`
-    fn summary(&self) -> String {
-        let (m, s) = (self.seconds / 60, self.seconds % 60);
-        let duration = if m > 0 {
-            format!("{m} min {s} s")
-        } else {
-            format!("{s} s")
-        };
-        let mut line = format!(
-            "Session: {duration} · {:.1} fps",
-            self.frames as f64 / f64::from(self.seconds.max(1))
-        );
-        if self.latency_count > 0 {
-            line += &format!(
-                " · latency {:.0} ms on average (max {:.0} ms)",
-                self.latency_sum as f64 / self.latency_count as f64 / 1000.0,
-                self.latency_max as f64 / 1000.0
-            );
-        }
-        if let Some(d) = self.dropped {
-            line += &format!(" · dropped by phone {d}");
-        }
-        line += &format!(" · decode errors {}", self.errors);
-        if self.phone_split_seconds > 0 {
-            let n = f64::from(self.phone_split_seconds);
-            let average = PhoneSplit {
+    fn summary(&self) -> Summary {
+        let measured = self.latency_count > 0;
+        let per_frame = |us: i64| us as f64 / self.latency_count as f64 / 1000.0;
+        let n = f64::from(self.phone_split_seconds);
+        Summary {
+            seconds: self.seconds,
+            fps: self.frames as f64 / f64::from(self.seconds.max(1)),
+            latency_avg: measured.then(|| per_frame(self.latency_sum)),
+            latency_max: measured.then(|| self.latency_max as f64 / 1000.0),
+            dropped: self.dropped,
+            errors: self.errors,
+            phone: (self.phone_split_seconds > 0).then(|| PhoneSplit {
                 camera: self.phone_split_sum.camera / n,
                 encoder: self.phone_split_sum.encoder / n,
                 queue: self.phone_split_sum.queue / n,
-            };
-            line += &format!("\nPhone per frame: {} ms", average.text());
-        }
-        if self.latency_count > 0 && self.pc_sum > 0 {
+            }),
             // Where the PC share goes: if it nears the frame interval, the PC falls behind.
-            let per_frame = |us: i64| us as f64 / self.latency_count as f64 / 1000.0;
-            line += &format!(
-                "\nPC per frame: decode {:.1} ms + rotation, conversion and write {:.1} ms",
-                per_frame(self.decode_sum),
-                per_frame(self.pc_sum - self.decode_sum)
-            );
+            pc_decode: (measured && self.pc_sum > 0).then(|| per_frame(self.decode_sum)),
+            pc_output: (measured && self.pc_sum > 0)
+                .then(|| per_frame(self.pc_sum - self.decode_sum)),
         }
-        line
     }
 }
 
-/// Every second: PING, host stats, status line. Stops when the session ends or a write fails.
+/// Every second: PING, host stats, [`Event::Status`]. Stops when the session ends or a write fails.
 fn ticker(shared: &Shared) -> Totals {
     // Owned here: the driver's `next_second` returns `None` once the ticker is gone.
     let seconds = shared.seconds.lock().unwrap().take();
@@ -1050,7 +998,7 @@ fn ticker(shared: &Shared) -> Totals {
                 data["latency_ms"] = json!((l * 10.0).round() / 10.0);
             }
             ok = shared
-                .send(&Message::Event(Event {
+                .send(&Message::Event(WireEvent {
                     event: "stats".into(),
                     data,
                 }))
@@ -1093,98 +1041,28 @@ fn ticker(shared: &Shared) -> Totals {
             });
         }
 
-        if !shared.quiet {
-            let status = Status {
-                shown_fps: decoded as f64 / secs,
-                camera_fps: phone.get("camera_fps").and_then(Value::as_u64),
-                mbits,
-                latency: latency_ms,
-                latency_max: latency_ms.map(|_| latency.total_max as f64 / 1000.0),
-                latency_avg: totals.rolling_ms(),
-                phone: phone.get("latency_ms").and_then(Value::as_f64),
-                split: PhoneSplit::from_stats(&phone),
-                pc: avg_ms(latency.pc_sum),
-                rtt: rtt_ms,
-                dropped: totals.dropped,
-                errors,
-                clock_mismatch: latency.rejected > 0,
-            };
-            // Clear the rest of the previous line (it may have been longer).
-            let line = format!("\r{}\x1b[K", status.line());
-            print!("{line}");
-            let _ = io::stdout().flush();
-        }
+        shared.emit(Event::Status(Status {
+            shown_fps: decoded as f64 / secs,
+            camera_fps: phone.get("camera_fps").and_then(Value::as_u64),
+            mbits,
+            latency: latency_ms,
+            latency_max: latency_ms.map(|_| latency.total_max as f64 / 1000.0),
+            latency_avg: totals.rolling_ms(),
+            phone: phone.get("latency_ms").and_then(Value::as_f64),
+            split: PhoneSplit::from_stats(&phone),
+            pc: avg_ms(latency.pc_sum),
+            rtt: rtt_ms,
+            dropped: totals.dropped,
+            errors,
+            clock_mismatch: latency.rejected > 0,
+        }));
     }
     totals
 }
 
 #[cfg(test)]
-mod status_tests {
-    use super::{PhoneSplit, Status};
-
-    #[test]
-    fn full_line() {
-        let s = Status {
-            shown_fps: 59.6,
-            camera_fps: Some(60),
-            mbits: 11.84,
-            latency: Some(48.2),
-            latency_max: Some(61.0),
-            latency_avg: Some(50.6),
-            phone: Some(30.4),
-            split: None,
-            pc: Some(11.9),
-            rtt: Some(1.23),
-            dropped: Some(0),
-            errors: 0,
-            clock_mismatch: false,
-        };
-        assert_eq!(
-            s.line(),
-            " 60 fps (camera 60) · 11.8 Mbit/s · latency 48 ms \
-             (phone 30 + network 6 + PC 12, max 61) · avg 10 s: 51 ms · rtt 1.2 ms"
-        );
-    }
-
-    #[test]
-    fn line_with_the_phone_split() {
-        let s = Status {
-            shown_fps: 60.0,
-            mbits: 12.0,
-            latency: Some(90.0),
-            phone: Some(80.0),
-            split: Some(PhoneSplit {
-                camera: 31.2,
-                encoder: 46.6,
-                queue: 2.4,
-            }),
-            pc: Some(7.0),
-            ..Default::default()
-        };
-        assert_eq!(
-            s.line(),
-            " 60 fps · 12.0 Mbit/s · latency 90 ms \
-             (camera 31 + encoder 47 + queue 2 + network 3 + PC 7)"
-        );
-    }
-
-    #[test]
-    fn before_clock_sync() {
-        let s = Status {
-            shown_fps: 30.0,
-            errors: 2,
-            ..Default::default()
-        };
-        assert_eq!(
-            s.line(),
-            " 30 fps ·  0.0 Mbit/s · latency: syncing clocks… · decode errors 2"
-        );
-    }
-}
-
-#[cfg(test)]
 mod totals_tests {
-    use super::{Latency, Totals, AVERAGE_WINDOW};
+    use super::{Latency, PhoneSplit, Summary, Totals, AVERAGE_WINDOW};
 
     fn second(ms: i64, frames: u32) -> Latency {
         Latency {
@@ -1215,10 +1093,39 @@ mod totals_tests {
             t.add_second(60, &second(if i == 0 { 140 } else { 80 }, 60));
         }
         t.dropped = Some(3);
+        let s = t.summary();
+        assert_eq!(s.seconds, 133);
+        assert_eq!(s.fps, 60.0);
+        assert!((s.latency_avg.unwrap() - 80.45).abs() < 0.01, "{s:?}");
+        assert_eq!(s.latency_max, Some(145.0));
+        assert_eq!(s.dropped, Some(3));
+        assert_eq!(s.phone, None);
+        assert_eq!(s.pc_decode, None); // no PC share measured in this test
+    }
+
+    #[test]
+    fn phone_split_is_averaged_over_the_seconds_that_had_one() {
+        let mut t = Totals::default();
+        t.add_second(60, &second(80, 60));
+        t.add_phone(Some(PhoneSplit {
+            camera: 30.0,
+            encoder: 20.0,
+            queue: 2.0,
+        }));
+        t.add_phone(None);
+        t.add_phone(Some(PhoneSplit {
+            camera: 40.0,
+            encoder: 30.0,
+            queue: 4.0,
+        }));
         assert_eq!(
-            t.summary(),
-            "Session: 2 min 13 s · 60.0 fps · latency 80 ms on average (max 145 ms) \
-             · dropped by phone 3 · decode errors 0"
+            t.summary().phone,
+            Some(PhoneSplit {
+                camera: 35.0,
+                encoder: 25.0,
+                queue: 3.0
+            })
         );
+        assert_eq!(Summary::default().phone, None);
     }
 }

@@ -100,7 +100,7 @@ fn with_phone_view(
     let (stream, _) = listener.accept().unwrap();
     let hello = session::host_hello("host-id".into(), "test-host".into(), None);
     let mut sink = Counter::default();
-    let result = session::run(stream, &hello, view, &mut sink, true).map_err(|e| e.to_string());
+    let result = session::run(stream, &hello, view, &mut sink).map_err(|e| e.to_string());
     phone.join().unwrap();
     (result, sink)
 }
@@ -214,6 +214,77 @@ fn every_frame_is_shown_without_delay_then_bye() {
     );
     // One picture per access unit, including the last one: no frame stays stuck in the host.
     assert_eq!(pictures, 10);
+}
+
+#[test]
+fn the_front_end_is_told_what_happens() {
+    let (codec_data, frames) = encode(14);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let phone = thread::spawn(move || {
+        let mut s = TcpStream::connect(addr).unwrap();
+        let _r = handshake(&mut s);
+        write_message(&mut s, &config(1, &codec_data)).unwrap();
+        // 1.4 s of video: long enough for one status, then a summary.
+        for (i, au) in frames.iter().enumerate() {
+            write_message(&mut s, &frame(i as u32, 1, au, i == 0, false)).unwrap();
+            thread::sleep(Duration::from_millis(100));
+        }
+        let bye = Bye {
+            reason: "user_stop".into(),
+            message: None,
+        };
+        write_message(&mut s, &Message::Bye(bye)).unwrap();
+    });
+    let (stream, _) = listener.accept().unwrap();
+    let hello = session::host_hello("host-id".into(), "test-host".into(), None);
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events: session::Events = {
+        let seen = seen.clone();
+        std::sync::Arc::new(move |e| seen.lock().unwrap().push(e))
+    };
+    let mut sink = Counter::default();
+    let end = session::run_driven(
+        stream,
+        &hello,
+        View::default(),
+        &mut sink,
+        events,
+        None,
+        None,
+    );
+    phone.join().unwrap();
+    assert!(matches!(end.unwrap(), End::Bye { .. }));
+
+    let seen = seen.lock().unwrap();
+    let kinds: Vec<&str> = seen
+        .iter()
+        .map(|e| match e {
+            session::Event::Phone(_) => "phone",
+            session::Event::Stream(_) => "stream",
+            session::Event::Transform { .. } => "transform",
+            session::Event::Decoder { .. } => "decoder",
+            session::Event::Status(_) => "status",
+            session::Event::Summary(_) => "summary",
+            _ => "other",
+        })
+        .collect();
+    // In this order; the status may come anywhere after the stream, the summary comes last.
+    let order: Vec<&str> = kinds.iter().copied().filter(|k| *k != "status").collect();
+    assert_eq!(
+        order,
+        ["phone", "stream", "transform", "decoder", "summary"],
+        "{kinds:?}"
+    );
+    assert!(kinds.contains(&"status"), "{kinds:?}");
+    match &seen[0] {
+        session::Event::Phone(h) => assert_eq!(h.app, phone_hello().app),
+        other => panic!("{other:?}"),
+    }
+    match seen.last().unwrap() {
+        session::Event::Summary(s) => assert!(s.seconds >= 1 && s.fps > 0.0, "{s:?}"),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]
@@ -443,7 +514,7 @@ fn bench_drives_the_phone_through_every_mode() {
         seconds: 2,
     };
     let driver: session::Driver<'_> = Box::new(|control| {
-        let o = bench::run(&control, settings);
+        let o = bench::run(&control, settings, &|_| {});
         control.finish("done");
         *outcome.lock().unwrap() = Some(o);
     });
@@ -452,7 +523,7 @@ fn bench_drives_the_phone_through_every_mode() {
         &hello,
         View::default(),
         &mut sink,
-        true,
+        session::ignore_events(),
         Some(driver),
         None,
     );
@@ -498,7 +569,7 @@ fn bench_needs_a_phone_that_switches_modes() {
     let mut sink = Counter::default();
     let outcome = std::sync::Mutex::new(None);
     let driver: session::Driver<'_> = Box::new(|control| {
-        let o = bench::run(&control, bench::Settings::default());
+        let o = bench::run(&control, bench::Settings::default(), &|_| {});
         control.finish("done");
         *outcome.lock().unwrap() = Some(o);
     });
@@ -507,7 +578,7 @@ fn bench_needs_a_phone_that_switches_modes() {
         &hello,
         View::default(),
         &mut sink,
-        true,
+        session::ignore_events(),
         Some(driver),
         None,
     );
@@ -583,7 +654,7 @@ fn wifi_phone_pairs_once_then_strangers_are_refused() {
                 &hello,
                 View::default(),
                 &mut sink,
-                true,
+                session::ignore_events(),
                 None,
                 Some(&authorize),
             )

@@ -158,8 +158,36 @@ fn capabilities(control: &Control) -> Result<Capabilities, String> {
     }
 }
 
-/// Runs the whole bench. Progress goes to stdout.
-pub fn run(control: &Control, settings: Settings) -> Result<Outcome, String> {
+/// Where the bench is, for the front-end to show.
+#[derive(Debug)]
+pub enum Progress<'a> {
+    /// Before the first mode: what will be measured, and roughly how long it takes.
+    Plan {
+        cameras: usize,
+        modes: usize,
+        seconds: usize,
+    },
+    /// Mode `index` (from 1) of `total` starts.
+    Mode {
+        index: usize,
+        total: usize,
+        camera: &'a CameraCapabilities,
+        mode: &'a ModeCapabilities,
+    },
+    /// The mode just started was measured…
+    Measured(&'a Measure),
+    /// …or the phone could not use it (the bench goes on)…
+    Failed(&'a str),
+    /// …or the session ended (the bench stops).
+    Stopped(&'a str),
+}
+
+/// Runs the whole bench, telling `progress` where it is.
+pub fn run(
+    control: &Control,
+    settings: Settings,
+    progress: &dyn Fn(Progress<'_>),
+) -> Result<Outcome, String> {
     if !control.phone.has_feature(features::CONTROL_MODE) {
         return Err(format!(
             "the phone app ({} {}) cannot switch mode on request: update it (protocol 0.2)",
@@ -177,14 +205,11 @@ pub fn run(control: &Control, settings: Settings) -> Result<Outcome, String> {
     }
     let per_mode = settings.warmup + settings.seconds + 2;
     let total = per_mode as usize * plan.len();
-    println!(
-        "{} cameras, {} modes: about {} min {:02} s. Keep the phone still, facing something \
-         lit and not completely static.",
-        caps.cameras.len(),
-        plan.len(),
-        total / 60,
-        total % 60
-    );
+    progress(Progress::Plan {
+        cameras: caps.cameras.len(),
+        modes: plan.len(),
+        seconds: total,
+    });
 
     // The phone opens its camera after Start and answers `busy` meanwhile: wait for its first
     // stream, so that it is not taken for the stream of the first mode.
@@ -198,23 +223,18 @@ pub fn run(control: &Control, settings: Settings) -> Result<Outcome, String> {
     };
     for (i, (camera, mode)) in plan.iter().enumerate() {
         let path = mode.path.clone().unwrap_or_else(|| "normal".into());
-        print!(
-            "[{:>2}/{}] camera {} ({}) · {}×{} @ {} fps ({path}) … ",
-            i + 1,
-            plan.len(),
-            camera.id,
-            camera.facing,
-            mode.width,
-            mode.height,
-            mode.fps
-        );
-        let _ = std::io::Write::flush(&mut std::io::stdout());
+        progress(Progress::Mode {
+            index: i + 1,
+            total: plan.len(),
+            camera,
+            mode,
+        });
         let result = measure(control, settings, &SetMode::new(camera, mode));
-        match &result {
-            Ok(m) => println!("{}", short(m)),
-            Err(Stop::Mode(e)) => println!("failed: {e}"),
-            Err(Stop::Session(e)) => println!("stopped: {e}"),
-        }
+        progress(match &result {
+            Ok(m) => Progress::Measured(m),
+            Err(Stop::Mode(e)) => Progress::Failed(e),
+            Err(Stop::Session(e)) => Progress::Stopped(e),
+        });
         let row = |result| Row {
             camera: camera.id.clone(),
             facing: camera.facing.clone(),
@@ -329,7 +349,8 @@ fn measure(control: &Control, settings: Settings, set: &SetMode) -> Result<Measu
 }
 
 /// `59.8 fps (camera 60.0) · latency 82 ms (max 120) · 14.1 Mbit/s`
-fn short(m: &Measure) -> String {
+/// `59.8 fps (camera 60.0) · latency 68 ms (max 90) · 12.1 Mbit/s`: one mode, on one line.
+pub fn short(m: &Measure) -> String {
     let mut s = format!("{:.1} fps", m.shown_fps);
     if let Some(c) = m.camera_fps {
         s += &format!(" (camera {c:.1})");
