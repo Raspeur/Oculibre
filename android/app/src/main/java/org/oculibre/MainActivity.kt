@@ -43,6 +43,11 @@ class MainActivity : Activity() {
     private lateinit var forgetPairing: Button
 
     private var capabilities: DeviceCapabilities? = null
+    /**
+     * The cameras were read with the camera permission. Without it Android hides some keys,
+     * among them the vendor tables of the hidden 60 fps: read again once it is granted.
+     */
+    private var probedWithCamera = false
     private var supportedModes: List<ModeSupport> = emptyList()
 
     private val ui = Handler(Looper.getMainLooper())
@@ -180,13 +185,22 @@ class MainActivity : Activity() {
         forgetPairing.visibility = if (paired == null) View.GONE else View.VISIBLE
     }
 
-    private fun probeCapabilities() {
+    private fun hasCameraPermission(): Boolean =
+        Build.VERSION.SDK_INT < 23 ||
+            checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    /** Reads what the cameras can do (off the UI thread), then calls [then] on the UI thread. */
+    private fun probeCapabilities(then: (() -> Unit)? = null) {
+        val withCamera = hasCameraPermission()
         thread(name = "oculibre-probe") {
             val result = runCatching { Capabilities.probe(this) }
             ui.post {
                 if (isFinishing) return@post
-                result.onSuccess { showCapabilities(it) }
-                    .onFailure { status.text = "Cannot read camera capabilities: ${it.message}" }
+                result.onSuccess {
+                    probedWithCamera = withCamera
+                    showCapabilities(it)
+                    then?.invoke()
+                }.onFailure { status.text = "Cannot read camera capabilities: ${it.message}" }
             }
         }
     }
@@ -239,6 +253,8 @@ class MainActivity : Activity() {
         updateBatteryViews()
         // The address may have been updated by mDNS discovery while this screen was away.
         if (!StreamService.current.running) showSavedHost()
+        // Camera permission granted elsewhere (system settings) since the cameras were read.
+        if (capabilities != null && !probedWithCamera && hasCameraPermission()) probeCapabilities()
     }
 
     // ------------------------------------------------------------------ battery optimisation
@@ -358,10 +374,9 @@ class MainActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQ_CAMERA) return
-        if (Build.VERSION.SDK_INT < 23 ||
-            checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        ) {
-            start()
+        if (hasCameraPermission()) {
+            // Read the cameras again first: without the permission the hidden 60 fps were missing.
+            probeCapabilities { start() }
         } else {
             status.text = "Camera permission denied"
         }
