@@ -6,7 +6,6 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -51,30 +50,8 @@ impl Profiles {
         let mut phones = self.phones.lock().unwrap();
         change(phones.entry(phone_id.to_string()).or_default());
         let text = serde_json::to_string_pretty(&*phones).map_err(|e| e.to_string())?;
-        save_atomically(&self.path, text.as_bytes())
+        crate::store::save_private(&self.path, text.as_bytes())
     }
-}
-
-/// Writes a temporary file, then renames it over the old one: a crash halfway leaves the old file
-/// whole, never a half-written one. Readable by this user only, like the other files there.
-fn save_atomically(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
-    use std::os::unix::fs::OpenOptionsExt;
-    if let Some(dir) = path.parent() {
-        let _ = fs::create_dir_all(dir);
-    }
-    let temporary = path.with_extension("json.tmp");
-    let write = || -> std::io::Result<()> {
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&temporary)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        fs::rename(&temporary, path)
-    };
-    write().map_err(|e| format!("cannot save {}: {e}", path.display()))
 }
 
 #[cfg(test)]

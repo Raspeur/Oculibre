@@ -188,6 +188,7 @@ a:hover { color: #FFB39E; }
 .oc-nav-item[aria-current="true"] { background: var(--oc-surface-4); border-color: var(--oc-border-control); }
 .oc-nav-item__name { font-size: var(--oc-text-base); font-weight: 600; }
 .oc-nav-link { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border-radius: var(--oc-r-sm); color: var(--oc-text-2); font-size: var(--oc-text-base); text-decoration: none; }
+button.oc-nav-link { width: 100%; border: 0; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
 .oc-nav-add { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; box-sizing: border-box; border: 1px dashed var(--oc-border-control); border-radius: var(--oc-r-sm); color: var(--oc-text); font-size: var(--oc-text-base); font-weight: 500; text-decoration: none; }
 button.oc-nav-add { width: 100%; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
 .oc-nav-add:disabled { opacity: 0.45; cursor: not-allowed; }

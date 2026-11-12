@@ -23,6 +23,7 @@ pub mod pairing;
 pub mod preview;
 pub mod profiles;
 pub mod session;
+pub mod store;
 pub mod tls;
 pub mod v4l2;
 pub mod vcam;

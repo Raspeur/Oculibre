@@ -14,6 +14,8 @@ import {
   type Via,
   inApp,
   onEngineEvent,
+  onPhonesChanged,
+  onReceiver,
   pairedPhones,
   start,
 } from "./engine";
@@ -119,7 +121,7 @@ function reduceEvent(state: EngineState, event: EngineEvent): EngineState {
 }
 
 /** Starts the receiver when the window opens and follows the engine. */
-export function useEngine(wifi: boolean): EngineState {
+export function useEngine(): EngineState {
   const [state, dispatch] = useReducer(reduce, initial);
 
   useEffect(() => {
@@ -129,18 +131,25 @@ export function useEngine(wifi: boolean): EngineState {
         pairedPhones().then((phones) => dispatch({ type: "paired", phones }));
       }
     });
-    pairedPhones().then((phones) => dispatch({ type: "paired", phones }));
+    const refreshPhones = () => pairedPhones().then((phones) => dispatch({ type: "paired", phones }));
+    refreshPhones();
+    const unlistenPhones = onPhonesChanged(refreshPhones);
+    // The receiver restarted after a change of settings (Wi-Fi, shape of the virtual camera).
+    const unlistenReceiver = onReceiver((result) => {
+      dispatch("Ok" in result ? { type: "started", address: result.Ok } : { type: "startFailed", error: result.Err });
+      refreshPhones();
+    });
     if (inApp) {
       // A second call (React runs effects twice while developing) gets the same address.
-      start(wifi).then(
+      start().then(
         (address) => dispatch({ type: "started", address }),
         (error) => dispatch({ type: "startFailed", error: String(error) }),
       );
     }
     return () => {
-      unlisten.then((stopListening) => stopListening());
+      for (const u of [unlisten, unlistenPhones, unlistenReceiver]) u.then((stopListening) => stopListening());
     };
-  }, [wifi]);
+  }, []);
 
   return state;
 }

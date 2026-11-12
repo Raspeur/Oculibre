@@ -112,6 +112,8 @@ pub struct Host {
     stopping: AtomicBool,
     /// The running session's connection, to end it from [`Host::stop`].
     current: Mutex<Option<Box<dyn Link>>>,
+    /// Wi-Fi: the TLS fingerprint of the phone being served, to end its session if it is forgotten.
+    current_fingerprint: Mutex<Option<String>>,
     /// The running session, once the phone is in.
     remote: Mutex<Option<Remote>>,
     /// Rotation and mirror: for the running session and the next ones.
@@ -174,7 +176,7 @@ impl Host {
             };
             let wifi = Wifi {
                 config: tls::server_config(&identity, config.tls12_only)?,
-                pairings: Pairings::load(config_dir().join("paired-phones.json")),
+                pairings: Pairings::load(paired_phones_file()),
                 fingerprint,
                 addresses,
                 _announcer: announcer,
@@ -205,6 +207,7 @@ impl Host {
             events,
             stopping: AtomicBool::new(false),
             current: Mutex::new(None),
+            current_fingerprint: Mutex::new(None),
             remote: Mutex::new(None),
             view: Mutex::new(view),
             viewers: ViewerSlot::default(),
@@ -311,6 +314,32 @@ impl Host {
         })
     }
 
+    /// The phones paired for Wi-Fi.
+    pub fn paired_phones(&self) -> Vec<pairing::Phone> {
+        match &self.wifi {
+            Some(wifi) => wifi.pairings.phones(),
+            None => Pairings::load(paired_phones_file()).phones(),
+        }
+    }
+
+    /// Forgets a paired phone (its TLS fingerprint): it can no longer connect over Wi-Fi without a
+    /// new pairing. If it is being served over Wi-Fi, its session ends now.
+    pub fn forget_phone(&self, fingerprint: &str) -> Result<(), String> {
+        let gone = match &self.wifi {
+            Some(wifi) => wifi.pairings.forget(fingerprint)?,
+            None => Pairings::load(paired_phones_file()).forget(fingerprint)?,
+        };
+        if gone.is_empty() {
+            return Err("this phone is not paired".into());
+        }
+        if self.current_fingerprint.lock().unwrap().as_deref() == Some(fingerprint) {
+            if let Some(remote) = self.remote() {
+                remote.finish("forgotten by this computer");
+            }
+        }
+        Ok(())
+    }
+
     /// Serves phones one after the other until [`Host::stop`].
     pub fn run(&self) {
         while let Some(phone) = self.accept() {
@@ -402,6 +431,10 @@ impl Host {
         if let Ok(clone) = link.try_clone_link() {
             *self.current.lock().unwrap() = Some(clone);
         }
+        self.current_fingerprint
+            .lock()
+            .unwrap()
+            .clone_from(&fingerprint);
         if self.stopping.load(Ordering::Relaxed) {
             return Ok(End::Finished);
         }
@@ -425,6 +458,7 @@ impl Host {
         let end = session::run_driven(link, &self.hello, &mut *sink, setup);
         *self.remote.lock().unwrap() = None;
         *self.current.lock().unwrap() = None;
+        *self.current_fingerprint.lock().unwrap() = None;
         end
     }
 
@@ -473,6 +507,11 @@ pub fn config_dir() -> PathBuf {
         .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."))
         .join("oculibre")
+}
+
+/// The phones paired for Wi-Fi, by TLS fingerprint.
+pub fn paired_phones_file() -> PathBuf {
+    config_dir().join("paired-phones.json")
 }
 
 /// Random id of this computer, created once (§7.1: never derived from hardware identifiers).

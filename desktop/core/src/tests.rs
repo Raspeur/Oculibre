@@ -1026,3 +1026,40 @@ fn a_phone_gets_its_settings_back_when_it_returns() {
     std::fs::remove_file(device).unwrap();
     std::fs::remove_file(settings).unwrap();
 }
+
+/// What the app does when a setting needs a new receiver: stop, wait for its thread, start another
+/// one on the same port; a USB phone must reach the new one.
+#[test]
+fn a_new_host_takes_the_port_of_a_stopped_one() {
+    let device = std::env::temp_dir().join(format!("oculibre-test-vcam-{}-restart", std::process::id()));
+    std::fs::write(&device, b"").unwrap();
+    let port = {
+        let probe = TcpListener::bind("127.0.0.1:0").unwrap();
+        probe.local_addr().unwrap().port()
+    };
+    let config = crate::host::Config {
+        port,
+        device: Some(device.clone()),
+        adb: false,
+        ..Default::default()
+    };
+    for round in 0..3 {
+        let (events, seen) = recorder();
+        let host = std::sync::Arc::new(crate::host::Host::start(config.clone(), events).unwrap());
+        let runner = {
+            let host = host.clone();
+            thread::spawn(move || host.run())
+        };
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let _r = handshake(&mut s);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !seen.lock().unwrap().iter().any(|e| matches!(e, crate::Event::Phone(_))) {
+            assert!(std::time::Instant::now() < deadline, "round {round}: no session");
+            thread::sleep(Duration::from_millis(10));
+        }
+        host.stop();
+        runner.join().unwrap();
+        drop(host);
+    }
+    std::fs::remove_file(device).unwrap();
+}

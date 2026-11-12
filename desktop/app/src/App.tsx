@@ -4,23 +4,37 @@
 import { useState } from "react";
 import { Pairing } from "./components/Pairing";
 import { Panel } from "./components/Panel";
+import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
 import { inApp } from "./engine";
 import { useEngine } from "./useEngine";
 
 function App() {
-  // Wi-Fi on, as in the mockup's settings (paired phones only, encrypted). A setting later.
-  const engine = useEngine(true);
-  // Which screen is shown. Two for now: no router library needed.
-  const [screen, setScreen] = useState<"main" | "pairing">("main");
+  const engine = useEngine();
+  // Which screen is shown: a few screens, no router library needed.
+  const [screen, setScreen] = useState<"main" | "pairing" | "settings" | "about">("main");
 
   if (screen === "pairing") {
     return <Pairing computerKey={engine.key} onDone={() => setScreen("main")} />;
   }
+  if (screen === "settings" || screen === "about") {
+    return (
+      <Settings
+        engine={engine}
+        section={screen === "about" ? "about" : undefined}
+        onDone={() => setScreen("main")}
+      />
+    );
+  }
   return (
     <div className="oc-app oc-app--sidebar">
-      <Sidebar engine={engine} onAddPhone={() => setScreen("pairing")} />
+      <Sidebar
+        engine={engine}
+        onAddPhone={() => setScreen("pairing")}
+        onSettings={() => setScreen("settings")}
+        onAbout={() => setScreen("about")}
+      />
       <main className="oc-main">
         <div className="oc-stack" style={{ flex: "999 1 520px", minWidth: 0 }}>
           {!inApp && (

@@ -175,9 +175,51 @@ export function onEngineEvent(handler: (event: EngineEvent) => void): Promise<Un
 
 // --- page → Rust (the #[tauri::command] functions; a Rust Err becomes a rejected promise)
 
-/** Starts waiting for phones; resolves with the address they connect to. */
-export function start(wifi: boolean): Promise<string> {
-  return invoke<string>("start", { wifi });
+/** Starts waiting for phones (with the saved settings); resolves with the address they use. */
+export function start(): Promise<string> {
+  return invoke<string>("start");
+}
+
+/** The receiver restarted after a change of settings: `{Ok: address}` or `{Err: why}`. */
+export function onReceiver(handler: (result: Result<string>) => void): Promise<UnlistenFn> {
+  if (!inApp) return Promise.resolve(() => {});
+  return listen<Result<string>>("receiver", (e) => handler(e.payload));
+}
+
+/** The paired phones changed (a phone was forgotten). */
+export function onPhonesChanged(handler: () => void): Promise<UnlistenFn> {
+  if (!inApp) return Promise.resolve(() => {});
+  return listen("phones", () => handler());
+}
+
+// --- settings of this computer
+
+export type DecoderChoice = "auto" | "vaapi" | "nvdec" | "software" | "openh264";
+
+export interface AppSettings {
+  /** Accept paired phones over the network (encrypted). */
+  wifi: boolean;
+  /** Portrait virtual camera (landscape like every webcam otherwise). */
+  portrait: boolean;
+  decoder: DecoderChoice;
+}
+
+/** When changed settings take effect: now, or when the phone streaming now leaves. */
+export type Applied = "Now" | "AfterThisPhone";
+
+export function settings(): Promise<AppSettings> {
+  return inApp
+    ? invoke<AppSettings>("settings")
+    : Promise.resolve({ wifi: true, portrait: false, decoder: "auto" });
+}
+
+export function setSettings(settings: AppSettings): Promise<Applied> {
+  return invoke<Applied>("set_settings", { settings });
+}
+
+/** Forgets a paired phone; if it streams over Wi-Fi now, it is disconnected. */
+export function forgetPhone(fingerprint: string): Promise<void> {
+  return invoke("forget_phone", { fingerprint });
 }
 
 export function stop(): Promise<void> {

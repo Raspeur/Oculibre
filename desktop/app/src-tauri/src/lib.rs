@@ -4,11 +4,16 @@
 //! - Page → Rust: the `#[tauri::command]` functions below, called from TypeScript with
 //!   `invoke("start", { wifi: true })`. Their arguments and results travel as JSON.
 //! - Rust → page: every engine [`Event`] is sent to the page as the `engine` event
-//!   (`listen("engine", …)` in TypeScript).
+//!   (`listen("engine", …)` in TypeScript); `receiver` says when the receiver (re)started or
+//!   could not, `phones` when the paired phones changed.
 
+mod settings;
+
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 
+use oculibre_core::decoder::{self, Choice};
 use oculibre_core::host::{self, Config, Host};
 use oculibre_core::pairing::{self, Pairings};
 use oculibre_core::preview::{Rate, Viewer, Watch};
@@ -16,8 +21,9 @@ use oculibre_core::protocol::{Capabilities, SetMode};
 use oculibre_core::session::{ModeError, Remote, View};
 use oculibre_core::{Event, Events};
 use serde::{Deserialize, Serialize};
+use settings::AppSettings;
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 /// What the app keeps between two commands: the receiver, while it runs. Tauri gives every
 /// command access to it (`State<Receiver>`); the `Mutex` because commands may run at the same
@@ -25,6 +31,13 @@ use tauri::{AppHandle, Emitter, State};
 #[derive(Default)]
 struct Receiver {
     host: Mutex<Option<Arc<Host>>>,
+    /// The thread running the host: waited for when stopping, so that the port is free again.
+    runner: Mutex<Option<JoinHandle<()>>>,
+    /// This computer's settings (loaded at start, saved at each change).
+    settings: Mutex<AppSettings>,
+    /// Settings that need a new receiver were changed while a phone streamed: restart when its
+    /// session ends.
+    restart_pending: AtomicBool,
     /// Where preview pictures go (the page's channel), kept to give it to every new host.
     viewer: Mutex<Option<Viewer>>,
     /// The preview chosen in the window.
@@ -63,23 +76,34 @@ impl Receiver {
     }
 }
 
-/// Starts waiting for phones (USB, and the network when `wifi` is on). Returns where phones
-/// connect ("127.0.0.1:47100").
-///
-/// `async`: run on a worker thread, not on the main thread that draws the window (`adb reverse`
-/// and the mDNS announcement can take a second).
-#[tauri::command(async)]
-fn start(app: AppHandle, receiver: State<Receiver>, wifi: bool) -> Result<String, String> {
+/// Starts the receiver with the current settings; returns where phones connect. Nothing happens
+/// if it already runs.
+fn start_host(app: &AppHandle, receiver: &Receiver) -> Result<String, String> {
     let mut slot = receiver.host.lock().unwrap();
     if let Some(host) = slot.as_ref() {
-        return Ok(host.address().to_string()); // already running
+        return Ok(host.address().to_string());
     }
+    let settings = receiver.settings.lock().unwrap().clone();
+    decoder::set_choice(Choice::parse(&settings.decoder).unwrap_or(Choice::Auto));
     // Every engine event goes to the page, as JSON.
+    let handle = app.clone();
     let events: Events = Arc::new(move |event: Event| {
-        let _ = app.emit("engine", &event);
+        let ended = matches!(event, Event::SessionEnded(_));
+        let _ = handle.emit("engine", &event);
+        if ended
+            && handle
+                .state::<Receiver>()
+                .restart_pending
+                .swap(false, Ordering::Relaxed)
+        {
+            // On a thread of its own: this runs on the host's thread, which a restart waits for.
+            let handle = handle.clone();
+            thread::spawn(move || restart(&handle));
+        }
     });
     let config = Config {
-        wifi,
+        wifi: settings.wifi,
+        portrait: settings.portrait,
         // Each phone's rotation, mirror, camera and quality, applied again when it comes back.
         settings_file: Some(host::config_dir().join("phone-settings.json")),
         ..Config::default()
@@ -88,21 +112,88 @@ fn start(app: AppHandle, receiver: State<Receiver>, wifi: bool) -> Result<String
     host.set_preview(receiver.watch());
     // `run` blocks while it serves phones: on a thread of its own, so the window stays free.
     let runner = host.clone();
-    thread::Builder::new()
+    let thread = thread::Builder::new()
         .name("oculibre-host".into())
         .spawn(move || runner.run())
         .map_err(|e| e.to_string())?;
+    *receiver.runner.lock().unwrap() = Some(thread);
     let address = host.address().to_string();
     *slot = Some(host);
     Ok(address)
 }
 
+/// Stops the receiver and waits until its thread is done (the port is then free).
+fn stop_host(receiver: &Receiver) {
+    let host = receiver.host.lock().unwrap().take();
+    if let Some(host) = host {
+        host.stop();
+    }
+    let runner = receiver.runner.lock().unwrap().take();
+    if let Some(runner) = runner {
+        let _ = runner.join();
+    }
+}
+
+/// A new receiver with the current settings; the page learns the outcome (`receiver` event:
+/// `{Ok: address}` or `{Err: why}`).
+fn restart(app: &AppHandle) {
+    let receiver = app.state::<Receiver>();
+    stop_host(&receiver);
+    let result = start_host(app, &receiver);
+    let _ = app.emit("receiver", &result);
+}
+
+/// Starts waiting for phones (USB, and the network when Wi-Fi is on in the settings). Returns
+/// where phones connect ("127.0.0.1:47100").
+///
+/// `async`: run on a worker thread, not on the main thread that draws the window (`adb reverse`
+/// and the mDNS announcement can take a second).
+#[tauri::command(async)]
+fn start(app: AppHandle, receiver: State<Receiver>) -> Result<String, String> {
+    start_host(&app, &receiver)
+}
+
 /// Stops the receiver: the phone being served (if any) is let go, the port is closed.
 #[tauri::command(async)]
 fn stop(receiver: State<Receiver>) {
-    if let Some(host) = receiver.host.lock().unwrap().take() {
-        host.stop();
+    stop_host(&receiver);
+}
+
+/// This computer's settings.
+#[tauri::command]
+fn settings(receiver: State<Receiver>) -> AppSettings {
+    receiver.settings.lock().unwrap().clone()
+}
+
+/// When changed settings take effect.
+#[derive(Serialize)]
+enum Applied {
+    /// Now.
+    Now,
+    /// When the phone streaming now leaves (Wi-Fi, shape of the virtual camera).
+    AfterThisPhone,
+}
+
+/// Saves the settings and applies them: the decoder from the next stream; Wi-Fi and the shape of
+/// the virtual camera with a new receiver, at once or, while a phone streams, after it.
+#[tauri::command(async)]
+fn set_settings(
+    app: AppHandle,
+    receiver: State<Receiver>,
+    settings: AppSettings,
+) -> Result<Applied, String> {
+    let before = std::mem::replace(&mut *receiver.settings.lock().unwrap(), settings.clone());
+    settings.save()?;
+    decoder::set_choice(Choice::parse(&settings.decoder).unwrap_or(Choice::Auto));
+    if !before.needs_restart(&settings) || receiver.host.lock().unwrap().is_none() {
+        return Ok(Applied::Now);
     }
+    if running(&receiver)?.remote().is_some() {
+        receiver.restart_pending.store(true, Ordering::Relaxed);
+        return Ok(Applied::AfterThisPhone);
+    }
+    restart(&app);
+    Ok(Applied::Now)
 }
 
 /// The receiver, if running; the lock is only held to copy the handle.
@@ -147,10 +238,31 @@ fn finish(receiver: State<Receiver>) {
     }
 }
 
-/// The phones paired for Wi-Fi, as stored on this computer.
+/// The phones paired for Wi-Fi.
 #[tauri::command]
-fn paired_phones() -> Vec<pairing::Phone> {
-    Pairings::load(host::config_dir().join("paired-phones.json")).phones()
+fn paired_phones(receiver: State<Receiver>) -> Vec<pairing::Phone> {
+    match running(&receiver) {
+        Ok(host) => host.paired_phones(),
+        Err(_) => Pairings::load(host::paired_phones_file()).phones(),
+    }
+}
+
+/// Forgets a paired phone: it needs a new pairing to connect over Wi-Fi; if it streams over
+/// Wi-Fi now, it is disconnected. The page hears `phones`.
+#[tauri::command(async)]
+fn forget_phone(
+    app: AppHandle,
+    receiver: State<Receiver>,
+    fingerprint: String,
+) -> Result<(), String> {
+    match running(&receiver) {
+        Ok(host) => host.forget_phone(&fingerprint)?,
+        Err(_) => {
+            Pairings::load(host::paired_phones_file()).forget(&fingerprint)?;
+        }
+    }
+    let _ = app.emit("phones", ());
+    Ok(())
 }
 
 /// A one-time pairing offer, ready to show (see `Host::pairing_offer`).
@@ -209,8 +321,12 @@ fn set_view(receiver: State<Receiver>, view: View) -> Result<(), String> {
 pub fn run() {
     // Before any thread exists: it may set environment variables (VA-API drivers).
     oculibre_core::decoder::prepare_environment();
+    let receiver = Receiver {
+        settings: Mutex::new(AppSettings::load()),
+        ..Receiver::default()
+    };
     tauri::Builder::default()
-        .manage(Receiver::default())
+        .manage(receiver)
         .invoke_handler(tauri::generate_handler![
             start,
             stop,
@@ -221,7 +337,10 @@ pub fn run() {
             paired_phones,
             pairing_offer,
             preview,
-            set_preview_mode
+            set_preview_mode,
+            settings,
+            set_settings,
+            forget_phone
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
