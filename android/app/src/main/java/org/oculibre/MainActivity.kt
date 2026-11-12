@@ -63,7 +63,9 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(buildScreen())
         probeCapabilities()
-        handlePairingLink(intent)
+        // A screen created again (configuration change, process restarted) gets its first intent
+        // back, pairing link included: it was handled already.
+        if (savedInstanceState == null) handlePairingLink(intent)
         if (needsWelcome()) startActivity(Intent(this, WelcomeActivity::class.java))
     }
 
@@ -317,12 +319,18 @@ class MainActivity : Activity() {
     private fun handlePairingLink(intent: Intent?) {
         val link = intent?.data?.toString() ?: return
         if (!link.startsWith("oculibre://pair", ignoreCase = true)) return
-        intent.data = null // handled once
+        intent.data = null
+        // Reopened from the recent apps: Android replays the first intent, link included.
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         val offer = PairingOffer.parse(link)
         if (offer == null) {
             stateDetail.text = "This pairing link is not valid (or comes from a newer Oculibre): update the app"
             return
         }
+        // Each QR code has a one-time token: an offer already shown (accepted or cancelled) is
+        // never asked again; a new QR code is.
+        if (prefs.getString(PREF_LAST_OFFER, null) == offer.token) return
+        prefs.edit().putString(PREF_LAST_OFFER, offer.token).apply()
         // The computer's address on this phone's network (it may also have VPN or container ones).
         val address = Networks.rank(offer.addresses, Networks.local()).first()
         AlertDialog.Builder(this)
@@ -489,6 +497,8 @@ class MainActivity : Activity() {
         const val PREF_CAMERA_GRANTED_ONCE = "camera_granted_once"
         /** The first-launch screens were done. */
         const val PREF_WELCOMED = "welcomed"
+        /** Token of the last pairing link shown: the same link is not asked twice. */
+        private const val PREF_LAST_OFFER = "last_pairing_offer"
         private const val PREF_SCREEN_OFF = "screen_off_while_live"
     }
 }
