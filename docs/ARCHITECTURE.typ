@@ -3,8 +3,8 @@
 #show: oculibre-doc.with(
   title: [Architecture],
   subtitle: [How an image travels from the phone to the virtual camera],
-  revision: "0.2",
-  date: datetime(year: 2026, month: 11, day: 10),
+  revision: "0.3",
+  date: datetime(year: 2026, month: 11, day: 12),
 )
 
 This document describes the target architecture. It evolves as the project is built; the wire format
@@ -18,7 +18,9 @@ itself is specified in #link("protocol.typ")[`protocol.typ`].
   (no AES acceleration on old ARMv7 CPUs).
 + *Private by default.* No cloud, no telemetry; encryption and pairing on any network.
 + *No proprietary dependency.* Publishable on F-Droid (no Google Play Services). The Android app uses
-  platform APIs only.
+  platform APIs only: no library fetched by Gradle; small vendored sources under a licence compatible
+  with MIT are allowed, pinned, in their own folder with their licence (first case: ZXing's QR
+  decoder, \#16).
 + *One documented protocol.* #link("protocol.typ")[`protocol.typ`] is the contract between the phone
   and the desktop.
 
@@ -52,8 +54,8 @@ PC                   [secure channel] ◄───┘
   [Background], [Foreground service (type `camera`), wake lock, Wi-Fi lock], [Streams with the screen off],
   [Battery], [Battery-optimisation exemption popup, MIUI shortcut], [Vendors kill background apps],
   [Thermal (planned)], [`getCurrentThermalStatus()` (API 29+), battery temperature below], [Auto-lower quality, protect the battery],
-  [Discovery (planned)], [`NsdManager` (mDNS)], [No IP address to type],
-  [Pairing (planned)], [QR scan, no Play Services], [The PC shows the QR, the phone scans it],
+  [Discovery], [`NsdManager` (mDNS), direct route first], [No IP address to type],
+  [Pairing], [QR code `oculibre://pair`, opened by the camera app today; in-app scan with a vendored decoder (\#16)], [The PC shows the QR, the phone scans it],
   [UI], [Views built in code], [Small APK],
 )
 
@@ -63,25 +65,27 @@ PC                   [secure channel] ◄───┘
   columns: (auto, auto, 1fr),
   table.header([Mode], [Phase], [Notes]),
   [USB via ADB (`adb reverse`)], [1], [Simplest; requires developer mode],
-  [Wi-Fi (TCP)], [1 / 2], [Loopback-only plaintext in protocol 0.1–0.2; encrypted once pairing exists (\#5)],
+  [Wi-Fi (TCP)], [2], [TLS with paired phones only (protocol 0.3); plaintext only on loopback (\#5)],
   [USB tethering (RNDIS)], [4], [No developer mode; a real network, so encrypted],
   [SRT / QUIC], [later], [Only if TCP jitter on Wi-Fi is a real problem],
 )
 
 = Desktop (host side) — `desktop/`
 
-Single Rust binary (workspace).
+Rust workspace: `protocol` (the wire format), `core` (the engine, a library without user interface,
+\#13) and `cli` (the `oculibre` command). The desktop app (Tauri, \#15) will be a second front-end
+over `core`: the engine reports what happens as events and never prints.
 
 #table(
   columns: (auto, 1fr),
   table.header([Concern], [Crate / tool]),
   [Network], [`std::net` today, `tokio` when several connections are needed],
   [Protocol], [`protocol` crate: parser/encoder, test vectors, `cargo-fuzz` target],
-  [Decoding], [FFmpeg (libavcodec, LGPL, linked dynamically) with hardware decoding (VA-API, NVDEC), its software decoder otherwise; `openh264` (Cisco, BSD, built from source) as a last resort or without FFmpeg. Decoding and output run on two threads (#11)],
+  [Decoding], [FFmpeg (the system's libavcodec, linked dynamically: LGPL, or GPL as built by Debian/Ubuntu) with hardware decoding (VA-API, NVDEC), its software decoder otherwise; `openh264` (Cisco, BSD, built from source into the binary) as a last resort or without FFmpeg. Decoding and output run on two threads (\#11). Licences, patents, packaging: #link("research/video-decoding.typ")[`research/video-decoding.typ`]],
   [Image], [rotation, mirroring, I420 → YUYV conversion],
-  [Discovery (planned)], [`mdns-sd`],
-  [Encryption (planned)], [`snow` (Noise) or `rustls` (TLS 1.3), see protocol §13],
-  [GUI (planned)], [Tauri, tray icon: QR code, devices, preview, rotation, settings],
+  [Discovery], [`mdns-sd`],
+  [Encryption], [`rustls`: TLS 1.3 (1.2 for Android 5–9), pinned self-signed keys, see protocol §13 and #link("research/secure-channel.typ")[`research/secure-channel.typ`]],
+  [GUI (planned)], [Tauri + React + TypeScript (\#15), tray icon: QR code, devices, preview, rotation, settings; mockups in `design/mockups/`],
   [CLI], [`oculibre`: for Linux users and headless setups],
 )
 
