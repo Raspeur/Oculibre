@@ -28,7 +28,10 @@ import android.view.OrientationEventListener
 import android.view.Surface
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.ByteArrayInputStream
+import java.io.DataInputStream
 import java.io.IOException
+import java.io.SequenceInputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
@@ -159,8 +162,11 @@ class StreamSession(
     /** When the current pipeline started (elapsedRealtime ms), for the frame-rate warning. */
     @Volatile private var pipelineStartMs = 0L
 
-    /** Address actually used: [host], or the one found by mDNS. */
+    /** Address actually used: [host], the cable (127.0.0.1), or the one found by mDNS. */
     @Volatile private var target: String = host
+
+    /** The computer's preamble, already read while checking the cable: the handshake reads it first. */
+    @Volatile private var prefetched: ByteArray? = null
 
     /** One-time pairing token to send in HELLO (Wi-Fi, first connection after pairing). */
     @Volatile private var pairingToken: String? = null
@@ -340,8 +346,11 @@ class StreamSession(
             s.connect(InetSocketAddress(address, port), timeoutMs)
             return s
         }
-        val paired = if (SecureChannel.isLoopback(host)) null else PairingStore.get(appContext)
-        if (paired == null) return open(host, CONNECT_TIMEOUT_MS)
+        if (SecureChannel.isLoopback(host)) return open(host, CONNECT_TIMEOUT_MS)
+        // The cable first, whatever the field holds: when it is plugged into the computer running
+        // Oculibre, it is the fastest way and it needs neither Wi-Fi nor pairing.
+        usb()?.let { return it }
+        val paired = PairingStore.get(appContext) ?: return open(host, CONNECT_TIMEOUT_MS)
 
         val subnets = Networks.local()
         val known = Networks.rank(listOf(host) + paired.addresses, subnets)
@@ -384,6 +393,35 @@ class StreamSession(
         )
     }
 
+    /**
+     * The computer through the USB cable (`adb reverse` makes the phone's 127.0.0.1 reach it), or
+     * null. Without `adb reverse` the connection is refused at once. With it but nothing behind
+     * (another computer, Oculibre not running), Android accepts then closes: so the computer must
+     * send its preamble within [USB_TRY_TIMEOUT_MS]; those bytes are kept for the handshake.
+     */
+    private fun usb(): Socket? {
+        if (!running.get()) return null
+        val s = Socket()
+        return try {
+            s.tcpNoDelay = true
+            s.connect(InetSocketAddress(LOOPBACK, port), USB_TRY_TIMEOUT_MS)
+            s.soTimeout = USB_TRY_TIMEOUT_MS
+            val head = ByteArray(Protocol.PREAMBLE_LEN)
+            DataInputStream(s.getInputStream()).readFully(head)
+            Protocol.Preamble.decode(head) // not Oculibre: throws, Wi-Fi is tried next
+            prefetched = head
+            target = LOOPBACK
+            status("Connected over USB")
+            s
+        } catch (e: Exception) {
+            try {
+                s.close()
+            } catch (_: IOException) {
+            }
+            null
+        }
+    }
+
     /** Wi-Fi: TLS with the paired computer's pinned key (§13). USB (loopback) stays plaintext. */
     private fun secure(s: Socket): Socket {
         if (SecureChannel.isLoopback(target)) return s
@@ -413,7 +451,11 @@ class StreamSession(
     private fun handshake(s: Socket): Protocol.MessageReader {
         s.soTimeout = HANDSHAKE_TIMEOUT_MS
         val w = Protocol.MessageWriter(BufferedOutputStream(s.getOutputStream(), 64 * 1024))
-        val r = Protocol.MessageReader(BufferedInputStream(s.getInputStream(), 64 * 1024))
+        // The preamble may already have been read while checking the cable (usb()).
+        val input = prefetched?.let { SequenceInputStream(ByteArrayInputStream(it), s.getInputStream()) }
+            ?: s.getInputStream()
+        prefetched = null
+        val r = Protocol.MessageReader(BufferedInputStream(input, 64 * 1024))
         val ours = Protocol.Preamble.ours(Protocol.ROLE_CAMERA)
         w.writeRaw(ours.encode())
         w.write(hello())
@@ -1250,6 +1292,9 @@ class StreamSession(
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 3000
+        /** USB through `adb reverse`: the computer answers its preamble at once when it is there. */
+        private const val USB_TRY_TIMEOUT_MS = 1500
+        private const val LOOPBACK = "127.0.0.1"
         /** Wi-Fi, paired: the known address gets a short try before looking on the network. */
         private const val FIRST_TRY_TIMEOUT_MS = 2000
         private const val DISCOVERY_TIMEOUT_MS = 6000L
