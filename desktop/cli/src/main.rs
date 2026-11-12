@@ -5,15 +5,6 @@
 //! shows up as a regular webcam. USB connections (loopback) are plaintext; Wi-Fi connections are
 //! TLS with pinned keys, for paired phones only. `oculibre bench` measures every camera × mode.
 
-mod bench;
-mod decoder;
-mod discovery;
-mod pairing;
-mod session;
-mod tls;
-mod v4l2;
-mod yuv;
-
 use std::error::Error;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
@@ -21,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+use oculibre_core::{bench, decoder, discovery, pairing, session, tls, v4l2, yuv};
 use openh264::formats::YUVSource;
 
 const USAGE: &str = "\
@@ -754,6 +746,3 @@ fn find_adb() -> PathBuf {
     }
     PathBuf::from("adb") // rely on PATH
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,0 +1,29 @@
+[package]
+name = "oculibre-core"
+description = "Oculibre desktop engine: phone sessions, decoding, virtual camera, pairing (no user interface)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["ffmpeg"]
+# Decoding with FFmpeg (VA-API hardware decoding, fast software decoder). Without it: OpenH264 only.
+# Needs libavcodec-dev, libavutil-dev and libclang-dev to build (#11).
+ffmpeg = ["dep:ffmpeg-sys-next"]
+
+[dependencies]
+oculibre-protocol = { path = "../protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Cisco OpenH264, BSD-2-Clause, compiled from source: no system library needed.
+openh264 = "0.9"
+libc = "0.2"
+# Wi-Fi secure channel (docs/research/secure-channel.typ): TLS 1.2/1.3 with pinned self-signed keys.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rcgen = { version = "0.14", default-features = false, features = ["ring"] }
+ring = "0.17"
+# Pairing QR code shown in the terminal.
+qrcode = { version = "0.14", default-features = false }
+# mDNS: the computer announces itself on the network (no async runtime).
+mdns-sd = { version = "0.21", default-features = false }
+ffmpeg-sys-next = { version = "8", optional = true, default-features = false, features = ["avcodec"] }

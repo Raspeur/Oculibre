@@ -428,6 +428,16 @@ dependencies = [
 name = "oculibre-cli"
 version = "0.3.0"
 dependencies = [
+ "oculibre-core",
+ "oculibre-protocol",
+ "openh264",
+ "rustls",
+]
+
+[[package]]
+name = "oculibre-core"
+version = "0.3.0"
+dependencies = [
  "ffmpeg-sys-next",
  "libc",
  "mdns-sd",
