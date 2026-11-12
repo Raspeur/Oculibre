@@ -6,12 +6,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use oculibre_protocol::{Hello, StreamConfig};
+use serde::Serialize;
 
 use crate::session::{End, Status, Summary};
 use crate::yuv::Transform;
 
 /// How a phone reached this computer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind")]
 pub enum Via {
     /// USB cable, through `adb reverse` (plaintext on loopback).
     Usb,
@@ -20,7 +22,8 @@ pub enum Via {
 }
 
 /// Why a connection was refused before any session.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "data")]
 pub enum Refusal {
     /// It came from the network while Wi-Fi is off (§13: never plaintext on a network).
     WifiOff,
@@ -38,7 +41,7 @@ impl std::fmt::Display for Refusal {
 }
 
 /// Wi-Fi is on: what the computer shows to phones.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WifiInfo {
     /// This computer's network addresses.
     pub addresses: Vec<IpAddr>,
@@ -52,7 +55,11 @@ pub struct WifiInfo {
 
 /// Everything the engine reports. Sent from several threads: receivers must be quick and must not
 /// block.
-#[derive(Debug, Clone)]
+///
+/// As JSON (the desktop app): `{"kind": "Status", "data": {…}}`; `Result`s become
+/// `{"Ok": …}` / `{"Err": "…"}`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", content = "data")]
 pub enum Event {
     // --- the computer (`Host`)
     /// The virtual camera that will receive the pictures.
@@ -110,4 +117,52 @@ pub type Events = Arc<dyn Fn(Event) + Send + Sync>;
 /// For a session nobody watches (tests, the bench).
 pub fn ignore_events() -> Events {
     Arc::new(|_| {})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::{Rotate, View};
+    use serde_json::json;
+
+    /// The JSON the desktop app receives: its TypeScript types (app/src/engine.ts) follow it.
+    #[test]
+    fn events_as_json() {
+        let json = |e: Event| serde_json::to_value(e).unwrap();
+        assert_eq!(
+            json(Event::Decoder { name: "VA-API" }),
+            json!({"kind": "Decoder", "data": {"name": "VA-API"}})
+        );
+        assert_eq!(
+            json(Event::Usb(Err("no adb".into()))),
+            json!({"kind": "Usb", "data": {"Err": "no adb"}})
+        );
+        assert_eq!(
+            json(Event::SessionEnded(Ok(End::Closed))),
+            json!({"kind": "SessionEnded", "data": {"Ok": {"kind": "Closed"}}})
+        );
+        assert_eq!(
+            json(Event::PhoneConnected {
+                peer: "127.0.0.1:50000".parse().unwrap(),
+                via: Via::Wifi {
+                    tls: "TLSv1.3".into()
+                },
+            }),
+            json!({"kind": "PhoneConnected", "data": {
+                "peer": "127.0.0.1:50000", "via": {"kind": "Wifi", "tls": "TLSv1.3"}}})
+        );
+        let status = serde_json::to_value(Event::Status(Status::default())).unwrap();
+        assert_eq!(status["data"]["shown_fps"], json!(0.0));
+        assert_eq!(status["data"]["latency"], json!(null));
+        // What the app sends back to change the rotation.
+        let view: View = serde_json::from_value(
+            json!({"rotate": {"kind": "Fixed", "degrees": 90}, "mirror": true}),
+        )
+        .unwrap();
+        assert_eq!(view.rotate, Rotate::Fixed(90));
+        assert_eq!(
+            serde_json::to_value(View::default()).unwrap(),
+            json!({"rotate": {"kind": "Auto"}, "mirror": false})
+        );
+    }
 }

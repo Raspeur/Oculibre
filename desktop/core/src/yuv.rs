@@ -8,7 +8,7 @@
 use openh264::formats::YUVSource;
 
 /// What to do to the picture, decided by the session (`--rotate`, `--mirror`, `auto`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Transform {
     /// Clockwise rotation in degrees: 0, 90, 180 or 270.
     pub rotation: u16,

@@ -121,6 +121,8 @@ a:hover { color: #FFB39E; }
 .oc-btn--block { display: flex; width: 100%; }
 .oc-icon-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: var(--oc-control-h); height: var(--oc-control-h); box-sizing: border-box; border: 1px solid var(--oc-border-strong); border-radius: var(--oc-r-sm); background: var(--oc-surface-3); color: var(--oc-text-2); text-decoration: none; cursor: pointer; }
 .oc-icon-btn--lg { width: 44px; height: 44px; }
+/* Disabled buttons and switches: still readable, clearly not clickable. */
+.oc-btn:disabled, .oc-icon-btn:disabled, .oc-switch:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---------- form controls */
 .oc-select { min-height: 34px; min-width: 132px; padding: 0 10px; border: 1px solid var(--oc-border-strong); border-radius: var(--oc-r-sm); background: var(--oc-surface-3); color: var(--oc-text); font-size: var(--oc-text-md); }

@@ -30,6 +30,7 @@ use oculibre_protocol::{
     Event as WireEvent, Hello, Message, MessageReader, Preamble, Request, Response, Role, SetMode,
     StreamConfig,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::decoder::VideoDecoder;
@@ -93,7 +94,8 @@ pub trait Sink {
 }
 
 /// `--rotate`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "degrees")]
 pub enum Rotate {
     /// Always this clockwise rotation (0, 90, 180, 270): the picture never turns.
     Fixed(u16),
@@ -102,7 +104,7 @@ pub enum Rotate {
 }
 
 /// How the user wants the picture: `--rotate` and `--mirror`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct View {
     pub rotate: Rotate,
     pub mirror: bool,
@@ -153,7 +155,8 @@ pub const HOST_FEATURES: [&str; 4] = [
 ];
 
 /// Why a session ended normally.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind")]
 pub enum End {
     /// The phone sent `BYE`.
     Bye {
@@ -238,7 +241,7 @@ impl Shared {
 
 /// Where the phone's share of the latency goes (its `stats` event, ms): the camera finishing the
 /// picture, the H.264 encoder, the send queue (#12).
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
 pub struct PhoneSplit {
     pub camera: f64,
     pub encoder: f64,
@@ -960,7 +963,7 @@ fn record_latency(shared: &Shared, capture_us: u64, arrival_us: u64, decode_us: 
 }
 
 /// The measurements of the last second ([`Event::Status`]).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Status {
     /// Pictures written to the virtual camera.
     pub shown_fps: f64,
@@ -988,7 +991,7 @@ pub struct Status {
 }
 
 /// Whole-session figures ([`Event::Summary`]).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Summary {
     pub seconds: u32,
     pub fps: f64,
