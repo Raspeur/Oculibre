@@ -25,6 +25,8 @@ pub mod vcam;
 pub mod yuv;
 
 pub use events::{ignore_events, Event, Events};
+/// The wire protocol, for front-ends that need its types (capabilities, `SetMode`…).
+pub use oculibre_protocol as protocol;
 
 #[cfg(test)]
 mod tests;

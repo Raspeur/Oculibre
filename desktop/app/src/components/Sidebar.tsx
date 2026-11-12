@@ -1,0 +1,66 @@
+// Left column of the main window (mockup Main2): the logo, the phones, adding a phone.
+
+import logo from "../../../../oculibre_logo.svg";
+import { phoneName } from "../engine";
+import type { EngineState } from "../useEngine";
+
+export function Sidebar({ engine }: { engine: EngineState }) {
+  const { phone, via, stream, paused } = engine;
+  // Paired phones other than the one being served are offline (or not started).
+  const others = engine.paired.filter((p) => p.id !== phone?.id);
+  const link = via?.kind === "Wifi" ? "Wi-Fi" : "USB";
+
+  return (
+    <nav className="oc-sidebar" aria-label="Oculibre">
+      <div className="oc-cluster">
+        <div className="oc-logo oc-logo--md">
+          <img src={logo} alt="" />
+        </div>
+        <span className="oc-brand">Oculibre</span>
+      </div>
+
+      <div className="oc-stack">
+        <span className="oc-label">Téléphones</span>
+
+        {phone && (
+          <button type="button" className="oc-nav-item" aria-current="true">
+            <span
+              className={stream && !paused ? "oc-dot oc-dot--lg" : "oc-dot oc-dot--lg oc-dot--paused"}
+              aria-hidden="true"
+            />
+            <span className="oc-row__label">
+              <span className="oc-nav-item__name">{phoneName(phone)}</span>
+              <span className="oc-small">
+                {stream && !paused ? "En direct" : "Connecté"} · {link}
+              </span>
+            </span>
+          </button>
+        )}
+
+        {others.map((p) => (
+          <button key={p.fingerprint} type="button" className="oc-nav-item">
+            <span className="oc-dot oc-dot--lg oc-dot--off" aria-hidden="true" />
+            <span className="oc-row__label">
+              <span className="oc-nav-item__name">{p.name}</span>
+              <span className="oc-small">Hors ligne · Wi-Fi</span>
+            </span>
+          </button>
+        ))}
+
+        {!phone && others.length === 0 && (
+          <p className="oc-small" style={{ margin: "0 4px" }}>
+            Aucun téléphone pour l'instant.
+          </p>
+        )}
+
+        {/* The pairing screen comes next (#15). */}
+        <button type="button" className="oc-nav-add" disabled title="Bientôt">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FE633C" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Ajouter un téléphone
+        </button>
+      </div>
+    </nav>
+  );
+}

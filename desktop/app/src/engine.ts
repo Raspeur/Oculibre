@@ -43,6 +43,7 @@ export interface WifiInfo {
 
 /** The phone's HELLO (protocol §7.1); only the fields the app uses. */
 export interface Hello {
+  id: string;
   app: string;
   app_version: string;
   name: string;
@@ -57,6 +58,47 @@ export interface StreamConfig {
   fps: number;
   path?: string;
   camera?: { id: string; facing: string; sensor_orientation: number };
+}
+
+/** One way a camera can stream (protocol §9.2). `path`: "normal", "unlisted" or "high_speed". */
+export interface ModeCapabilities {
+  width: number;
+  height: number;
+  fps: number;
+  path?: string;
+}
+
+export interface CameraCapabilities {
+  id: string;
+  /** "back", "front" or "external". */
+  facing: string;
+  sensor_orientation: number;
+  modes: ModeCapabilities[];
+}
+
+export interface Capabilities {
+  cameras: CameraCapabilities[];
+}
+
+/** What `setMode` asks the phone: a camera and one of its modes. */
+export interface SetMode {
+  camera: string;
+  width: number;
+  height: number;
+  fps: number;
+  path?: string;
+}
+
+/** Why `setMode` failed: refused (the phone keeps its previous mode) or the session is over. */
+export type ModeError = { kind: "Refused"; data: string } | { kind: "Session"; data: string };
+
+/** A phone paired for Wi-Fi, as stored on this computer. */
+export interface PairedPhone {
+  fingerprint: string;
+  name: string;
+  /** Install id: the same as in its HELLO. */
+  id: string;
+  paired_on: string;
 }
 
 export interface PhoneSplit {
@@ -144,6 +186,25 @@ export function stop(): Promise<void> {
 
 export function setView(view: View): Promise<void> {
   return invoke("set_view", { view });
+}
+
+/** The cameras and modes of the phone being served. */
+export function capabilities(): Promise<Capabilities> {
+  return invoke<Capabilities>("capabilities");
+}
+
+/** Switches camera or quality; resolves once the phone streams in it, rejects with a ModeError. */
+export function setMode(mode: SetMode): Promise<void> {
+  return invoke("set_mode", { mode });
+}
+
+/** Stops the phone's camera; the receiver keeps waiting for phones. */
+export function finish(): Promise<void> {
+  return invoke("finish");
+}
+
+export function pairedPhones(): Promise<PairedPhone[]> {
+  return inApp ? invoke<PairedPhone[]>("paired_phones") : Promise.resolve([]);
 }
 
 /** A phone's name for people: its own name, else its model. */

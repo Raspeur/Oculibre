@@ -9,8 +9,10 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use oculibre_core::host::{Config, Host};
-use oculibre_core::session::View;
+use oculibre_core::host::{self, Config, Host};
+use oculibre_core::pairing::{self, Pairings};
+use oculibre_core::protocol::{Capabilities, SetMode};
+use oculibre_core::session::{ModeError, Remote, View};
 use oculibre_core::{Event, Events};
 use tauri::{AppHandle, Emitter, State};
 
@@ -61,6 +63,43 @@ fn stop(receiver: State<Receiver>) {
     }
 }
 
+/// The phone being served, if any. The lock is only held to copy the handle: a slow command to
+/// the phone never blocks the other commands.
+fn remote(receiver: &Receiver) -> Result<Remote, String> {
+    let slot = receiver.host.lock().unwrap();
+    let host = slot.as_ref().ok_or("the receiver is not running")?;
+    host.remote().ok_or_else(|| "no phone is connected".into())
+}
+
+/// The cameras of the phone being served and their modes (size, frame rate, capture path).
+#[tauri::command(async)]
+fn capabilities(receiver: State<Receiver>) -> Result<Capabilities, String> {
+    remote(&receiver)?.capabilities()
+}
+
+/// Switches the phone to another camera or quality; resolves once it streams in it. A refused
+/// mode (`{kind: "Refused"}`) leaves the phone in its previous mode.
+#[tauri::command(async)]
+fn set_mode(receiver: State<Receiver>, mode: SetMode) -> Result<(), ModeError> {
+    remote(&receiver)
+        .map_err(ModeError::Session)?
+        .set_mode(&mode)
+}
+
+/// Stops the phone's camera (`BYE user_stop`); the receiver keeps waiting for phones.
+#[tauri::command(async)]
+fn finish(receiver: State<Receiver>) {
+    if let Ok(remote) = remote(&receiver) {
+        remote.finish("stopped from the computer");
+    }
+}
+
+/// The phones paired for Wi-Fi, as stored on this computer.
+#[tauri::command]
+fn paired_phones() -> Vec<pairing::Phone> {
+    Pairings::load(host::config_dir().join("paired-phones.json")).phones()
+}
+
 /// Rotation and mirror, for the phone being served and the next ones.
 #[tauri::command]
 fn set_view(receiver: State<Receiver>, view: View) -> Result<(), String> {
@@ -76,7 +115,15 @@ pub fn run() {
     oculibre_core::decoder::prepare_environment();
     tauri::Builder::default()
         .manage(Receiver::default())
-        .invoke_handler(tauri::generate_handler![start, stop, set_view])
+        .invoke_handler(tauri::generate_handler![
+            start,
+            stop,
+            set_view,
+            capabilities,
+            set_mode,
+            finish,
+            paired_phones
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

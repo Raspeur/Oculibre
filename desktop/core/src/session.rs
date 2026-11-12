@@ -311,7 +311,8 @@ impl std::fmt::Debug for Remote {
 }
 
 /// Why [`Remote::set_mode`] failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "data")]
 pub enum ModeError {
     /// The phone could not use this mode and went back to the previous one: the session goes on.
     Refused(String),

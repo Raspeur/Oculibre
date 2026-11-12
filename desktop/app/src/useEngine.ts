@@ -1,0 +1,145 @@
+// The engine's state as the window sees it, kept up to date from its events.
+//
+// `useReducer`: every engine event goes through one pure function, `reduce(state, action)`, that
+// returns the next state. React draws again whatever depends on what changed.
+
+import { useEffect, useReducer } from "react";
+import {
+  type EngineEvent,
+  type Hello,
+  type PairedPhone,
+  type Status,
+  type StreamConfig,
+  type Transform,
+  type Via,
+  inApp,
+  onEngineEvent,
+  pairedPhones,
+  start,
+} from "./engine";
+
+export interface EngineState {
+  /** The receiver waits for phones (started when the window opens). */
+  running: boolean;
+  /** Where phones connect, once running. */
+  address: string | null;
+  /** Why the receiver could not start. */
+  startError: string | null;
+  /** The phone being served and how it came. */
+  phone: Hello | null;
+  via: Via | null;
+  stream: StreamConfig | null;
+  /** The phone stopped its stream for a moment (mode change). */
+  paused: boolean;
+  status: Status | null;
+  transform: Transform | null;
+  decoder: string | null;
+  /** Size of the virtual camera (it may be locked by an app). */
+  outputSize: [number, number] | null;
+  /** Phones paired for Wi-Fi. */
+  paired: PairedPhone[];
+  /** Short code of this computer, shown when pairing (Wi-Fi on). */
+  key: string | null;
+}
+
+const initial: EngineState = {
+  running: false,
+  address: null,
+  startError: null,
+  phone: null,
+  via: null,
+  stream: null,
+  paused: false,
+  status: null,
+  transform: null,
+  decoder: null,
+  outputSize: null,
+  paired: [],
+  key: null,
+};
+
+/** What can change the state: an engine event, or something the window did. */
+type Action =
+  | { type: "event"; event: EngineEvent }
+  | { type: "started"; address: string }
+  | { type: "startFailed"; error: string }
+  | { type: "paired"; phones: PairedPhone[] };
+
+/** The phone left: forget everything about it. */
+const noPhone = {
+  phone: null,
+  via: null,
+  stream: null,
+  paused: false,
+  status: null,
+  transform: null,
+  decoder: null,
+  outputSize: null,
+};
+
+export function reduce(state: EngineState, action: Action): EngineState {
+  switch (action.type) {
+    case "started":
+      return { ...state, running: true, address: action.address, startError: null };
+    case "startFailed":
+      return { ...state, running: false, startError: action.error };
+    case "paired":
+      return { ...state, paired: action.phones };
+    case "event":
+      return reduceEvent(state, action.event);
+  }
+}
+
+function reduceEvent(state: EngineState, event: EngineEvent): EngineState {
+  switch (event.kind) {
+    case "Wifi":
+      return { ...state, key: event.data.key };
+    case "PhoneConnected":
+      return { ...state, via: event.data.via };
+    case "Phone":
+      return { ...state, phone: event.data };
+    case "Stream":
+      return { ...state, stream: event.data, paused: false };
+    case "StreamPaused":
+      return { ...state, paused: true };
+    case "Status":
+      return { ...state, status: event.data };
+    case "Transform":
+      return { ...state, transform: event.data.transform };
+    case "Decoder":
+      return { ...state, decoder: event.data.name };
+    case "VirtualCameraSize":
+      return { ...state, outputSize: event.data.size };
+    case "SessionEnded":
+      return { ...state, ...noPhone };
+    default:
+      return state; // the others are not shown in the window (yet)
+  }
+}
+
+/** Starts the receiver when the window opens and follows the engine. */
+export function useEngine(wifi: boolean): EngineState {
+  const [state, dispatch] = useReducer(reduce, initial);
+
+  useEffect(() => {
+    const unlisten = onEngineEvent((event) => {
+      dispatch({ type: "event", event });
+      if (event.kind === "Paired") {
+        pairedPhones().then((phones) => dispatch({ type: "paired", phones }));
+      }
+    });
+    pairedPhones().then((phones) => dispatch({ type: "paired", phones }));
+    if (inApp) {
+      // A second call (React runs effects twice while developing) gets the same address.
+      start(wifi).then(
+        (address) => dispatch({ type: "started", address }),
+        (error) => dispatch({ type: "startFailed", error: String(error) }),
+      );
+    }
+    return () => {
+      unlisten.then((stopListening) => stopListening());
+    };
+  }, [wifi]);
+
+  return state;
+}

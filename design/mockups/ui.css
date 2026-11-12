@@ -43,8 +43,9 @@
   --oc-scrim: rgba(3, 7, 14, 0.72);   /* dims the window behind a tour step or a dialog */
 
   /* Type */
-  --oc-font: Inter, system-ui, sans-serif;
-  --oc-font-display: 'Space Grotesk', Inter, sans-serif;
+  /* Mockups: Google Fonts names; the app bundles the variable fonts (@fontsource-variable). */
+  --oc-font: Inter, 'Inter Variable', system-ui, sans-serif;
+  --oc-font-display: 'Space Grotesk', 'Space Grotesk Variable', Inter, 'Inter Variable', sans-serif;
   --oc-text-xs: 11px;   /* section labels */
   --oc-text-sm: 12px;   /* hints, captions */
   --oc-text-md: 13px;   /* controls, panel rows */
@@ -67,6 +68,8 @@
 }
 
 /* ---------- base */
+/* A dark page: native pieces the CSS cannot reach (open select menus, scrollbars) follow it. */
+:root { color-scheme: dark; }
 body { margin: 0; background: var(--oc-bg); }
 button, select, input { font-family: inherit; }
 a { color: var(--oc-accent-text); }
@@ -75,6 +78,7 @@ a:hover { color: #FFB39E; }
 /* ---------- layout */
 .oc-app { width: 100%; min-height: 100vh; box-sizing: border-box; background: var(--oc-bg); color: var(--oc-text); font-family: var(--oc-font); }
 .oc-app--sidebar { display: flex; flex-wrap: wrap; align-items: stretch; }
+.oc-app--sidebar > .oc-main { min-height: 100vh; }
 .oc-app--stack { display: flex; flex-direction: column; align-items: center; }
 .oc-phone { width: 390px; height: 844px; box-sizing: border-box; background: var(--oc-bg); color: var(--oc-text); font-family: var(--oc-font); display: flex; flex-direction: column; overflow: hidden; }
 .oc-sidebar { flex: 1 1 240px; max-width: 260px; min-width: 220px; box-sizing: border-box; padding: 20px 16px; background: var(--oc-surface-1); border-right: 1px solid var(--oc-border); display: flex; flex-direction: column; gap: 24px; }
@@ -125,7 +129,11 @@ a:hover { color: #FFB39E; }
 .oc-btn:disabled, .oc-icon-btn:disabled, .oc-switch:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ---------- form controls */
-.oc-select { min-height: 34px; min-width: 132px; padding: 0 10px; border: 1px solid var(--oc-border-strong); border-radius: var(--oc-r-sm); background: var(--oc-surface-3); color: var(--oc-text); font-size: var(--oc-text-md); }
+/* appearance: none, else WebKitGTK (the Linux app) draws selects with the light GTK theme and
+ * ignores the background; the arrow is then ours (stroke = --oc-text-muted). */
+.oc-select { -webkit-appearance: none; appearance: none; min-height: 34px; min-width: 132px; padding: 0 32px 0 10px; border: 1px solid var(--oc-border-strong); border-radius: var(--oc-r-sm); background: var(--oc-surface-3) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A3B1C7' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center; color: var(--oc-text); font-family: inherit; font-size: var(--oc-text-md); cursor: pointer; }
+.oc-select:disabled { opacity: 0.45; cursor: not-allowed; }
+.oc-select option { background: var(--oc-surface-3); color: var(--oc-text); }
 .oc-select--wide { min-width: 160px; }
 .oc-switch { flex: 0 0 auto; position: relative; width: 40px; height: 22px; padding: 0; border: 1px solid var(--oc-border-control); border-radius: 11px; background: #24344F; cursor: pointer; }
 .oc-switch__knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #FFFFFF; }
@@ -178,6 +186,8 @@ a:hover { color: #FFB39E; }
 .oc-nav-item__name { font-size: var(--oc-text-base); font-weight: 600; }
 .oc-nav-link { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border-radius: var(--oc-r-sm); color: var(--oc-text-2); font-size: var(--oc-text-base); text-decoration: none; }
 .oc-nav-add { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; box-sizing: border-box; border: 1px dashed var(--oc-border-control); border-radius: var(--oc-r-sm); color: var(--oc-text); font-size: var(--oc-text-base); font-weight: 500; text-decoration: none; }
+button.oc-nav-add { width: 100%; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
+.oc-nav-add:disabled { opacity: 0.45; cursor: not-allowed; }
 .oc-preview { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: var(--oc-preview); border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); display: flex; align-items: center; justify-content: center; }
 .oc-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; background: var(--oc-border); border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); }
 .oc-stat { background: var(--oc-surface-2); padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
