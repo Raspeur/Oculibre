@@ -116,6 +116,9 @@ class StreamSession(
     interface Listener {
         fun onStatus(session: StreamSession, text: String)
 
+        /** Pictures are going out, in this size and frame rate (again after a mode change). */
+        fun onLive(session: StreamSession, width: Int, height: Int, fps: Int) {}
+
         /**
          * The session is over. [retry]: the computer was lost, not refused (connection refused or
          * cut, no answer, network too slow): a new session may find it again. Not after a stop
@@ -1110,6 +1113,7 @@ class StreamSession(
                         session.setRepeatingRequest(request, cameraCallback, handler)
                         p.started.countDown()
                         status("Streaming ${cfg.width}x${cfg.height}…")
+                        listener.onLive(this@StreamSession, cfg.width, cfg.height, cfg.fps)
                     } catch (e: Exception) {
                         // CameraAccessException, IllegalStateException (closed meanwhile)…
                         p.failed("Camera request refused: ${e.message ?: e.javaClass.simpleName}")
@@ -1159,6 +1163,7 @@ class StreamSession(
                             )
                             p.started.countDown()
                             status("Streaming ${cfg.width}x${cfg.height} (high-speed ${cfg.highSpeedFps} → ${cfg.fps} fps)…")
+                            listener.onLive(this@StreamSession, cfg.width, cfg.height, cfg.fps)
                         } catch (e: Exception) {
                             p.failed("High-speed request refused: ${e.message ?: e.javaClass.simpleName}")
                         }

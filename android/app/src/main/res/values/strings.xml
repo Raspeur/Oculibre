@@ -1,4 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- English (default). French in values-fr. -->
 <resources>
     <string name="app_name">Oculibre</string>
+
+    <!-- Home (design/mockups/PhoneHome) -->
+    <string name="menu">Settings</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="state_ready">Ready</string>
+    <string name="state_connecting">Connecting…</string>
+    <string name="state_live">Live</string>
+    <string name="state_searching">Looking for the computer…</string>
+    <string name="state_checking">Checking the cameras…</string>
+    <string name="ready_detail">Start Oculibre on the computer, then press Start.</string>
+    <string name="usb_cable">USB cable</string>
+    <string name="usb_detail">Plug the phone into the computer</string>
+    <string name="wifi_encrypted">Wi-Fi · encrypted connection</string>
+    <string name="not_paired">Not paired for Wi-Fi yet</string>
+    <string name="footer">The camera and the quality are chosen from the computer.</string>
+    <string name="alert_battery_title">Battery saving may cut the webcam</string>
+    <string name="alert_battery_text">With the screen off, Android can stop Oculibre.</string>
+    <string name="alert_camera_title">Camera access was withdrawn</string>
+    <string name="alert_camera_text">Oculibre needs it to film.</string>
+    <string name="fix">Fix ›</string>
+    <string name="no_quality">No quality supported by this phone was found</string>
+    <string name="camera_denied">Camera access refused: Oculibre cannot film.</string>
 </resources>

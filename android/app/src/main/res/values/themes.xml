@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark, no title bar; platform Material theme only (no AndroidX, Android 5+). -->
+    <style name="Theme.Oculibre" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/oc_bg</item>
+        <item name="android:colorBackground">@color/oc_bg</item>
+        <item name="android:statusBarColor">@color/oc_bg</item>
+        <item name="android:navigationBarColor">@color/oc_bg</item>
+        <item name="android:colorPrimary">@color/oc_surface_1</item>
+        <item name="android:colorPrimaryDark">@color/oc_bg</item>
+        <item name="android:colorAccent">@color/oc_accent</item>
+        <item name="android:colorControlActivated">@color/oc_accent</item>
+        <item name="android:textColorPrimary">@color/oc_text</item>
+        <item name="android:textColorSecondary">@color/oc_text_muted</item>
+    </style>
+</resources>

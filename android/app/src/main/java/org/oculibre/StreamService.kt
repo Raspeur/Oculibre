@@ -31,8 +31,19 @@ import java.util.concurrent.CopyOnWriteArraySet
  */
 class StreamService : Service() {
 
-    /** What the UI shows. */
-    data class Snapshot(val running: Boolean, val status: String?)
+    /** Where the service is, for the screen. */
+    enum class Phase { IDLE, CONNECTING, LIVE, SEARCHING }
+
+    /**
+     * What the UI shows: [status] is a technical line (English), [phase] what to say to people,
+     * [live] the quality being streamed ("1080p · 60").
+     */
+    data class Snapshot(
+        val running: Boolean,
+        val status: String?,
+        val phase: Phase = if (running) Phase.CONNECTING else Phase.IDLE,
+        val live: String? = null,
+    )
 
     private class Request(val host: String, val port: Int, val config: StreamConfig)
 
@@ -108,13 +119,22 @@ class StreamService : Service() {
         val delay = minOf(1000L shl attempts.coerceAtMost(4), MAX_DELAY_MS)
         attempts++
         val why = error?.let { " ($it)" } ?: ""
-        publish(Snapshot(true, "Looking for the computer — trying again in ${delay / 1000} s$why"))
+        publish(Snapshot(true, "Looking for the computer — trying again in ${delay / 1000} s$why", Phase.SEARCHING))
         main.postDelayed(retry, delay)
     }
 
     private val sessionListener = object : StreamSession.Listener {
         override fun onStatus(session: StreamSession, text: String) {
-            main.post { if (this@StreamService.session === session) publish(Snapshot(true, text)) }
+            main.post { if (this@StreamService.session === session) publish(current.copy(running = true, status = text)) }
+        }
+
+        override fun onLive(session: StreamSession, width: Int, height: Int, fps: Int) {
+            main.post {
+                if (this@StreamService.session !== session) return@post
+                val lines = minOf(width, height)
+                val size = if (lines >= 2160) "4K" else "${lines}p"
+                publish(current.copy(running = true, phase = Phase.LIVE, live = "$size · $fps"))
+            }
         }
 
         override fun onStopped(session: StreamSession, error: String?, retry: Boolean) {
