@@ -46,8 +46,8 @@
     <string name="welcome_later">Later</string>
     <string name="welcome_next">Next</string>
     <string name="welcome_connect_title">Connect to your computer</string>
-    <string name="welcome_connect_text">With a USB cable: plug the phone in, nothing else to do. For Wi-Fi: open Oculibre on the computer, click \"Add a phone\", then scan the QR code with the phone\'s camera.</string>
-    <string name="welcome_connect_action">Open the camera to scan</string>
+    <string name="welcome_connect_text">With a USB cable: plug the phone in, nothing else to do. For Wi-Fi: open Oculibre on the computer, click \"Add a phone\", then scan the QR code it shows.</string>
+    <string name="welcome_connect_action">Scan the QR code</string>
     <string name="welcome_ready_title">All set</string>
     <string name="welcome_ready_text">Next time, just open Oculibre and press Start.</string>
     <string name="welcome_ready_action">Let\'s go</string>
@@ -89,4 +89,20 @@
     <string name="advanced_settings">Technical settings</string>
     <string name="advanced_settings_value">Address, quality</string>
     <string name="lab">Lab and diagnostics</string>
+    <!-- QR scan and pairing confirmation -->
+    <string name="scan_title">Scan the QR code</string>
+    <string name="scan_hint">Point the camera at the QR code shown by the computer</string>
+    <string name="scan_where">On the computer: Oculibre › Add a phone</string>
+    <string name="scan_found">QR code read</string>
+    <string name="scan_not_oculibre">This QR code is not an Oculibre pairing code</string>
+    <string name="scan_busy">The camera is streaming to the computer. Stop the stream to scan a QR code.</string>
+    <string name="scan_camera_denied">Oculibre needs the camera to read the QR code shown by the computer.</string>
+    <string name="scan_allow">Allow in the settings</string>
+    <string name="scan_camera_error">The camera could not be opened. Close the other apps using it, then try again.</string>
+    <string name="retry">Try again</string>
+    <string name="pair_title">Pair with %1$s?</string>
+    <string name="pair_text">Wi-Fi streaming to this computer will be encrypted, and only this computer will be able to receive it.\n\nCheck that the computer shows the same code:\n%1$s\n\nAddress: %2$s</string>
+    <string name="pair_action">Pair</string>
+    <string name="pair_invalid">This pairing code is not valid, or comes from a newer Oculibre: update the app</string>
+    <string name="pair_done">Paired with %1$s: press Start</string>
 </resources>

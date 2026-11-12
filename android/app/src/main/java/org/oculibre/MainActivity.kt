@@ -2,7 +2,6 @@ package org.oculibre
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -330,32 +329,21 @@ class MainActivity : Activity() {
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return false
         val offer = PairingOffer.parse(link)
         if (offer == null) {
-            stateDetail.text = "This pairing link is not valid (or comes from a newer Oculibre): update the app"
+            stateDetail.text = getString(R.string.pair_invalid)
             return false
         }
         // Each QR code has a one-time token: an offer already shown (accepted or cancelled) is
         // never asked again; a new QR code is.
         if (prefs.getString(PREF_LAST_OFFER, null) == offer.token) return false
         prefs.edit().putString(PREF_LAST_OFFER, offer.token).apply()
-        // The computer's address on this phone's network (it may also have VPN or container ones).
-        val address = Networks.rank(offer.addresses, Networks.local()).first()
-        AlertDialog.Builder(this)
-            .setTitle("Pair with ${offer.name}?")
-            .setMessage(
-                "Wi-Fi streaming to this computer will be encrypted, and only this computer will be " +
-                    "able to receive it.\n\nCheck that the computer shows the same code:\n" +
-                    "${offer.shortFingerprint}\n\nAddress: ${address}",
-            )
-            .setPositiveButton("Pair") { _, _ ->
-                PairingStore.save(this, offer)
-                prefs.edit().putString(PREF_HOST, address).apply()
+        PairingPrompt.confirm(this, offer) { paired ->
+            if (paired) {
                 renderComputer()
-                stateDetail.text = "Paired with ${offer.name}: press Start"
+                stateDetail.text = getString(R.string.pair_done, offer.name)
             }
-            .setNegativeButton("Cancel", null)
             // The link closed the first-launch screens (this screen is singleTask): back to them.
-            .setOnDismissListener { maybeWelcome() }
-            .show()
+            maybeWelcome()
+        }
         return true
     }
 

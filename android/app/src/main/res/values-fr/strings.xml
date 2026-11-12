@@ -41,8 +41,8 @@
     <string name="welcome_later">Plus tard</string>
     <string name="welcome_next">Suivant</string>
     <string name="welcome_connect_title">Relier à votre ordinateur</string>
-    <string name="welcome_connect_text">Par câble USB : branchez le téléphone, rien d\'autre à faire. En Wi-Fi : ouvrez Oculibre sur l\'ordinateur, cliquez sur « Ajouter un téléphone », puis scannez le QR code avec l\'appareil photo du téléphone.</string>
-    <string name="welcome_connect_action">Ouvrir l\'appareil photo</string>
+    <string name="welcome_connect_text">Par câble USB : branchez le téléphone, rien d\'autre à faire. En Wi-Fi : ouvrez Oculibre sur l\'ordinateur, cliquez sur « Ajouter un téléphone », puis scannez le QR code qu\'il affiche.</string>
+    <string name="welcome_connect_action">Scanner le QR code</string>
     <string name="welcome_ready_title">Tout est prêt</string>
     <string name="welcome_ready_text">La prochaine fois, ouvrez simplement Oculibre et appuyez sur Démarrer.</string>
     <string name="welcome_ready_action">C\'est parti</string>
@@ -83,4 +83,20 @@
     <string name="advanced_settings">Réglages techniques</string>
     <string name="advanced_settings_value">Adresse, qualité</string>
     <string name="lab">Lab et diagnostics</string>
+    <!-- Scan du QR code et confirmation de l'appairage -->
+    <string name="scan_title">Scanner le QR code</string>
+    <string name="scan_hint">Visez le QR code affiché par l\'ordinateur</string>
+    <string name="scan_where">Sur l\'ordinateur : Oculibre › Ajouter un téléphone</string>
+    <string name="scan_found">QR code lu</string>
+    <string name="scan_not_oculibre">Ce QR code n\'est pas un code d\'appairage Oculibre</string>
+    <string name="scan_busy">La caméra est en direct vers l\'ordinateur. Arrêtez le direct pour scanner un QR code.</string>
+    <string name="scan_camera_denied">Oculibre a besoin de la caméra pour lire le QR code affiché par l\'ordinateur.</string>
+    <string name="scan_allow">Autoriser dans les réglages</string>
+    <string name="scan_camera_error">Impossible d\'ouvrir la caméra. Fermez les autres applications qui l\'utilisent, puis réessayez.</string>
+    <string name="retry">Réessayer</string>
+    <string name="pair_title">Relier à %1$s ?</string>
+    <string name="pair_text">Le direct en Wi-Fi vers cet ordinateur sera chiffré, et seul cet ordinateur pourra le recevoir.\n\nVérifiez que l\'ordinateur affiche le même code :\n%1$s\n\nAdresse : %2$s</string>
+    <string name="pair_action">Relier</string>
+    <string name="pair_invalid">Ce code d\'appairage n\'est pas valide, ou vient d\'une version plus récente d\'Oculibre : mettez l\'application à jour</string>
+    <string name="pair_done">Relié à %1$s : appuyez sur Démarrer</string>
 </resources>

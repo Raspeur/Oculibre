@@ -55,7 +55,7 @@ PC                   [secure channel] ◄───┘
   [Battery], [Battery-optimisation exemption popup, MIUI shortcut], [Vendors kill background apps],
   [Thermal (planned)], [`getCurrentThermalStatus()` (API 29+), battery temperature below], [Auto-lower quality, protect the battery],
   [Discovery], [`NsdManager` (mDNS), direct route first], [No IP address to type],
-  [Pairing], [QR code `oculibre://pair`, opened by the camera app today; in-app scan with a vendored decoder (\#16)], [The PC shows the QR, the phone scans it],
+  [Pairing], [QR code `oculibre://pair`, read by the in-app scanner (vendored ZXing decoder, \#16) or the camera app], [The PC shows the QR, the phone scans it],
   [UI], [Views built in code], [Small APK],
 )
 

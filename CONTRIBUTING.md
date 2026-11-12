@@ -29,6 +29,18 @@ Docs in `docs/` are written in [Typst](https://typst.app) with the shared layout
 - C++: `clang-format`
 - Swift: `swift-format`
 
+## Dependencies of the Android app
+
+The Android app uses platform APIs only, so it builds for F-Droid and runs on Android 5: no library
+fetched by Gradle (no AndroidX, no Compose, no Google Play Services; JUnit for tests only).
+When one hard part really needs outside code, a small piece of source code may be **vendored**:
+
+- under a licence compatible with MIT (MIT, BSD, ISC, Apache-2.0);
+- pinned to a known version, in its own folder under `android/third_party/`, with its `LICENSE` and a
+  `README.md` giving its origin, version and checksum, the files kept and what was changed.
+
+First case: ZXing's QR decoder, for the in-app pairing scan ([`android/third_party/zxing`](android/third_party/zxing)).
+
 ## Rules for any change touching the network
 
 - Never trust a length or a field coming from the network.

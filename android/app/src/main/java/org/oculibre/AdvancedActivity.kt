@@ -76,6 +76,9 @@ class AdvancedActivity : Activity() {
             addView(label("Computer address (127.0.0.1 over USB; the cable is always tried first)"))
             addView(hostInput)
             addView(pairingInfo)
+            addView(button("Scan a pairing QR code") {
+                startActivity(Intent(this@AdvancedActivity, ScannerActivity::class.java))
+            })
             addView(forgetPairing)
             addView(label("Quality when the phone starts (the computer can change it)"))
             addView(qualitySpinner)
@@ -104,6 +107,7 @@ class AdvancedActivity : Activity() {
         super.onResume()
         StreamService.observe(observer)
         hostInput.setText(prefs.getString(MainActivity.PREF_HOST, MainActivity.DEFAULT_HOST))
+        updatePairingView() // back from the scanner
     }
 
     override fun onPause() {
@@ -129,7 +133,7 @@ class AdvancedActivity : Activity() {
     private fun updatePairingView() {
         val paired = PairingStore.get(this)
         pairingInfo.text = if (paired == null) {
-            "Wi-Fi: not paired. On the computer: \"Add a phone\", then scan its QR code with the phone's camera app."
+            "Wi-Fi: not paired. On the computer: \"Add a phone\", then scan its QR code (below, or with the camera app)."
         } else {
             "Wi-Fi: paired with ${paired.name} (key ${PairingOffer.shortFingerprint(paired.fingerprint)}), encrypted"
         }

@@ -10,7 +10,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
-import android.provider.MediaStore
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -73,7 +72,7 @@ class WelcomeActivity : Activity() {
         super.onResume()
         // Back from the battery popup (or the settings): settled, go on.
         if (current() == Step.BATTERY && isBatteryExempt()) next()
-        // Back from the camera app with the computer's QR code scanned: connected, go on.
+        // Back from the scanner with the computer's QR code read and confirmed: connected, go on.
         if (current() == Step.CONNECT && PairingStore.get(this) != null) next()
     }
 
@@ -211,12 +210,9 @@ class WelcomeActivity : Activity() {
                     next() // no such popup on this phone: nothing more to do here
                 }
             }
-            Step.CONNECT -> {
-                // The camera app reads QR codes on most phones (the in-app scanner comes later).
-                // Stay on this step: it goes on by itself once the phone is paired (onResume).
-                val camera = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
-                if (runCatching { startActivity(camera) }.isFailure) next()
-            }
+            // The in-app scanner. Stay on this step: it goes on by itself once the phone is
+            // paired (onResume), and stays if the user came back without pairing.
+            Step.CONNECT -> startActivity(Intent(this, ScannerActivity::class.java))
             Step.READY -> finishWelcome()
         }
     }

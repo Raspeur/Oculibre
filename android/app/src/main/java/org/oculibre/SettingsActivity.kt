@@ -10,7 +10,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
-import android.provider.MediaStore
 import android.provider.Settings
 import android.view.View
 import android.widget.FrameLayout
@@ -98,7 +97,7 @@ class SettingsActivity : Activity() {
             // Pairing is only for Wi-Fi: not counted as a problem (the cable needs nothing).
             addView(Ui.checkRow(this@SettingsActivity, getString(R.string.check_paired),
                 paired?.name ?: getString(R.string.check_paired_todo), paired != null, fix) {
-                if (paired == null) runCatching { startActivity(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)) }
+                if (paired == null) startActivity(Intent(this@SettingsActivity, ScannerActivity::class.java))
             })
         })
 

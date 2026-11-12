@@ -45,6 +45,13 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="false" />
 
+        <!-- In-app QR scan (vendored ZXing). Portrait: the preview transform is the simple one. -->
+        <activity
+            android:name=".ScannerActivity"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false" />
+
         <activity
             android:name=".SettingsActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
