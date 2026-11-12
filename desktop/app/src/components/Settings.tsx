@@ -8,6 +8,7 @@ import {
   type AppSettings,
   type DecoderChoice,
   type KnownPhone,
+  when,
   forgetPhone,
   inApp,
   setSettings,
@@ -219,9 +220,9 @@ function Section(props: { id: string; title: string; children: React.ReactNode }
 function KnownPhoneRow({ phone, onError }: { phone: KnownPhone; onError: (e: string) => void }) {
   const [confirming, setConfirming] = useState(false);
   const how = phone.fingerprint
-    ? `Relié en Wi-Fi${phone.paired_on ? ` le ${phone.paired_on}` : ""}`
+    ? `Relié en Wi-Fi${phone.paired_on ? ` le ${when(phone.paired_on)}` : ""}`
     : "Câble USB";
-  const seen = phone.last_seen ? ` · vu le ${phone.last_seen}` : "";
+  const seen = phone.last_seen ? ` · vu le ${when(phone.last_seen)}` : "";
   const warning = phone.fingerprint
     ? "Ses réglages seront effacés, et il faudra le relier à nouveau pour le Wi-Fi."
     : "Ses réglages seront effacés. Par câble, il reste utilisable.";

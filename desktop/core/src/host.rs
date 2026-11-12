@@ -87,7 +87,8 @@ pub struct KnownPhone {
     /// Paired for Wi-Fi: its TLS fingerprint and the pairing date.
     pub fingerprint: Option<String>,
     pub paired_on: Option<String>,
-    /// Last visit: date and way ("usb", "wifi"), when visits are remembered.
+    /// Last visit: UTC time ("2026-11-12T10:53Z") and way ("usb", "wifi"), when visits are
+    /// remembered.
     pub last_seen: Option<String>,
     pub last_via: Option<String>,
 }
@@ -304,7 +305,7 @@ impl Host {
         };
         self.remember(&remote, |p| {
             p.name = name;
-            p.last_seen = Some(crate::bench::today());
+            p.last_seen = Some(crate::bench::now_utc());
             p.last_via = Some(via.into());
         });
         let Some(profile) = self

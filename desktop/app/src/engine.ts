@@ -100,7 +100,7 @@ export interface KnownPhone {
   /** Paired for Wi-Fi: its key fingerprint and the pairing date. */
   fingerprint: string | null;
   paired_on: string | null;
-  /** Last visit: date ("2026-11-12") and way. */
+  /** Last visit: UTC time ("2026-11-12T10:53Z"; older entries: the date alone) and way. */
   last_seen: string | null;
   last_via: "usb" | "wifi" | null;
 }
@@ -288,6 +288,15 @@ export type PreviewMode = "Off" | "Light" | "Full";
 
 export function setPreviewMode(mode: PreviewMode): Promise<void> {
   return inApp ? invoke("set_preview_mode", { mode }) : Promise.resolve();
+}
+
+/** "12 nov. à 11:53" (local time) from "2026-11-12T10:53Z"; "12 nov." from a date alone. */
+export function when(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const day = date.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  if (!iso.includes("T")) return day;
+  return `${day} à ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 /** A phone's name for people: its own name, else its model. */

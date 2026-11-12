@@ -23,7 +23,7 @@ pub struct Profile {
     pub mode: Option<SetMode>,
     /// Its name at the last visit (`HELLO`).
     pub name: Option<String>,
-    /// Date of the last visit ("2026-11-12").
+    /// Last visit, UTC ("2026-11-12T10:53Z"; older files: the date alone).
     pub last_seen: Option<String>,
     /// "usb" or "wifi".
     pub last_via: Option<String>,

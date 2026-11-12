@@ -12,8 +12,18 @@ export function Sidebar(props: {
 }) {
   const { engine, onAddPhone } = props;
   const { phone, via, stream, paused } = engine;
-  // Known phones other than the one being served are offline (or not started).
-  const others = engine.known.filter((p) => p.id !== phone?.id);
+  // Known phones other than the one being served are offline (or not started). A phone gets a
+  // new random identity when its app data is wiped: the older USB-only identities with the same
+  // name are left to the settings (to forget them), here only the most recent one shows.
+  const live = phone ? phoneName(phone) : null;
+  const shownNames = new Set<string>();
+  const others = engine.known.filter((p) => {
+    if (p.id === phone?.id) return false;
+    if (p.fingerprint) return true; // paired for Wi-Fi: always
+    if (p.name === live || shownNames.has(p.name)) return false;
+    shownNames.add(p.name); // the list comes most recent first
+    return true;
+  });
   const link = via?.kind === "Wifi" ? "Wi-Fi" : "USB";
 
   return (
