@@ -27,4 +27,28 @@
     <string name="fix">Fix ›</string>
     <string name="no_quality">No quality supported by this phone was found</string>
     <string name="camera_denied">Camera access refused: Oculibre cannot film.</string>
+
+    <!-- First launch, one step per screen (design/mockups/PhoneWelcomeA) -->
+    <string name="welcome_step">Step %1$d of %2$d</string>
+    <string name="welcome_done_step">Done</string>
+    <string name="welcome_camera_title">Access to the camera</string>
+    <string name="welcome_camera_text">Oculibre films with the phone\'s camera. The picture only goes to your computer, never to the Internet.</string>
+    <string name="welcome_camera_action">Allow the camera</string>
+    <string name="welcome_camera_why">Why?</string>
+    <string name="welcome_camera_why_text">Without it, Oculibre cannot film at all. Nothing is recorded or sent anywhere else than to your own computer.</string>
+    <string name="welcome_camera_denied">Without the camera, Oculibre cannot work. You can allow it later in Android\'s settings.</string>
+    <string name="welcome_notifications_title">Notifications</string>
+    <string name="welcome_notifications_text">While the phone films, a notification says so: you see at a glance that the camera is on, and you can stop it from there.</string>
+    <string name="welcome_notifications_action">Allow notifications</string>
+    <string name="welcome_battery_title">Stay active with the screen off</string>
+    <string name="welcome_battery_text">So that the webcam doesn\'t stop in the middle of a call or a stream when the screen turns off.</string>
+    <string name="welcome_battery_action">Open the setting</string>
+    <string name="welcome_later">Later</string>
+    <string name="welcome_connect_title">Connect to your computer</string>
+    <string name="welcome_connect_text">With a USB cable: plug the phone in, nothing else to do. For Wi-Fi: open Oculibre on the computer, click \"Add a phone\", then scan the QR code with the phone\'s camera.</string>
+    <string name="welcome_connect_action">Open the camera to scan</string>
+    <string name="welcome_ready_title">All set</string>
+    <string name="welcome_ready_text">Next time, just open Oculibre and press Start.</string>
+    <string name="welcome_ready_action">Let\'s go</string>
+    <string name="ok">OK</string>
 </resources>

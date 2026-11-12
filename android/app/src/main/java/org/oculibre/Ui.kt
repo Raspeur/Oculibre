@@ -126,6 +126,29 @@ object Ui {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
 
+    /** .oc-btn--primary .oc-btn--lg .oc-btn--block: the one orange action of a screen. */
+    fun primaryButton(context: Context, label: String, onClick: () -> Unit) =
+        text(context, TEXT_LG, R.color.oc_on_accent, strong = true).apply {
+            text = label
+            gravity = Gravity.CENTER
+            background = rounded(context, R.color.oc_accent, RADIUS_SM)
+            minHeight = dp(context, 48f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+        }
+
+    /** .oc-btn--ghost: a quiet text button. */
+    fun ghostButton(context: Context, label: String, onClick: () -> Unit) =
+        text(context, TEXT_BASE, R.color.oc_text_2).apply {
+            text = label
+            gravity = Gravity.CENTER
+            minHeight = dp(context, 44f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+        }
+
     /** Takes the remaining width in a row. */
     fun grow(view: View) = view.apply {
         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)

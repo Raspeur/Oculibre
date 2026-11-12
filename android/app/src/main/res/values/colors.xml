@@ -23,4 +23,6 @@
     <color name="oc_live_soft">#1F3DDC97</color>
     <color name="oc_off">#5D6F90</color>
     <color name="oc_danger">#FF6B6B</color>
+    <!-- Progress segments not reached yet. -->
+    <color name="oc_track">#24344F</color>
 </resources>

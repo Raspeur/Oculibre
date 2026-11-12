@@ -62,6 +62,7 @@ class MainActivity : Activity() {
         setContentView(buildScreen())
         probeCapabilities()
         handlePairingLink(intent)
+        if (needsWelcome()) startActivity(Intent(this, WelcomeActivity::class.java))
     }
 
     // ------------------------------------------------------------------ layout
@@ -339,6 +340,19 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /**
+     * The first-launch screens, once. A phone that already has the camera (an install from before
+     * them) skips them.
+     */
+    private fun needsWelcome(): Boolean {
+        if (prefs.getBoolean(PREF_WELCOMED, false)) return false
+        if (hasCameraPermission() && prefs.contains(PREF_MODE)) {
+            prefs.edit().putBoolean(PREF_WELCOMED, true).apply()
+            return false
+        }
+        return true
+    }
+
     // ------------------------------------------------------------------ cameras
 
     private fun hasCameraPermission(): Boolean =
@@ -467,10 +481,12 @@ class MainActivity : Activity() {
         const val PREF_HOST = PairingStore.HOST_PREF
         const val PREF_MODE = "mode"
         private const val REQ_CAMERA = 1
-        private const val PREF_ASKED_NOTIFICATIONS = "asked_notifications"
-        private const val PREF_ASKED_BATTERY = "asked_battery"
+        const val PREF_ASKED_NOTIFICATIONS = "asked_notifications"
+        const val PREF_ASKED_BATTERY = "asked_battery"
         /** The camera was granted once: if it is missing now, it was withdrawn. */
-        private const val PREF_CAMERA_GRANTED_ONCE = "camera_granted_once"
+        const val PREF_CAMERA_GRANTED_ONCE = "camera_granted_once"
+        /** The first-launch screens were done. */
+        const val PREF_WELCOMED = "welcomed"
         private const val PREF_SCREEN_OFF = "screen_off_while_live"
     }
 }
