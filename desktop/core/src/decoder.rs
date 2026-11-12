@@ -9,7 +9,7 @@
 //! Every decoder writes the picture into a [`Picture`] (I420) for the output thread. No decoder
 //! here holds frames back: one access unit in, its picture out (protocol §12).
 
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
 use crate::yuv::Picture;
 
@@ -38,15 +38,16 @@ impl Choice {
     }
 }
 
-static CHOICE: OnceLock<Choice> = OnceLock::new();
+static CHOICE: Mutex<Choice> = Mutex::new(Choice::Auto);
 
-/// The decoder the user asked for, set once at start.
+/// The decoder the user asked for (`--decoder`, the app's settings). Takes effect at the next
+/// stream: the decoder is created again for every stream.
 pub fn set_choice(choice: Choice) {
-    let _ = CHOICE.set(choice);
+    *CHOICE.lock().unwrap() = choice;
 }
 
 fn choice() -> Choice {
-    *CHOICE.get().unwrap_or(&Choice::Auto)
+    *CHOICE.lock().unwrap()
 }
 
 /// Prepares the environment of the VA-API library. Call it first thing in `main`, while the

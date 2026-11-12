@@ -579,6 +579,22 @@ pub fn slugify(s: &str) -> String {
     }
 }
 
+/// Now, in UTC, to the minute: "2026-11-12T10:53Z" (ISO 8601: sorts as text, any front-end
+/// shows it in local time).
+pub fn now_utc() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let minutes = secs % 86_400 / 60;
+    format!(
+        "{}T{:02}:{:02}Z",
+        civil_date((secs / 86_400) as i64),
+        minutes / 60,
+        minutes % 60
+    )
+}
+
 /// Today's date (UTC) as `YYYY-MM-DD`.
 pub fn today() -> String {
     let days = SystemTime::now()
@@ -604,6 +620,17 @@ fn civil_date(days: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn now_utc_is_iso_8601_to_the_minute() {
+        let now = super::now_utc();
+        assert_eq!(now.len(), "2026-11-12T10:53Z".len(), "{now}");
+        assert!(
+            now.starts_with(&super::today()) && now.ends_with('Z'),
+            "{now}"
+        );
+        assert_eq!(&now[10..11], "T");
+    }
+
     use super::*;
 
     fn second(seq: u64, latency_ms: i64, frames: u32, dropped: u64, errors: u32) -> Second {

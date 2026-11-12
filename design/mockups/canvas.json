@@ -28,6 +28,14 @@
       "x": 470,
       "y": 1127
     },
+    "PhoneProblems.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "title": "Phone — problems",
+      "w": 390,
+      "x": 1410,
+      "y": 1127
+    },
     "PhoneWelcomeA.dc.html": {
       "h": 844,
       "is_interactive": true,
@@ -43,6 +51,15 @@
       "w": 390,
       "x": 940,
       "y": 1127
+    },
+    "Problems.dc.html": {
+      "expand": "fill",
+      "h": 2200,
+      "is_interactive": true,
+      "title": "PC — problems and messages",
+      "w": 1280,
+      "x": 4480,
+      "y": 0
     },
     "Settings.dc.html": {
       "expand": "fill",
@@ -69,23 +86,6 @@
       "w": 1280,
       "x": 1880,
       "y": 1127
-    },
-    "Problems.dc.html": {
-      "expand": "fill",
-      "h": 2000,
-      "is_interactive": true,
-      "title": "PC — problems and messages",
-      "w": 1280,
-      "x": 4480,
-      "y": 0
-    },
-    "PhoneProblems.dc.html": {
-      "h": 844,
-      "is_interactive": true,
-      "title": "Phone — problems",
-      "w": 390,
-      "x": 1410,
-      "y": 1127
     }
   },
   "createdOnFiles": {
@@ -96,7 +96,20 @@
   "launch": {
     "view": "canvas"
   },
+  "noteOrder": [
+    "pc",
+    "phone",
+    "kit"
+  ],
   "notes": {
+    "kit": {
+      "kind": "title1",
+      "maxW": 1400,
+      "text": "UI kit",
+      "w": 240,
+      "x": 1880,
+      "y": 908
+    },
     "pc": {
       "kind": "title1",
       "maxW": 5800,
@@ -111,14 +124,6 @@
       "text": "Android app",
       "w": 240,
       "x": 0,
-      "y": 908
-    },
-    "kit": {
-      "kind": "title1",
-      "maxW": 1400,
-      "text": "UI kit",
-      "w": 240,
-      "x": 1880,
       "y": 908
     }
   },

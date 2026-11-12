@@ -936,3 +936,155 @@ fn the_host_drives_the_phone_being_served() {
     );
     std::fs::remove_file(device).unwrap();
 }
+
+#[test]
+fn a_phone_gets_its_settings_back_when_it_returns() {
+    use oculibre_protocol::SetMode;
+
+    let (events, seen) = recorder();
+    let dir = std::env::temp_dir();
+    let device = dir.join(format!(
+        "oculibre-test-vcam-{}-remember",
+        std::process::id()
+    ));
+    let settings = dir.join(format!(
+        "oculibre-test-settings-{}.json",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&settings);
+    std::fs::write(&device, b"").unwrap();
+    let config = crate::host::Config {
+        port: 0,
+        device: Some(device.clone()),
+        adb: false,
+        discard_pictures: true,
+        settings_file: Some(settings.clone()),
+        ..Default::default()
+    };
+    let host = std::sync::Arc::new(crate::host::Host::start(config, events).unwrap());
+    let runner = {
+        let host = host.clone();
+        thread::spawn(move || host.run())
+    };
+    let addr = host.address();
+    let count =
+        |kind: fn(&crate::Event) -> bool| seen.lock().unwrap().iter().filter(|e| kind(e)).count();
+    let wait_for = |n: usize, kind: fn(&crate::Event) -> bool| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while count(kind) < n {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{:?}",
+                seen.lock().unwrap()
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    };
+    let is_stream: fn(&crate::Event) -> bool = |e| matches!(e, crate::Event::Stream(_));
+    let is_end: fn(&crate::Event) -> bool = |e| matches!(e, crate::Event::SessionEnded(_));
+
+    // First visit: the user picks a quality, a rotation and the mirror.
+    let (codec_data, frames) = encode(15);
+    let first = {
+        let (c, f) = (codec_data.clone(), frames.clone());
+        thread::spawn(move || obedient_phone(TcpStream::connect(addr).unwrap(), c, f))
+    };
+    wait_for(1, is_stream);
+    let remote = host.remote().unwrap();
+    let caps = remote.capabilities().unwrap();
+    let mode = SetMode::new(&caps.cameras[0], &caps.cameras[0].modes[0]);
+    host.set_mode(&mode).unwrap();
+    let turned = View {
+        rotate: Rotate::Fixed(0),
+        mirror: true,
+    };
+    host.set_view(turned);
+    remote.finish("see you");
+    assert_eq!(first.join().unwrap(), vec![mode.to_value()]);
+    wait_for(1, is_end);
+
+    // Someone else's choice in between must not matter.
+    host.set_view(View::default());
+
+    // Second visit: the phone gets them back without anyone touching the window.
+    let streams_before = count(is_stream);
+    let second = thread::spawn(move || {
+        obedient_phone(TcpStream::connect(addr).unwrap(), codec_data, frames)
+    });
+    wait_for(streams_before + 2, is_stream); // its own stream, then the remembered mode
+    assert_eq!(host.view(), turned);
+    host.stop();
+    runner.join().unwrap();
+    assert_eq!(second.join().unwrap(), vec![mode.to_value()]);
+    let mirrored_after_return = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .skip_while(|e| !matches!(e, crate::Event::SessionEnded(_)))
+        .any(|e| matches!(e, crate::Event::Transform { transform, .. } if transform.mirror));
+    assert!(mirrored_after_return);
+
+    // Known without any pairing: it came over USB.
+    let id = phone_hello().id;
+    let known = host.known_phones();
+    let phone = known
+        .iter()
+        .find(|k| k.id == id)
+        .expect("the USB phone is known");
+    assert_eq!(phone.name, "Simulated");
+    assert_eq!(
+        (phone.fingerprint.as_deref(), phone.last_via.as_deref()),
+        (None, Some("usb"))
+    );
+    assert!(phone.last_seen.is_some());
+    host.forget_phone(&id, None).unwrap();
+    assert!(host.known_phones().iter().all(|k| k.id != id));
+    std::fs::remove_file(device).unwrap();
+    std::fs::remove_file(settings).unwrap();
+}
+
+/// What the app does when a setting needs a new receiver: stop, wait for its thread, start another
+/// one on the same port; a USB phone must reach the new one.
+#[test]
+fn a_new_host_takes_the_port_of_a_stopped_one() {
+    let device =
+        std::env::temp_dir().join(format!("oculibre-test-vcam-{}-restart", std::process::id()));
+    std::fs::write(&device, b"").unwrap();
+    let port = {
+        let probe = TcpListener::bind("127.0.0.1:0").unwrap();
+        probe.local_addr().unwrap().port()
+    };
+    let config = crate::host::Config {
+        port,
+        device: Some(device.clone()),
+        adb: false,
+        ..Default::default()
+    };
+    for round in 0..3 {
+        let (events, seen) = recorder();
+        let host = std::sync::Arc::new(crate::host::Host::start(config.clone(), events).unwrap());
+        let runner = {
+            let host = host.clone();
+            thread::spawn(move || host.run())
+        };
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let _r = handshake(&mut s);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, crate::Event::Phone(_)))
+        {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "round {round}: no session"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        host.stop();
+        runner.join().unwrap();
+        drop(host);
+    }
+    std::fs::remove_file(device).unwrap();
+}

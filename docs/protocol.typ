@@ -265,6 +265,7 @@ one with `set_mode` (@request).
       "id": "0",
       "facing": "back",
       "sensor_orientation": 90,
+      "equivalent_focal_mm": 22,
       "modes": [
         { "width": 1920, "height": 1080, "fps": 30, "path": "normal" },
         { "width": 1920, "height": 1080, "fps": 60, "path": "unlisted" },
@@ -276,6 +277,11 @@ one with `set_mode` (@request).
   "codecs": ["h264"]
 }
 ```
+
+`equivalent_focal_mm` (optional, since app 0.3.1): the focal length of the camera's default lens
+in 35 mm equivalent, $f times 43.27 / d$ with $f$ its focal length and $d$ the diagonal of its
+sensor (`LENS_INFO_AVAILABLE_FOCAL_LENGTHS[0]`, `SENSOR_INFO_PHYSICAL_SIZE`). The host names the
+cameras of one face by their zoom against the first one, like camera apps do ("0.6×", "3×").
 
 `path`: `normal` (listed by the camera), `unlisted` (works but not listed, see
 #link("research/60fps.typ")[`research/60fps.typ`]), `high_speed` (slow-motion session, darker).

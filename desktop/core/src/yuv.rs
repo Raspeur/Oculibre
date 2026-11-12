@@ -8,7 +8,7 @@
 use openh264::formats::YUVSource;
 
 /// What to do to the picture, decided by the session (`--rotate`, `--mirror`, `auto`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Transform {
     /// Clockwise rotation in degrees: 0, 90, 180 or 270.
     pub rotation: u16,
@@ -130,6 +130,63 @@ type Offsets = (usize, usize);
 /// Black in limited-range YUV.
 const BLACK: [u8; 4] = [16, 128, 16, 128];
 
+/// A small RGB copy of the picture for a preview: rotated and mirrored like [`convert`] does it,
+/// scaled down (never up) to fit `max_w` × `max_h`, nearest pixel (cheap: a preview, not the
+/// output). Returns its size; `out` holds `w * h * 3` bytes. Colours: BT.601, limited range, what
+/// phone encoders produce.
+pub fn thumbnail(
+    src: &impl YUVSource,
+    t: Transform,
+    max_w: usize,
+    max_h: usize,
+    out: &mut Vec<u8>,
+) -> (usize, usize) {
+    let (w, h) = src.dimensions();
+    out.clear();
+    if w == 0 || h == 0 || max_w == 0 || max_h == 0 {
+        return (0, 0);
+    }
+    let (sy, su, _) = src.strides();
+    let (y, u, v) = (src.y(), src.u(), src.v());
+    let (rw, rh) = t.output_size(w, h);
+    let (tw, th) = if rw <= max_w && rh <= max_h {
+        (rw, rh)
+    } else if rw * max_h > rh * max_w {
+        (max_w, (rh * max_w / rw).max(1))
+    } else {
+        ((rw * max_h / rh).max(1), max_h)
+    };
+    // Same mapping as `convert`: (x, row) of the thumbnail → source (sx, sy).
+    let source = |x: usize, r: usize| {
+        let rx = x * rw / tw;
+        let rx = if t.mirror { rw - 1 - rx } else { rx };
+        let ry = r * rh / th;
+        match t.rotation % 360 {
+            0 => (rx, ry),
+            90 => (ry, h - 1 - rx),
+            180 => (w - 1 - rx, h - 1 - ry),
+            _ => (w - 1 - ry, rx),
+        }
+    };
+    out.reserve(tw * th * 3);
+    for r in 0..th {
+        for x in 0..tw {
+            let (px, py) = source(x, r);
+            let c = 298 * (i32::from(y[py * sy + px]) - 16);
+            let chroma = (py / 2) * su + px / 2;
+            let d = i32::from(u[chroma]) - 128;
+            let e = i32::from(v[chroma]) - 128;
+            let clamp = |n: i32| ((n + 128) >> 8).clamp(0, 255) as u8;
+            out.extend_from_slice(&[
+                clamp(c + 409 * e),
+                clamp(c - 100 * d - 208 * e),
+                clamp(c + 516 * d),
+            ]);
+        }
+    }
+    (tw, th)
+}
+
 /// Converts an I420 picture into a YUYV frame of `dst_w`×`dst_h`, reusing `out`'s allocation.
 ///
 /// The transformed picture is scaled to fit the frame *without distortion* (nearest neighbour)
@@ -240,6 +297,39 @@ fn straight_copy(src: &impl YUVSource, out: &mut [u8]) {
 
 #[cfg(test)]
 mod tests {
+    /// The preview turns and flips the picture exactly like the virtual camera output.
+    #[test]
+    fn thumbnail_matches_the_output_geometry() {
+        let (w, h) = (8usize, 6usize);
+        let luma: Vec<u8> = (0..w * h).map(|i| 16 + (i as u8) * 4).collect();
+        let grey = vec![128u8; 4 * 3];
+        let mut picture = Picture::default();
+        picture.copy_i420(w, h, (&luma, w), (&grey, 4), (&grey, 4));
+        for rotation in [0, 90, 180, 270] {
+            for mirror in [false, true] {
+                let t = Transform { rotation, mirror };
+                let (ow, oh) = t.output_size(w, h);
+                let mut yuyv = Vec::new();
+                convert(&picture, t, ow, oh, &mut yuyv);
+                let mut rgb = Vec::new();
+                assert_eq!(thumbnail(&picture, t, 100, 100, &mut rgb), (ow, oh));
+                for i in 0..ow * oh {
+                    // Grey: R = G = B, from the same luma sample as the output.
+                    let expected = ((298 * (i32::from(yuyv[2 * i]) - 16) + 128) >> 8).clamp(0, 255);
+                    assert_eq!(i32::from(rgb[3 * i]), expected, "{t:?} pixel {i}");
+                    assert_eq!(rgb[3 * i], rgb[3 * i + 1]);
+                }
+            }
+        }
+        // Scaled down to fit, keeping the shape.
+        let mut rgb = Vec::new();
+        assert_eq!(
+            thumbnail(&picture, Transform::default(), 4, 4, &mut rgb),
+            (4, 3)
+        );
+        assert_eq!(rgb.len(), 4 * 3 * 3);
+    }
+
     use super::*;
     use openh264::formats::YUVSlices;
 

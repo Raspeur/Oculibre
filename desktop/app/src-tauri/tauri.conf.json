@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Oculibre",
+  "version": "0.3.0",
+  "identifier": "org.oculibre.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Oculibre",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Video",
+    "shortDescription": "Your Android phone as a webcam",
+    "longDescription": "Oculibre turns an Android phone, even an old one, into a webcam for this computer, over the USB cable or the Wi-Fi (encrypted). Free and private: nothing leaves your network.",
+    "license": "MIT",
+    "homepage": "https://github.com/Raspeur/Oculibre",
+    "linux": {
+      "deb": {
+        "section": "video",
+        "depends": [
+          "libavcodec62",
+          "libavutil60",
+          "linux-modules-v4l2loopback-generic | v4l2loopback-dkms"
+        ],
+        "recommends": [
+          "adb"
+        ],
+        "files": {
+          "/etc/modprobe.d/oculibre.conf": "linux/modprobe-oculibre.conf",
+          "/etc/modules-load.d/oculibre.conf": "linux/modules-load-oculibre.conf"
+        },
+        "postInstallScript": "linux/postinst.sh"
+      }
+    }
+  }
+}
