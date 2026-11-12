@@ -13,6 +13,8 @@
     <string name="usb_detail">Branchez le téléphone à l\'ordinateur</string>
     <string name="wifi_encrypted">Wi-Fi · connexion chiffrée</string>
     <string name="not_paired">Pas encore relié en Wi-Fi</string>
+    <string name="screen_off_title">Éteindre l\'écran pendant le direct</string>
+    <string name="screen_off_hint">Économise la batterie et la chauffe : luminosité au minimum, puis l\'écran s\'éteint comme d\'habitude.</string>
     <string name="footer">La caméra et la qualité se choisissent depuis l\'ordinateur.</string>
     <string name="alert_battery_title">L\'économie de batterie peut couper la webcam</string>
     <string name="alert_battery_text">Écran éteint, Android peut arrêter Oculibre.</string>

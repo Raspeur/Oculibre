@@ -16,7 +16,10 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.widget.CheckBox
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.concurrent.thread
 
@@ -56,7 +59,6 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(buildScreen())
         probeCapabilities()
         handlePairingLink(intent)
@@ -126,20 +128,69 @@ class MainActivity : Activity() {
             addView(stateDetail)
         }
 
+        val screenOffBox = CheckBox(c).apply {
+            isChecked = prefs.getBoolean(PREF_SCREEN_OFF, true)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean(PREF_SCREEN_OFF, checked).apply()
+                applyScreen(StreamService.current)
+            }
+        }
+        val screenOff = Ui.card(c, 12f).apply {
+            val p = Ui.dp(c, 14f)
+            setPadding(Ui.dp(c, 16f), p, Ui.dp(c, 8f), p)
+            isClickable = true
+            setOnClickListener { screenOffBox.toggle() }
+            addView(Ui.grow(Ui.column(c, 3f).apply {
+                addView(Ui.text(c, Ui.TEXT_LG, strong = true).apply { text = getString(R.string.screen_off_title) })
+                addView(Ui.text(c, Ui.TEXT_MD, R.color.oc_text_muted).apply { text = getString(R.string.screen_off_hint) })
+            }))
+            addView(screenOffBox)
+        }
+
         val footer = Ui.text(c, Ui.TEXT_MD, R.color.oc_text_muted).apply {
             text = getString(R.string.footer)
             gravity = Gravity.CENTER
         }
 
-        return Ui.column(c, 18f).apply {
-            fitsSystemWindows = true
+        // The column keeps its own margins; the frame around it takes the system bars (with
+        // fitsSystemWindows, a view's padding is replaced by the bars' size).
+        val column = Ui.column(c, 18f).apply {
             val p = Ui.dp(c, 20f)
             setPadding(p, Ui.dp(c, 24f), p, Ui.dp(c, 24f))
             addView(header)
             addView(alert)
             addView(computer)
             addView(center)
+            addView(screenOff)
             addView(footer)
+        }
+        // Scrolls on small screens only: fillViewport lets the button's space grow on tall ones.
+        val scroll = ScrollView(c).apply {
+            isFillViewport = true
+            addView(column, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
+        return FrameLayout(c).apply {
+            fitsSystemWindows = true
+            addView(scroll, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
+    }
+
+    /**
+     * While live with "turn the screen off" checked: lowest brightness at once, and the screen is
+     * no longer kept on, so it goes off after the phone's usual delay (the service keeps
+     * streaming). Unchecked, or not live: the screen stays on with its normal brightness while the
+     * app shows something happening.
+     */
+    private fun applyScreen(state: StreamService.Snapshot) {
+        val live = state.phase == StreamService.Phase.LIVE
+        val saving = live && prefs.getBoolean(PREF_SCREEN_OFF, true)
+        if (state.running && !saving) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        window.attributes = window.attributes.apply {
+            screenBrightness = if (saving) 0.01f else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         }
     }
 
@@ -191,6 +242,7 @@ class MainActivity : Activity() {
             }
         }
         renderComputer()
+        applyScreen(state)
     }
 
     private fun renderComputer() {
@@ -198,9 +250,13 @@ class MainActivity : Activity() {
         if (paired != null) {
             computerName.text = paired.name
             computerDetail.text = getString(R.string.wifi_encrypted)
+            // The green padlock of the mockup: the Wi-Fi link is encrypted.
+            computerDetail.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_lock, 0, 0, 0)
+            computerDetail.compoundDrawablePadding = Ui.dp(this, 6f)
         } else {
             computerName.text = getString(R.string.usb_cable)
             computerDetail.text = getString(R.string.usb_detail)
+            computerDetail.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, 0, 0)
         }
     }
 
@@ -415,5 +471,6 @@ class MainActivity : Activity() {
         private const val PREF_ASKED_BATTERY = "asked_battery"
         /** The camera was granted once: if it is missing now, it was withdrawn. */
         private const val PREF_CAMERA_GRANTED_ONCE = "camera_granted_once"
+        private const val PREF_SCREEN_OFF = "screen_off_while_live"
     }
 }

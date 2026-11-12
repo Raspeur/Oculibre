@@ -17,6 +17,8 @@
     <string name="usb_detail">Plug the phone into the computer</string>
     <string name="wifi_encrypted">Wi-Fi · encrypted connection</string>
     <string name="not_paired">Not paired for Wi-Fi yet</string>
+    <string name="screen_off_title">Turn the screen off while live</string>
+    <string name="screen_off_hint">Saves battery and heat: lowest brightness, then the screen goes off as usual.</string>
     <string name="footer">The camera and the quality are chosen from the computer.</string>
     <string name="alert_battery_title">Battery saving may cut the webcam</string>
     <string name="alert_battery_text">With the screen off, Android can stop Oculibre.</string>
