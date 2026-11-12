@@ -1,19 +1,29 @@
 // The main window (mockup design/mockups/Main2): phones on the left, the phone being served in
 // the middle, its settings on the right.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pairing } from "./components/Pairing";
 import { Panel } from "./components/Panel";
 import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
-import { inApp } from "./engine";
+import { inApp, onNavigate } from "./engine";
 import { useEngine } from "./useEngine";
 
 function App() {
   const engine = useEngine();
   // Which screen is shown: a few screens, no router library needed.
   const [screen, setScreen] = useState<"main" | "pairing" | "settings" | "about">("main");
+
+  // "Add a phone…" in the tray menu.
+  useEffect(() => {
+    const unlisten = onNavigate((to) => {
+      if (to === "pairing") setScreen("pairing");
+    });
+    return () => {
+      unlisten.then((stopListening) => stopListening());
+    };
+  }, []);
 
   if (screen === "pairing") {
     return <Pairing computerKey={engine.key} phoneLive={engine.phone !== null} onDone={() => setScreen("main")} />;

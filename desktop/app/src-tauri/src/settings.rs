@@ -16,6 +16,8 @@ pub struct AppSettings {
     pub portrait: bool,
     /// "auto", "vaapi", "nvdec", "software" or "openh264": applied from the next stream.
     pub decoder: String,
+    /// Closing the window keeps Oculibre in the system tray (the virtual camera stays).
+    pub tray: bool,
 }
 
 impl Default for AppSettings {
@@ -24,6 +26,7 @@ impl Default for AppSettings {
             wifi: true,
             portrait: false,
             decoder: "auto".into(),
+            tray: true,
         }
     }
 }

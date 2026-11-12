@@ -206,6 +206,8 @@ export interface AppSettings {
   /** Portrait virtual camera (landscape like every webcam otherwise). */
   portrait: boolean;
   decoder: DecoderChoice;
+  /** Closing the window keeps Oculibre in the system tray. */
+  tray: boolean;
 }
 
 /** When changed settings take effect: now, or when the phone streaming now leaves. */
@@ -214,7 +216,7 @@ export type Applied = "Now" | "AfterThisPhone";
 export function settings(): Promise<AppSettings> {
   return inApp
     ? invoke<AppSettings>("settings")
-    : Promise.resolve({ wifi: true, portrait: false, decoder: "auto" });
+    : Promise.resolve({ wifi: true, portrait: false, decoder: "auto", tray: true });
 }
 
 /**
@@ -223,6 +225,21 @@ export function settings(): Promise<AppSettings> {
  */
 export function setSettings(settings: AppSettings, now = false): Promise<Applied> {
   return invoke<Applied>("set_settings", { settings, now });
+}
+
+/** Whether Oculibre starts with the computer (hidden, in the system tray). */
+export function autostart(): Promise<boolean> {
+  return inApp ? invoke<boolean>("autostart") : Promise.resolve(false);
+}
+
+export function setAutostart(enabled: boolean): Promise<void> {
+  return invoke("set_autostart", { enabled });
+}
+
+/** The tray menu asks for a screen ("pairing"). */
+export function onNavigate(handler: (screen: string) => void): Promise<UnlistenFn> {
+  if (!inApp) return Promise.resolve(() => {});
+  return listen<string>("navigate", (e) => handler(e.payload));
 }
 
 /** Forgets a phone: its settings, and its Wi-Fi pairing if any (then cut if it streams over Wi-Fi). */

@@ -8,6 +8,7 @@
 //!   could not, `phones` when the paired phones changed.
 
 mod settings;
+mod tray;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -23,7 +24,8 @@ use oculibre_core::{Event, Events};
 use serde::{Deserialize, Serialize};
 use settings::AppSettings;
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 /// What the app keeps between two commands: the receiver, while it runs. Tauri gives every
 /// command access to it (`State<Receiver>`); the `Mutex` because commands may run at the same
@@ -38,6 +40,9 @@ struct Receiver {
     /// Settings that need a new receiver were changed while a phone streamed: restart when its
     /// session ends.
     restart_pending: AtomicBool,
+    /// The tray menu lines that follow the phone, and how the phone came ("USB", "Wi-Fi").
+    tray: Mutex<Option<tray::TrayMenu>>,
+    via: Mutex<&'static str>,
     /// Where preview pictures go (the page's channel), kept to give it to every new host.
     viewer: Mutex<Option<Viewer>>,
     /// The preview chosen in the window.
@@ -90,6 +95,7 @@ fn start_host(app: &AppHandle, receiver: &Receiver) -> Result<String, String> {
     let events: Events = Arc::new(move |event: Event| {
         let ended = matches!(event, Event::SessionEnded(_));
         let _ = handle.emit("engine", &event);
+        follow_in_tray(&handle, &event);
         if ended
             && handle
                 .state::<Receiver>()
@@ -120,6 +126,40 @@ fn start_host(app: &AppHandle, receiver: &Receiver) -> Result<String, String> {
     let address = host.address().to_string();
     *slot = Some(host);
     Ok(address)
+}
+
+/// The tray menu says which phone streams.
+fn follow_in_tray(app: &AppHandle, event: &Event) {
+    let receiver = app.state::<Receiver>();
+    match event {
+        Event::PhoneConnected { via, .. } => {
+            *receiver.via.lock().unwrap() = match via {
+                oculibre_core::events::Via::Usb => "USB",
+                oculibre_core::events::Via::Wifi { .. } => "Wi-Fi",
+            };
+        }
+        Event::Phone(hello) => {
+            let name = if hello.name.is_empty() {
+                hello
+                    .device
+                    .as_ref()
+                    .and_then(|d| d.model.clone())
+                    .unwrap_or_default()
+            } else {
+                hello.name.clone()
+            };
+            let via = *receiver.via.lock().unwrap();
+            if let Some(menu) = receiver.tray.lock().unwrap().as_ref() {
+                menu.show_phone(Some((&name, via)));
+            }
+        }
+        Event::SessionEnded(_) => {
+            if let Some(menu) = receiver.tray.lock().unwrap().as_ref() {
+                menu.show_phone(None);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Stops the receiver and waits until its thread is done (the port is then free).
@@ -214,6 +254,23 @@ fn remote(receiver: &Receiver) -> Result<Remote, String> {
     let slot = receiver.host.lock().unwrap();
     let host = slot.as_ref().ok_or("the receiver is not running")?;
     host.remote().ok_or_else(|| "no phone is connected".into())
+}
+
+/// Whether Oculibre starts with the computer (hidden, in the tray).
+#[tauri::command]
+fn autostart(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let launcher = app.autolaunch();
+    if enabled {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    }
+    .map_err(|e| e.to_string())
 }
 
 /// The cameras of the phone being served and their modes (size, frame rate, capture path).
@@ -343,7 +400,36 @@ pub fn run() {
         ..Receiver::default()
     };
     tauri::Builder::default()
+        // Started with the computer: `--hidden`, straight to the tray.
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
         .manage(receiver)
+        .setup(|app| {
+            let handle = app.handle().clone();
+            *app.state::<Receiver>().tray.lock().unwrap() = Some(tray::build(&handle)?);
+            if std::env::args().any(|a| a == "--hidden") {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.hide()?;
+                }
+            }
+            // The receiver starts now, without waiting for the page (the window may be hidden).
+            std::thread::spawn(move || {
+                let result = start_host(&handle, &handle.state::<Receiver>());
+                let _ = handle.emit("receiver", &result);
+            });
+            Ok(())
+        })
+        // Closing the window keeps Oculibre in the tray (the setting), so the camera stays.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.state::<Receiver>().settings.lock().unwrap().tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             start,
             stop,
@@ -357,6 +443,8 @@ pub fn run() {
             set_preview_mode,
             settings,
             set_settings,
+            autostart,
+            set_autostart,
             forget_phone
         ])
         .run(tauri::generate_context!())

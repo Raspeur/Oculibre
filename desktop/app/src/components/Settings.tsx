@@ -1,5 +1,5 @@
 // Settings of this computer (mockup design/mockups/Settings): virtual camera, phones and Wi-Fi,
-// performance, about. "General" (language, start with the computer, tray) comes with the tray.
+// performance, about; general: start with the computer, stay in the tray (language: later).
 
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useRef, useState } from "react";
@@ -8,6 +8,8 @@ import {
   type AppSettings,
   type DecoderChoice,
   type KnownPhone,
+  autostart as loadAutostart,
+  setAutostart,
   when,
   forgetPhone,
   inApp,
@@ -22,10 +24,12 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState<string>("");
+  const [startsWithComputer, setStartsWithComputer] = useState(false);
   const about = useRef<HTMLElement>(null);
 
   useEffect(() => {
     loadSettings().then(setValues);
+    loadAutostart().then(setStartsWithComputer);
     if (inApp) getVersion().then(setVersion);
   }, []);
 
@@ -78,6 +82,47 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
             </div>
           </div>
         )}
+
+        <Section id="s-general" title="Général">
+          <div className="oc-row">
+            <span className="oc-row__label">
+              <span id="autostart-label">Démarrer avec l'ordinateur</span>
+              <span className="oc-row__hint">Oculibre attend vos téléphones dès l'ouverture de session, dans la barre des tâches.</span>
+            </span>
+            <button
+              type="button"
+              className="oc-switch"
+              aria-pressed={startsWithComputer}
+              aria-labelledby="autostart-label"
+              disabled={!inApp}
+              onClick={() => {
+                const next = !startsWithComputer;
+                setAutostart(next).then(
+                  () => setStartsWithComputer(next),
+                  (e) => setError(String(e)),
+                );
+              }}
+            >
+              <span className="oc-switch__knob" aria-hidden="true" />
+            </button>
+          </div>
+          <div className="oc-row">
+            <span className="oc-row__label">
+              <span id="tray-label">Rester dans la barre des tâches</span>
+              <span className="oc-row__hint">Fermer la fenêtre ne quitte pas Oculibre : la caméra reste disponible.</span>
+            </span>
+            <button
+              type="button"
+              className="oc-switch"
+              aria-pressed={values?.tray ?? true}
+              aria-labelledby="tray-label"
+              disabled={!values}
+              onClick={() => values && change({ ...values, tray: !values.tray })}
+            >
+              <span className="oc-switch__knob" aria-hidden="true" />
+            </button>
+          </div>
+        </Section>
 
         <Section id="s-vcam" title="Caméra virtuelle">
           <div className="oc-row">

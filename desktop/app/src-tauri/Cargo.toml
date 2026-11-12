@@ -16,6 +16,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 oculibre-core = { path = "../../core" }
-tauri = { version = "2", features = [] }
+# tray-icon: the icon and its menu in the system tray (Linux: libayatana-appindicator).
+tauri = { version = "2", features = ["tray-icon"] }
+# Start with the computer (Linux: a .desktop file in ~/.config/autostart).
+tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
