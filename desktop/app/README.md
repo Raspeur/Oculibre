@@ -43,6 +43,28 @@ npm run build        # type-checks and builds the page alone (dist/)
 
 The virtual camera must be loaded as for the command line (`bash scripts/vcam-load.sh`).
 
+## Package (Linux, .deb)
+
+```sh
+npm run tauri build -- --bundles deb
+# → ../target/release/bundle/deb/Oculibre_<version>_amd64.deb
+sudo apt install ./../target/release/bundle/deb/Oculibre_*_amd64.deb
+```
+
+The package (`src-tauri/tauri.conf.json`, `bundle.linux.deb`, files in `src-tauri/linux/`):
+
+- depends on FFmpeg (`libavcodec62`, `libavutil60`: one package per FFmpeg major version, see
+  `docs/research/video-decoding.typ`) and on the virtual camera module: Ubuntu's signed one
+  first (`linux-modules-v4l2loopback-generic`, loads with Secure Boot, already pulled by the
+  generic kernel on 26.04), else `v4l2loopback-dkms`; recommends `adb` (USB);
+- installs `/etc/modprobe.d/oculibre.conf` (`/dev/video10`, "Oculibre") and
+  `/etc/modules-load.d/oculibre.conf` (loaded at every boot), the same as
+  `scripts/vcam-load.sh --persist`;
+- loads the camera right away after installation (`linux/postinst.sh`, never fails the
+  installation; says what to do with Secure Boot and a DKMS module);
+- the launcher has `StartupWMClass=oculibre-app`: on Wayland the window (app id = program name)
+  finds its icon. Under `tauri dev` there is no launcher, hence a generic icon.
+
 Two traps:
 
 - **VS Code installed as a snap**: its terminal carries variables pointing into `/snap`, and
