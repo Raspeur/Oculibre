@@ -12,7 +12,7 @@ export function Stage({ engine }: { engine: EngineState }) {
 
   if (!phone) {
     return (
-      <section aria-label="En attente" className="oc-stack" style={stageStyle}>
+      <section aria-label="En attente" className="oc-stack" style={stageStyle} data-tour="stage">
         <div className="oc-preview">
           <div className="oc-stack" style={{ alignItems: "center", gap: 14, maxWidth: 440, textAlign: "center", padding: 24 }}>
             <CameraIcon />
@@ -30,7 +30,7 @@ export function Stage({ engine }: { engine: EngineState }) {
 
   const live = stream !== null && !paused;
   return (
-    <section aria-label="Aperçu" className="oc-stack" style={stageStyle}>
+    <section aria-label="Aperçu" className="oc-stack" style={stageStyle} data-tour="stage">
       <header className="oc-cluster">
         <h1 className="oc-title oc-title--md">{phoneName(phone)}</h1>
         <span className={live ? "oc-pill" : "oc-pill oc-pill--paused"}>

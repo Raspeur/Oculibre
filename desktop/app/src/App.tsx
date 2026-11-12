@@ -7,6 +7,7 @@ import { Panel } from "./components/Panel";
 import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
+import { Tour, tourSeen } from "./components/Tour";
 import { inApp, onNavigate } from "./engine";
 import { useEngine } from "./useEngine";
 
@@ -14,6 +15,8 @@ function App() {
   const engine = useEngine();
   // Which screen is shown: a few screens, no router library needed.
   const [screen, setScreen] = useState<"main" | "pairing" | "settings" | "about">("main");
+  // The guided tour opens by itself the first time, then from the sidebar.
+  const [touring, setTouring] = useState(() => inApp && !tourSeen());
 
   // "Add a phone…" in the tray menu.
   useEffect(() => {
@@ -44,6 +47,7 @@ function App() {
         onAddPhone={() => setScreen("pairing")}
         onSettings={() => setScreen("settings")}
         onAbout={() => setScreen("about")}
+        onTour={() => setTouring(true)}
       />
       <main className="oc-main">
         <div className="oc-stack" style={{ flex: "999 1 520px", minWidth: 0 }}>
@@ -62,6 +66,7 @@ function App() {
         </div>
         <Panel engine={engine} />
       </main>
+      {touring && <Tour onClose={() => setTouring(false)} onAddPhone={() => setScreen("pairing")} />}
     </div>
   );
 }

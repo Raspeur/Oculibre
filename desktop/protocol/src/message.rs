@@ -89,6 +89,10 @@ pub struct CameraCapabilities {
     /// `back`, `front` or `external`.
     pub facing: String,
     pub sensor_orientation: u16,
+    /// Focal length of the default lens in 35 mm equivalent (apps 0.3.1 and newer): the host
+    /// names the cameras of one face by their zoom against the first one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub equivalent_focal_mm: Option<u16>,
     pub modes: Vec<ModeCapabilities>,
     pub controls: Vec<String>,
 }
@@ -543,6 +547,24 @@ fn be64(b: &[u8], at: usize) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn equivalent_focal_length_is_optional() {
+        let with = super::Capabilities::from_value(&serde_json::json!({"cameras": [
+            {"id": "2", "facing": "back", "sensor_orientation": 90, "equivalent_focal_mm": 14}
+        ]}))
+        .unwrap();
+        assert_eq!(with.cameras[0].equivalent_focal_mm, Some(14));
+        // An older app does not send it.
+        let without = super::Capabilities::from_value(&serde_json::json!({"cameras": [
+            {"id": "0", "facing": "back", "sensor_orientation": 90}
+        ]}))
+        .unwrap();
+        assert_eq!(without.cameras[0].equivalent_focal_mm, None);
+        // Not written when unknown.
+        let back = serde_json::to_value(&without).unwrap();
+        assert!(back["cameras"][0].get("equivalent_focal_mm").is_none());
+    }
+
     use super::*;
     use serde_json::json;
 

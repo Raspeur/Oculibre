@@ -60,6 +60,11 @@ class CameraCapabilities(
     val facing: String,
     /** Degrees clockwise (CameraCharacteristics.SENSOR_ORIENTATION). */
     val sensorOrientation: Int,
+    /**
+     * Focal length of the default lens in 35 mm equivalent, or null when the camera doesn't say:
+     * the computer names the cameras of one face by their zoom ("Back 0.6×").
+     */
+    val equivalentFocalMm: Int?,
     val modes: List<ModeSupport>,
 )
 
@@ -89,7 +94,7 @@ class DeviceCapabilities(
                     ).apply { if (s.highSpeedFps > 0) put("capture_fps", s.highSpeedFps.toLong()) }
                 },
                 "controls" to emptyList<String>(),
-            )
+            ).apply { camera.equivalentFocalMm?.let { put("equivalent_focal_mm", it.toLong()) } }
         },
         "codecs" to listOf("h264"),
     )
@@ -176,8 +181,22 @@ object Capabilities {
             id = id,
             facing = facingName(chars.get(CameraCharacteristics.LENS_FACING)),
             sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0,
+            equivalentFocalMm = equivalentFocalMm(chars),
             modes = MODES.flatMap { mode -> check(mode, chars, map, sizes, fpsRanges, encoder) },
         )
+    }
+
+    /**
+     * Focal length in 35 mm equivalent: f × 43.27 / sensor diagonal (43.27 mm: the diagonal of a
+     * 24×36 mm frame). Both values are standard keys, readable without the camera permission.
+     */
+    private fun equivalentFocalMm(chars: CameraCharacteristics): Int? {
+        val focal = chars.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.firstOrNull()
+        val sensor = chars.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+        if (focal == null || sensor == null || focal <= 0f) return null
+        val diagonal = Math.hypot(sensor.width.toDouble(), sensor.height.toDouble())
+        if (diagonal <= 0.0) return null
+        return Math.round(focal * 43.27 / diagonal).toInt()
     }
 
     private fun check(

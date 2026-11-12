@@ -80,7 +80,7 @@ export function Panel({ engine }: { engine: EngineState }) {
 
   return (
     <aside className="oc-panel" aria-label="Réglages de la caméra">
-      <div className="oc-panel__section" style={{ gap: 10 }}>
+      <div className="oc-panel__section" style={{ gap: 10 }} data-tour="source">
         <span className="oc-label">Source</span>
         {caps && caps.cameras.length > 0 ? (
           <div
@@ -107,7 +107,7 @@ export function Panel({ engine }: { engine: EngineState }) {
         )}
       </div>
 
-      <div className="oc-panel__section">
+      <div className="oc-panel__section" data-tour="source">
         <span className="oc-label" style={{ paddingBottom: 6 }}>Vidéo</span>
         <div className="oc-row oc-row--panel">
           <label htmlFor="res" className="oc-row__label">Résolution</label>
@@ -166,7 +166,7 @@ export function Panel({ engine }: { engine: EngineState }) {
         )}
       </div>
 
-      <div className="oc-panel__section">
+      <div className="oc-panel__section" data-tour="source">
         <span className="oc-label" style={{ paddingBottom: 6 }}>Image</span>
         <div className="oc-row oc-row--panel">
           <label htmlFor="rot" className="oc-row__label">Rotation</label>
@@ -197,7 +197,7 @@ export function Panel({ engine }: { engine: EngineState }) {
         </div>
       </div>
 
-      <div className="oc-panel__section">
+      <div className="oc-panel__section" data-tour="output">
         <span className="oc-label" style={{ paddingBottom: 6 }}>Sortie</span>
         <div className="oc-row oc-row--panel oc-row--info">
           <span className="oc-row__label">Nom dans les applications</span>
@@ -216,7 +216,7 @@ export function Panel({ engine }: { engine: EngineState }) {
       </div>
 
       {phone && (
-        <div className="oc-panel__section" style={{ flexDirection: "row" }}>
+        <div className="oc-panel__section" style={{ flexDirection: "row", justifyContent: "center" }}>
           <button type="button" className="oc-btn oc-btn--secondary" onClick={() => finish()}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M6 6h12v12H6z" />
@@ -229,11 +229,23 @@ export function Panel({ engine }: { engine: EngineState }) {
   );
 }
 
-/** "Arrière", "Avant"; "Arrière 2"… when several cameras face the same way. */
+/**
+ * "Arrière", "Avant"; when several cameras face the same way, their zoom against the first one,
+ * like camera apps: "Arrière 0,6×", "Avant 1,2×". Without focal lengths (apps before 0.3.1), or
+ * for two cameras with the same one: "Arrière 2".
+ */
 function cameraLabel(camera: CameraCapabilities, all: CameraCapabilities[]): string {
   const name = camera.facing === "front" ? "Avant" : camera.facing === "back" ? "Arrière" : "Externe";
   const same = all.filter((c) => c.facing === camera.facing);
-  return same.length > 1 ? `${name} ${same.indexOf(camera) + 1}` : name;
+  const index = same.indexOf(camera);
+  if (same.length <= 1 || index === 0) return name;
+  const reference = same[0].equivalent_focal_mm;
+  const focal = camera.equivalent_focal_mm;
+  if (!reference || !focal) return `${name} ${index + 1}`;
+  const zoom = focal / reference;
+  if (Math.abs(zoom - 1) < 0.05) return `${name} ${index + 1}`;
+  const digits = zoom >= 2 ? 0 : 1;
+  return `${name} ${zoom.toLocaleString("fr-FR", { maximumFractionDigits: digits })}×`;
 }
 
 /** On another camera, the same size and rate if it has them, else its closest to 1080p. */

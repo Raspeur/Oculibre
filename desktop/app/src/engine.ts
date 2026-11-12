@@ -73,6 +73,8 @@ export interface CameraCapabilities {
   /** "back", "front" or "external". */
   facing: string;
   sensor_orientation: number;
+  /** Focal length in 35 mm equivalent (apps 0.3.1 and newer). */
+  equivalent_focal_mm?: number;
   modes: ModeCapabilities[];
 }
 

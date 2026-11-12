@@ -244,18 +244,18 @@ class Component extends DCLogic {
   }
   renderVals() {
     const s = this.state;
-    const cameras = [['back', 'Arrière'], ['front', 'Avant'], ['wide', 'Grand-angle']].map(([id, label]) => ({
+    const cameras = [['back', 'Arrière'], ['wide', 'Arrière 0,6×'], ['front', 'Avant']].map(([id, label]) => ({
       label,
       pressed: s.camera === id ? 'true' : 'false',
       pick: () => this.setState({ camera: id }),
     }));
     const steps = [
       null,
-      ['add', 'Reliez votre téléphone', 'Une seule fois : un QR code à scanner avec le téléphone. Par câble USB, il suffit de le brancher.'],
-      ['phones', 'Vos téléphones', 'Point vert : en direct. Orange : en pause. Cercle gris : éteint ou trop loin. Cliquez pour choisir celui qui filme.'],
-      ['source', 'Caméra et qualité', 'Arrière, avant, grand-angle, résolution, images par seconde : tout se règle ici, sans toucher au téléphone.'],
-      ['start', 'Démarrer et arrêter', 'Le téléphone ne filme que quand vous appuyez ici. « Arrêter » libère sa caméra.'],
-      ['output', 'Dans vos applications', 'Dans Zoom, Teams, Discord ou OBS, choisissez la caméra « Oculibre ». Elle reste là même quand le téléphone est arrêté.'],
+      ['add', 'Reliez votre téléphone', 'Par câble USB, rien à faire : branchez-le et appuyez sur « Démarrer » dans l’app du téléphone. Pour le Wi-Fi, reliez-le une seule fois ici, avec un QR code.'],
+      ['phones', 'Vos téléphones', 'Point vert : en direct. Cercle gris : arrêté ou trop loin. Oculibre se souvient des réglages de chacun.'],
+      ['source', 'Caméra, qualité et image', 'Arrière ou avant, résolution, images par seconde, rotation, miroir : tout se règle ici, sans toucher au téléphone. Oculibre s’en souvient pour ce téléphone.'],
+      ['start', 'Démarrer depuis le téléphone', 'Le téléphone filme quand vous appuyez sur « Démarrer » dans son app. Ici, « Arrêter » libère sa caméra.'],
+      ['output', 'Dans vos applications', 'Dans Zoom, Teams, Discord ou OBS, choisissez la caméra « Oculibre ». Fermer cette fenêtre la garde disponible.'],
     ];
     const t = s.tour;
     const at = (id) => t >= 1 && t <= 5 && steps[t][0] === id;
