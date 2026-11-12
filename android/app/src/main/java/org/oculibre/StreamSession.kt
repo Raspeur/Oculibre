@@ -115,8 +115,17 @@ class StreamSession(
 ) {
     interface Listener {
         fun onStatus(session: StreamSession, text: String)
-        fun onStopped(session: StreamSession, error: String?)
+
+        /**
+         * The session is over. [retry]: the computer was lost, not refused (connection refused or
+         * cut, no answer, network too slow): a new session may find it again. Not after a stop
+         * asked on either side, a refusal (pairing, wrong computer), a camera or protocol error.
+         */
+        fun onStopped(session: StreamSession, error: String?, retry: Boolean)
     }
+
+    /** A failure that trying again would not fix (pairing, wrong computer, refused by it). */
+    private class Final(message: String) : IOException(message)
 
     /**
      * An encoded message ready to send; [ptsUs] = capture time of a frame, -1 otherwise;
@@ -278,7 +287,12 @@ class StreamSession(
             } catch (e: Protocol.ProtocolException) {
                 fail(e.message ?: e.kind, if (e.kind == "incompatible_major") "version" else "protocol_error")
             } catch (e: SocketTimeoutException) {
-                fail("The computer did not answer (is it running Oculibre 0.1 or newer?)", "protocol_error")
+                fail("The computer did not answer", "protocol_error", retry = true)
+            } catch (e: Final) {
+                fail(e)
+            } catch (e: IOException) {
+                // Refused, unreachable, cut during the handshake: the computer may come back.
+                if (running.get()) fail(e.message ?: e.javaClass.simpleName, retry = true)
             } catch (e: Exception) {
                 fail(e)
             }
@@ -289,9 +303,10 @@ class StreamSession(
 
     private fun fail(e: Throwable) = fail(e.message ?: e.javaClass.simpleName)
 
-    private fun fail(message: String, byeReason: String = "other") = shutdown(message, byeReason)
+    private fun fail(message: String, byeReason: String = "other", retry: Boolean = false) =
+        shutdown(message, byeReason, retry)
 
-    private fun shutdown(error: String?, byeReason: String?) {
+    private fun shutdown(error: String?, byeReason: String?, retry: Boolean = false) {
         if (!stopped.compareAndSet(false, true)) return
         running.set(false)
         thread(name = "oculibre-stop") {
@@ -317,7 +332,7 @@ class StreamSession(
             statsThread?.interrupt()
             control.shutdownNow()
             queue.clear()
-            listener.onStopped(this, error)
+            listener.onStopped(this, error, retry)
         }
     }
 
@@ -425,7 +440,7 @@ class StreamSession(
     /** Wi-Fi: TLS with the paired computer's pinned key (§13). USB (loopback) stays plaintext. */
     private fun secure(s: Socket): Socket {
         if (SecureChannel.isLoopback(target)) return s
-        val paired = PairingStore.get(appContext) ?: throw IOException(
+        val paired = PairingStore.get(appContext) ?: throw Final(
             "Wi-Fi needs pairing first: run `oculibre --pair` on the computer and scan its QR code " +
                 "with the phone's camera",
         )
@@ -435,7 +450,7 @@ class StreamSession(
             SecureChannel.connect(appContext, s, target, port, paired.fingerprint)
         } catch (e: javax.net.ssl.SSLException) {
             if (generateSequence<Throwable>(e) { it.cause }.any { it is SecureChannel.WrongComputer }) {
-                throw IOException(
+                throw Final(
                     "This computer is not the one paired with this phone (${paired.name}): " +
                         "pair again with `oculibre --pair`",
                 )
@@ -484,7 +499,7 @@ class StreamSession(
                 }
                 is Message.Bye -> {
                     if (m.reason == "unpaired" && pairingToken != null) PairingStore.clearToken(appContext)
-                    throw IOException(byeText(m))
+                    throw Final(byeText(m))
                 }
                 else -> {} // nothing else is allowed before HELLO: ignore
             }
@@ -557,14 +572,14 @@ class StreamSession(
             } catch (e: Protocol.ProtocolException) {
                 if (!running.get()) return@thread
                 when (e.kind) {
-                    "connection_closed" -> fail("The computer closed the connection", "other")
-                    "io" -> fail("Connection lost: ${e.message}", "other")
+                    "connection_closed" -> fail("The computer closed the connection", "other", retry = true)
+                    "io" -> fail("Connection lost: ${e.message}", "other", retry = true)
                     else -> fail("Invalid data from the computer: ${e.message}", "protocol_error")
                 }
             } catch (e: SocketTimeoutException) {
-                if (running.get()) fail("The computer stopped answering", "other")
+                if (running.get()) fail("The computer stopped answering", "other", retry = true)
             } catch (e: IOException) {
-                if (running.get()) fail("Connection lost: ${e.message}", "other")
+                if (running.get()) fail("Connection lost: ${e.message}", "other", retry = true)
             }
         }
     }
@@ -649,7 +664,7 @@ class StreamSession(
         pipeline?.close()
         val end = Protocol.encode(Message.StreamEnd(Protocol.STREAM_VIDEO, "mode_change"))
         if (!queue.offer(Packet(end), 1, TimeUnit.SECONDS)) {
-            fail("Network too slow: cannot even send the end of the stream")
+            fail("Network too slow: cannot even send the end of the stream", retry = true)
             return error(Protocol.ErrorCode.FAILED, "network too slow")
         }
         return try {
@@ -950,7 +965,7 @@ class StreamSession(
         val bytes = Protocol.encode(Message.StreamConfig(Protocol.STREAM_VIDEO, config))
         // Never dropped: wait for room (the frames behind it are useless without it).
         if (!queue.offer(Packet(bytes), 1, TimeUnit.SECONDS)) {
-            fail("Network too slow: cannot even send the stream configuration")
+            fail("Network too slow: cannot even send the stream configuration", retry = true)
         }
         waitingForKeyframe = false
     }
@@ -1013,7 +1028,7 @@ class StreamSession(
                     }
                 }
             } catch (e: IOException) {
-                if (running.get()) fail("Connection lost: ${e.message}")
+                if (running.get()) fail("Connection lost: ${e.message}", retry = true)
             } catch (e: InterruptedException) {
                 // shutting down
             }

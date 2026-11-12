@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import java.util.concurrent.CopyOnWriteArraySet
 
 /**
@@ -22,7 +23,9 @@ import java.util.concurrent.CopyOnWriteArraySet
  *
  * - foreground service of type `camera` (required to keep the camera in the background);
  * - partial wake lock (CPU keeps encoding with the screen off) and Wi-Fi lock;
- * - ongoing notification with a Stop action.
+ * - ongoing notification with a Stop action;
+ * - when the computer is lost (not when it refuses or stops the stream), a new session is tried
+ *   after 1, 2, 4… up to 10 s, for at most [GIVE_UP_MS]; Stop cancels it.
  *
  * The UI talks to it through [start], [stop] and [observe] (same process, no binding needed).
  */
@@ -34,6 +37,14 @@ class StreamService : Service() {
     private class Request(val host: String, val port: Int, val config: StreamConfig)
 
     private var session: StreamSession? = null
+    /** What the user started: kept to try again when the computer is lost. */
+    private var request: Request? = null
+    /** Failed attempts in a row, and since when the computer is missing (elapsedRealtime ms). */
+    private var attempts = 0
+    private var lostSince = 0L
+    /** When the current session started: one that lasted is a fresh start (no backoff). */
+    private var sessionStartedAt = 0L
+    private val retry = Runnable { request?.let { if (session == null) startSession(it) } }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
@@ -41,6 +52,8 @@ class StreamService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            main.removeCallbacks(retry)
+            request = null
             val current = session
             if (current != null) current.stop() else shutdown(null)
             return START_NOT_STICKY
@@ -63,12 +76,40 @@ class StreamService : Service() {
         }
         acquireLocks()
 
-        val newSession = StreamSession(applicationContext, request.host, request.port, request.config, sessionListener)
-        session = newSession
+        this.request = request
+        attempts = 0
+        lostSince = 0L
         publish(Snapshot(true, "Connecting to ${request.host}:${request.port}…"))
-        newSession.start()
+        startSession(request)
         // Not sticky: if Android kills us, don't restart a stream nobody asked for.
         return START_NOT_STICKY
+    }
+
+    private fun startSession(request: Request) {
+        val newSession = StreamSession(applicationContext, request.host, request.port, request.config, sessionListener)
+        session = newSession
+        sessionStartedAt = SystemClock.elapsedRealtime()
+        newSession.start()
+    }
+
+    /** The computer was lost: try again later, keeping the notification and the locks. */
+    private fun scheduleRetry(error: String?) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - sessionStartedAt >= LASTED_MS || lostSince == 0L) {
+            // It had been streaming (or this is the first loss): start counting again.
+            attempts = 0
+            lostSince = now
+        }
+        if (now - lostSince >= GIVE_UP_MS) {
+            request = null
+            shutdown("Stopped: the computer could not be reached for ${GIVE_UP_MS / 60_000} minutes")
+            return
+        }
+        val delay = minOf(1000L shl attempts.coerceAtMost(4), MAX_DELAY_MS)
+        attempts++
+        val why = error?.let { " ($it)" } ?: ""
+        publish(Snapshot(true, "Looking for the computer — trying again in ${delay / 1000} s$why"))
+        main.postDelayed(retry, delay)
     }
 
     private val sessionListener = object : StreamSession.Listener {
@@ -76,16 +117,22 @@ class StreamService : Service() {
             main.post { if (this@StreamService.session === session) publish(Snapshot(true, text)) }
         }
 
-        override fun onStopped(session: StreamSession, error: String?) {
+        override fun onStopped(session: StreamSession, error: String?, retry: Boolean) {
             main.post {
                 if (this@StreamService.session !== session) return@post
                 this@StreamService.session = null
-                shutdown(if (error == null) "Stopped" else "Stopped: $error")
+                if (retry && request != null) {
+                    scheduleRetry(error)
+                } else {
+                    request = null
+                    shutdown(if (error == null) "Stopped" else "Stopped: $error")
+                }
             }
         }
     }
 
     private fun shutdown(status: String?) {
+        main.removeCallbacks(retry)
         releaseLocks()
         if (Build.VERSION.SDK_INT >= 24) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -98,6 +145,8 @@ class StreamService : Service() {
     }
 
     override fun onDestroy() {
+        main.removeCallbacks(retry)
+        request = null
         session?.stop()
         session = null
         releaseLocks()
@@ -177,6 +226,11 @@ class StreamService : Service() {
         private const val ACTION_STOP = "org.oculibre.action.STOP"
         private const val CHANNEL_ID = "streaming"
         private const val NOTIFICATION_ID = 1
+        /** A session that lasted this long was streaming: the next loss starts the count again. */
+        private const val LASTED_MS = 10_000L
+        private const val MAX_DELAY_MS = 10_000L
+        /** Then the phone stops looking, so as not to drain the battery with the computer off. */
+        private const val GIVE_UP_MS = 10 * 60_000L
 
         private val main = Handler(Looper.getMainLooper())
         private val observers = CopyOnWriteArraySet<(Snapshot) -> Unit>()
