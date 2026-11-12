@@ -65,8 +65,9 @@ class MainActivity : Activity() {
         probeCapabilities()
         // A screen created again (configuration change, process restarted) gets its first intent
         // back, pairing link included: it was handled already.
-        if (savedInstanceState == null) handlePairingLink(intent)
-        if (needsWelcome()) startActivity(Intent(this, WelcomeActivity::class.java))
+        val asking = savedInstanceState == null && handlePairingLink(intent)
+        // With a pairing dialog open, the first-launch screens wait for it (see its dismiss).
+        if (!asking) maybeWelcome()
     }
 
     // ------------------------------------------------------------------ layout
@@ -311,25 +312,30 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ Wi-Fi pairing (§13)
 
+    /** The first-launch screens, if not done yet (again after a pairing link closed them). */
+    private fun maybeWelcome() {
+        if (needsWelcome()) startActivity(Intent(this, WelcomeActivity::class.java))
+    }
+
     /**
      * `oculibre://pair?…` from the computer's QR code (opened by the camera app) or sent over
      * USB. Any app or web page can open such a link: nothing is saved before the user confirms,
-     * after comparing the key with the one the computer shows.
+     * after comparing the key with the one the computer shows. Returns whether a dialog opened.
      */
-    private fun handlePairingLink(intent: Intent?) {
-        val link = intent?.data?.toString() ?: return
-        if (!link.startsWith("oculibre://pair", ignoreCase = true)) return
+    private fun handlePairingLink(intent: Intent?): Boolean {
+        val link = intent?.data?.toString() ?: return false
+        if (!link.startsWith("oculibre://pair", ignoreCase = true)) return false
         intent.data = null
         // Reopened from the recent apps: Android replays the first intent, link included.
-        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return false
         val offer = PairingOffer.parse(link)
         if (offer == null) {
             stateDetail.text = "This pairing link is not valid (or comes from a newer Oculibre): update the app"
-            return
+            return false
         }
         // Each QR code has a one-time token: an offer already shown (accepted or cancelled) is
         // never asked again; a new QR code is.
-        if (prefs.getString(PREF_LAST_OFFER, null) == offer.token) return
+        if (prefs.getString(PREF_LAST_OFFER, null) == offer.token) return false
         prefs.edit().putString(PREF_LAST_OFFER, offer.token).apply()
         // The computer's address on this phone's network (it may also have VPN or container ones).
         val address = Networks.rank(offer.addresses, Networks.local()).first()
@@ -347,7 +353,10 @@ class MainActivity : Activity() {
                 stateDetail.text = "Paired with ${offer.name}: press Start"
             }
             .setNegativeButton("Cancel", null)
+            // The link closed the first-launch screens (this screen is singleTask): back to them.
+            .setOnDismissListener { maybeWelcome() }
             .show()
+        return true
     }
 
     /**

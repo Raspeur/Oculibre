@@ -44,6 +44,7 @@
     <string name="welcome_battery_text">So that the webcam doesn\'t stop in the middle of a call or a stream when the screen turns off.</string>
     <string name="welcome_battery_action">Open the setting</string>
     <string name="welcome_later">Later</string>
+    <string name="welcome_next">Next</string>
     <string name="welcome_connect_title">Connect to your computer</string>
     <string name="welcome_connect_text">With a USB cable: plug the phone in, nothing else to do. For Wi-Fi: open Oculibre on the computer, click \"Add a phone\", then scan the QR code with the phone\'s camera.</string>
     <string name="welcome_connect_action">Open the camera to scan</string>

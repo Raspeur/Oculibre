@@ -55,7 +55,7 @@ class WelcomeActivity : Activity() {
             if (!hasCameraPermission()) add(Step.CAMERA)
             if (!hasNotificationPermission()) add(Step.NOTIFICATIONS)
             if (!isBatteryExempt()) add(Step.BATTERY)
-            add(Step.CONNECT)
+            if (PairingStore.get(this@WelcomeActivity) == null) add(Step.CONNECT)
             add(Step.READY)
         }
         index = (savedInstanceState?.getInt(STATE_INDEX) ?: 0).coerceIn(0, steps.size - 1)
@@ -73,6 +73,8 @@ class WelcomeActivity : Activity() {
         super.onResume()
         // Back from the battery popup (or the settings): settled, go on.
         if (current() == Step.BATTERY && isBatteryExempt()) next()
+        // Back from the camera app with the computer's QR code scanned: connected, go on.
+        if (current() == Step.CONNECT && PairingStore.get(this) != null) next()
     }
 
     override fun onBackPressed() {
@@ -168,7 +170,8 @@ class WelcomeActivity : Activity() {
             Step.CAMERA -> listOf(R.string.welcome_camera_title, R.string.welcome_camera_text, R.string.welcome_camera_action, R.string.welcome_camera_why)
             Step.NOTIFICATIONS -> listOf(R.string.welcome_notifications_title, R.string.welcome_notifications_text, R.string.welcome_notifications_action, R.string.welcome_later)
             Step.BATTERY -> listOf(R.string.welcome_battery_title, R.string.welcome_battery_text, R.string.welcome_battery_action, R.string.welcome_later)
-            Step.CONNECT -> listOf(R.string.welcome_connect_title, R.string.welcome_connect_text, R.string.welcome_connect_action, R.string.welcome_later)
+            // Over USB there is nothing to scan: "next", not "later".
+            Step.CONNECT -> listOf(R.string.welcome_connect_title, R.string.welcome_connect_text, R.string.welcome_connect_action, R.string.welcome_next)
             Step.READY -> listOf(R.string.welcome_ready_title, R.string.welcome_ready_text, R.string.welcome_ready_action, 0)
         }
         title.text = getString(t)
@@ -210,9 +213,9 @@ class WelcomeActivity : Activity() {
             }
             Step.CONNECT -> {
                 // The camera app reads QR codes on most phones (the in-app scanner comes later).
+                // Stay on this step: it goes on by itself once the phone is paired (onResume).
                 val camera = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
-                runCatching { startActivity(camera) }
-                next()
+                if (runCatching { startActivity(camera) }.isFailure) next()
             }
             Step.READY -> finishWelcome()
         }
