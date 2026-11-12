@@ -12,16 +12,18 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
-use oculibre_protocol::Hello;
+use oculibre_protocol::{Hello, SetMode};
 use rustls::ServerConfig;
 
 use crate::discovery::{self, Announcer};
 use crate::events::{Event, Events, Refusal, Via, WifiInfo};
 use crate::pairing::{self, Pairings};
-use crate::preview::{Previewer, Viewer, ViewerSlot};
-use crate::session::{self, Driver, End, Link, Remote, Setup, Sink, View};
+use crate::preview::{Previewer, ViewerSlot, Watch};
+use crate::profiles::Profiles;
+use crate::session::{self, Driver, End, Link, ModeError, Remote, Setup, Sink, View};
 use crate::vcam::VirtualCamera;
 use crate::{adb, tls, v4l2};
 
@@ -41,6 +43,10 @@ pub struct Config {
     pub view: View,
     /// Portrait virtual camera (landscape by default, like every webcam).
     pub portrait: bool,
+    /// Remember each phone's rotation, mirror, camera and quality in this file, and apply them
+    /// again when it comes back (the desktop app). `None`: nothing is remembered (the command
+    /// line, whose options say it all).
+    pub settings_file: Option<PathBuf>,
     /// Tests: pictures are dropped instead of being written to a v4l2 device.
     #[cfg(test)]
     pub discard_pictures: bool,
@@ -56,6 +62,7 @@ impl Default for Config {
             tls12_only: false,
             view: View::default(),
             portrait: false,
+            settings_file: None,
             #[cfg(test)]
             discard_pictures: false,
         }
@@ -111,6 +118,8 @@ pub struct Host {
     view: Mutex<View>,
     /// Who receives preview pictures (a window), if anyone.
     viewers: ViewerSlot,
+    /// Each phone's settings, when they are remembered.
+    profiles: Option<Arc<Profiles>>,
 }
 
 impl Host {
@@ -182,6 +191,10 @@ impl Host {
         };
 
         let view = config.view;
+        let profiles = config
+            .settings_file
+            .clone()
+            .map(|file| Arc::new(Profiles::load(file)));
         Ok(Host {
             hello: session::host_hello(host_id(), host_name(), os_version()),
             config,
@@ -195,6 +208,7 @@ impl Host {
             remote: Mutex::new(None),
             view: Mutex::new(view),
             viewers: ViewerSlot::default(),
+            profiles,
         })
     }
 
@@ -213,17 +227,62 @@ impl Host {
         *self.view.lock().unwrap()
     }
 
-    /// Sends small JPEG pictures of the output to `viewer` (about 10 a second), or stops with
-    /// `None`. Cheap when nobody watches: nothing is made.
-    pub fn set_preview(&self, viewer: Option<Viewer>) {
-        *self.viewers.lock().unwrap() = viewer;
+    /// Sends small JPEG pictures of the output to a viewer, at the rate it chose, or stops with
+    /// `None`. Free when nobody watches: nothing is made.
+    pub fn set_preview(&self, watch: Option<Watch>) {
+        *self.viewers.lock().unwrap() = watch;
     }
 
-    /// Changes rotation and mirror: at once for the phone being served, and for the next ones.
+    /// Changes rotation and mirror: at once for the phone being served (remembered for it), and
+    /// for the next ones.
     pub fn set_view(&self, view: View) {
         *self.view.lock().unwrap() = view;
         if let Some(remote) = self.remote() {
             remote.set_view(view);
+            self.remember(&remote, |p| p.view = Some(view));
+        }
+    }
+
+    /// Switches the phone being served to another camera or quality (see [`Remote::set_mode`]);
+    /// once it streams in it, the choice is remembered for that phone.
+    pub fn set_mode(&self, mode: &SetMode) -> Result<(), ModeError> {
+        let remote = self
+            .remote()
+            .ok_or_else(|| ModeError::Session("no phone is connected".into()))?;
+        remote.set_mode(mode)?;
+        self.remember(&remote, |p| p.mode = Some(mode.clone()));
+        Ok(())
+    }
+
+    /// Saves a change of the phone's settings, when settings are remembered. A failure to save
+    /// only costs the memory of it: the session goes on.
+    fn remember(&self, remote: &Remote, change: impl FnOnce(&mut crate::profiles::Profile)) {
+        if let Some(profiles) = &self.profiles {
+            if !remote.phone.id.is_empty() {
+                let _ = profiles.update(&remote.phone.id, change);
+            }
+        }
+    }
+
+    /// A phone is in: keep its handle, apply what was remembered for it.
+    fn started(&self, remote: Remote) {
+        *self.remote.lock().unwrap() = Some(remote.clone());
+        let Some(profile) = self
+            .profiles
+            .as_ref()
+            .and_then(|profiles| profiles.get(&remote.phone.id))
+        else {
+            return;
+        };
+        if let Some(view) = profile.view {
+            *self.view.lock().unwrap() = view;
+            remote.set_view(view);
+        }
+        if let Some(mode) = profile.mode {
+            // The phone starts in the mode chosen on its own screen: switch once it streams.
+            let _ = thread::Builder::new()
+                .name("oculibre-restore".into())
+                .spawn(move || restore_mode(&remote, &mode));
         }
     }
 
@@ -360,9 +419,7 @@ impl Host {
             view: self.view(),
             driver,
             authorize: authorize.as_ref().map(|a| a as session::Authorize<'_>),
-            on_start: Some(Box::new(|remote| {
-                *self.remote.lock().unwrap() = Some(remote)
-            })),
+            on_start: Some(Box::new(|remote| self.started(remote))),
             ..Setup::new(events)
         };
         let end = session::run_driven(link, &self.hello, &mut *sink, setup);
@@ -384,6 +441,28 @@ impl Host {
             self.address
         };
         let _ = TcpStream::connect_timeout(&wake, Duration::from_secs(1));
+    }
+}
+
+/// Waits for the phone's first stream, then asks for the remembered mode if it streams in
+/// another one. Gives up after 15 s or when the session ends; a refused mode is left alone (the
+/// phone keeps its own).
+fn restore_mode(remote: &Remote, mode: &SetMode) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let stream = loop {
+        if let Some(stream) = remote.stream() {
+            break stream;
+        }
+        if remote.is_over() || Instant::now() > deadline {
+            return;
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    let same = stream.camera.as_ref().map(|c| c.id.as_str()) == Some(mode.camera.as_str())
+        && (stream.width, stream.height, stream.fps) == (mode.width, mode.height, mode.fps)
+        && stream.path.as_deref().unwrap_or("normal") == mode.path.as_deref().unwrap_or("normal");
+    if !same {
+        let _ = remote.set_mode(mode);
     }
 }
 

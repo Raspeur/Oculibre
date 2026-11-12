@@ -427,6 +427,11 @@ impl Remote {
             .map_err(|e| e.to_string())
     }
 
+    /// The session is over: the phone left, or someone ended it.
+    pub fn is_over(&self) -> bool {
+        self.shared.stop.load(Ordering::Relaxed)
+    }
+
     /// Rotation and mirror in use.
     pub fn view(&self) -> View {
         *self.shared.view.lock().unwrap()

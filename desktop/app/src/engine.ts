@@ -233,6 +233,13 @@ export function onPreview(handler: (jpeg: ArrayBuffer) => void): void {
   invoke("preview", { onFrame: channel });
 }
 
+/** Off: nothing computed. Light: ~10 pictures a second (never slows the source). Full: every one. */
+export type PreviewMode = "Off" | "Light" | "Full";
+
+export function setPreviewMode(mode: PreviewMode): Promise<void> {
+  return inApp ? invoke("set_preview_mode", { mode }) : Promise.resolve();
+}
+
 /** A phone's name for people: its own name, else its model. */
 export function phoneName(hello: Hello): string {
   return hello.name || hello.device?.model || "Phone";

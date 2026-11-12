@@ -30,6 +30,17 @@ export function Panel({ engine }: { engine: EngineState }) {
     }
   }, [phone]);
 
+  // Show what the engine applies: also the settings remembered for this phone when it comes
+  // back (Transform event: the rotation in use, and whether it is automatic).
+  useEffect(() => {
+    const t = engine.transform;
+    if (!t) return;
+    setViewState({
+      rotate: t.auto ? { kind: "Auto" } : { kind: "Fixed", degrees: t.rotation as 0 | 90 | 180 | 270 },
+      mirror: t.mirror,
+    });
+  }, [engine.transform]);
+
   // The refused-mode message goes away by itself (mockup: problem 302, 10 s).
   useEffect(() => {
     if (!refused) return;

@@ -11,11 +11,11 @@ use std::thread;
 
 use oculibre_core::host::{self, Config, Host};
 use oculibre_core::pairing::{self, Pairings};
-use oculibre_core::preview::Viewer;
+use oculibre_core::preview::{Rate, Viewer, Watch};
 use oculibre_core::protocol::{Capabilities, SetMode};
 use oculibre_core::session::{ModeError, Remote, View};
 use oculibre_core::{Event, Events};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 
@@ -27,6 +27,40 @@ struct Receiver {
     host: Mutex<Option<Arc<Host>>>,
     /// Where preview pictures go (the page's channel), kept to give it to every new host.
     viewer: Mutex<Option<Viewer>>,
+    /// The preview chosen in the window.
+    preview: Mutex<PreviewMode>,
+}
+
+/// The preview control of the window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+enum PreviewMode {
+    /// Nothing is computed.
+    Off,
+    /// About 10 pictures a second: never slows the source down.
+    #[default]
+    Light,
+    /// Every picture: when nothing else needs the computer.
+    Full,
+}
+
+impl Receiver {
+    /// What the host should do with previews now: the page's channel at the chosen rate.
+    fn watch(&self) -> Option<Watch> {
+        let rate = match *self.preview.lock().unwrap() {
+            PreviewMode::Off => return None,
+            PreviewMode::Light => Rate::Light,
+            PreviewMode::Full => Rate::Full,
+        };
+        let viewer = self.viewer.lock().unwrap().clone()?;
+        Some(Watch { viewer, rate })
+    }
+
+    /// Gives the host (if running) the current preview choice.
+    fn apply_preview(&self) {
+        if let Some(host) = self.host.lock().unwrap().as_ref() {
+            host.set_preview(self.watch());
+        }
+    }
 }
 
 /// Starts waiting for phones (USB, and the network when `wifi` is on). Returns where phones
@@ -46,10 +80,12 @@ fn start(app: AppHandle, receiver: State<Receiver>, wifi: bool) -> Result<String
     });
     let config = Config {
         wifi,
+        // Each phone's rotation, mirror, camera and quality, applied again when it comes back.
+        settings_file: Some(host::config_dir().join("phone-settings.json")),
         ..Config::default()
     };
     let host = Arc::new(Host::start(config, events)?);
-    host.set_preview(receiver.viewer.lock().unwrap().clone());
+    host.set_preview(receiver.watch());
     // `run` blocks while it serves phones: on a thread of its own, so the window stays free.
     let runner = host.clone();
     thread::Builder::new()
@@ -69,6 +105,16 @@ fn stop(receiver: State<Receiver>) {
     }
 }
 
+/// The receiver, if running; the lock is only held to copy the handle.
+fn running(receiver: &Receiver) -> Result<Arc<Host>, String> {
+    receiver
+        .host
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "the receiver is not running".into())
+}
+
 /// The phone being served, if any. The lock is only held to copy the handle: a slow command to
 /// the phone never blocks the other commands.
 fn remote(receiver: &Receiver) -> Result<Remote, String> {
@@ -83,11 +129,12 @@ fn capabilities(receiver: State<Receiver>) -> Result<Capabilities, String> {
     remote(&receiver)?.capabilities()
 }
 
-/// Switches the phone to another camera or quality; resolves once it streams in it. A refused
-/// mode (`{kind: "Refused"}`) leaves the phone in its previous mode.
+/// Switches the phone to another camera or quality; resolves once it streams in it, and the
+/// choice is remembered for this phone. A refused mode (`{kind: "Refused"}`) leaves the phone in
+/// its previous mode.
 #[tauri::command(async)]
 fn set_mode(receiver: State<Receiver>, mode: SetMode) -> Result<(), ModeError> {
-    remote(&receiver)
+    running(&receiver)
         .map_err(ModeError::Session)?
         .set_mode(&mode)
 }
@@ -122,13 +169,7 @@ struct PairingOffer {
 /// it and confirms is paired (`Paired` event).
 #[tauri::command(async)]
 fn pairing_offer(receiver: State<Receiver>) -> Result<PairingOffer, String> {
-    let host = receiver
-        .host
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or("the receiver is not running")?;
-    let offer = host.pairing_offer()?;
+    let offer = running(&receiver)?.pairing_offer()?;
     Ok(PairingOffer {
         qr: pairing::qr_grid(&offer.uri)?,
         uri: offer.uri,
@@ -146,18 +187,21 @@ fn preview(receiver: State<Receiver>, on_frame: Channel<InvokeResponseBody>) {
         // The page may be gone (reloaded): then nothing listens, and that is fine.
         let _ = on_frame.send(InvokeResponseBody::Raw(frame.jpeg));
     });
-    *receiver.viewer.lock().unwrap() = Some(viewer.clone());
-    if let Some(host) = receiver.host.lock().unwrap().as_ref() {
-        host.set_preview(Some(viewer));
-    }
+    *receiver.viewer.lock().unwrap() = Some(viewer);
+    receiver.apply_preview();
 }
 
-/// Rotation and mirror, for the phone being served and the next ones.
+/// Off, light (about 10 pictures a second) or full (every picture).
+#[tauri::command]
+fn set_preview_mode(receiver: State<Receiver>, mode: PreviewMode) {
+    *receiver.preview.lock().unwrap() = mode;
+    receiver.apply_preview();
+}
+
+/// Rotation and mirror, for the phone being served (remembered for it) and the next ones.
 #[tauri::command]
 fn set_view(receiver: State<Receiver>, view: View) -> Result<(), String> {
-    let slot = receiver.host.lock().unwrap();
-    let host = slot.as_ref().ok_or("the receiver is not running")?;
-    host.set_view(view);
+    running(&receiver)?.set_view(view);
     Ok(())
 }
 
@@ -176,7 +220,8 @@ pub fn run() {
             finish,
             paired_phones,
             pairing_offer,
-            preview
+            preview,
+            set_preview_mode
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

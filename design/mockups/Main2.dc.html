@@ -101,6 +101,11 @@ body{margin:0}
           <span class="oc-text">{{previewText}}</span>
         </div>
         <span class="oc-chip" style="position: absolute; top: 12px; left: 12px">1080p · 60 i/s</span>
+        <div class="oc-segmented oc-segmented--sm" role="group" aria-label="Aperçu" style="position: absolute; top: 12px; right: 12px">
+          <sc-for list="{{previewModes}}" as="m" hint-placeholder-count="3">
+            <button type="button" class="oc-segmented__item" aria-pressed="{{m.pressed}}" title="{{m.hint}}" onClick="{{m.pick}}">{{m.label}}</button>
+          </sc-for>
+        </div>
       </div>
 
       <div class="oc-stats">
@@ -235,7 +240,7 @@ class Component extends DCLogic {
     super(props);
     // tour: -1 = off, 0 = welcome, 1..5 = highlighted steps, 6 = end. The Tweaks switch "tour"
     // shows it as on the very first launch.
-    this.state = { camera: 'back', mirror: false, live: true, tour: props.tour ? 0 : -1 };
+    this.state = { camera: 'back', mirror: false, live: true, preview: 'light', tour: props.tour ? 0 : -1 };
   }
   renderVals() {
     const s = this.state;
@@ -256,7 +261,18 @@ class Component extends DCLogic {
     const at = (id) => t >= 1 && t <= 5 && steps[t][0] === id;
     const wrap = (id, base) => base + (at(id) ? ' oc-tour-target' : '');
     const step = t >= 1 && t <= 5 ? steps[t] : ['', '', ''];
+    // Preview rate: off (nothing computed), light (~10/s, never slows the camera), full (every picture).
+    const previewModes = [
+      ['off', 'Arrêté', 'Aucun calcul pour l’aperçu'],
+      ['light', 'Léger', 'Environ 10 images/s : ne ralentit jamais la caméra'],
+      ['full', 'Fluide', 'Toutes les images : quand rien d’autre ne demande l’ordinateur'],
+    ].map(([id, label, hint]) => ({
+      label, hint,
+      pressed: s.preview === id ? 'true' : 'false',
+      pick: () => this.setState({ preview: id }),
+    }));
     return {
+      previewModes,
       tourIntro: t === 0,
       tourOutro: t === 6,
       atAdd: at('add'), atPhones: at('phones'), atSource: at('source'), atStart: at('start'), atOutput: at('output'),
@@ -275,7 +291,7 @@ class Component extends DCLogic {
       pillClass: s.live ? 'oc-pill' : 'oc-pill oc-pill--paused',
       pillDot: s.live ? 'oc-dot' : 'oc-dot oc-dot--paused',
       pillText: s.live ? 'En direct' : 'En pause',
-      previewText: s.live ? 'Aperçu de la caméra du téléphone' : 'Caméra arrêtée',
+      previewText: !s.live ? 'Caméra arrêtée' : s.preview === 'off' ? 'Aperçu arrêté' : 'Aperçu de la caméra du téléphone',
       latency: s.live ? '68 ms' : '—',
       fps: s.live ? '60' : '—',
       bitrate: s.live ? '12 Mbit/s' : '—',

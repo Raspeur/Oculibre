@@ -10,6 +10,7 @@
 //!   virtual camera; [`adb`]: USB phones
 //! - [`tls`], [`pairing`], [`discovery`]: encrypted Wi-Fi, paired phones, mDNS announcement
 //! - [`preview`]: small JPEG pictures of the output, for a window
+//! - [`profiles`]: each phone's settings, remembered
 //! - [`bench`]: measures every camera × mode of a phone (`oculibre bench`)
 
 pub mod adb;
@@ -20,6 +21,7 @@ pub mod events;
 pub mod host;
 pub mod pairing;
 pub mod preview;
+pub mod profiles;
 pub mod session;
 pub mod tls;
 pub mod v4l2;

@@ -2,12 +2,13 @@
 // or, without a phone, what to do.
 
 import { useEffect, useRef, useState } from "react";
-import { onPreview, phoneName } from "../engine";
+import { type PreviewMode, onPreview, phoneName, setPreviewMode } from "../engine";
 import type { EngineState } from "../useEngine";
 
 export function Stage({ engine }: { engine: EngineState }) {
   const { phone, via, stream, paused, status } = engine;
-  const preview = usePreview(phone !== null);
+  const [mode, setMode] = usePreviewMode();
+  const preview = usePreview(phone !== null && mode !== "Off");
 
   if (!phone) {
     return (
@@ -42,7 +43,13 @@ export function Stage({ engine }: { engine: EngineState }) {
       </header>
 
       <div className="oc-preview">
-        {preview ? (
+        {mode === "Off" ? (
+          <div className="oc-stack" style={{ alignItems: "center", gap: 12, color: "var(--oc-text-faint)", textAlign: "center", padding: 24 }}>
+            <CameraIcon />
+            <span className="oc-text">Aperçu arrêté</span>
+            <span className="oc-small">Les applications reçoivent l'image normalement.</span>
+          </div>
+        ) : preview ? (
           <img
             src={preview}
             alt="Aperçu de ce que reçoivent les applications"
@@ -54,6 +61,25 @@ export function Stage({ engine }: { engine: EngineState }) {
             <span className="oc-text">L'image arrive…</span>
           </div>
         )}
+        <div
+          className="oc-segmented oc-segmented--sm"
+          role="group"
+          aria-label="Aperçu"
+          style={{ position: "absolute", top: 12, right: 12 }}
+        >
+          {previewModes.map(([value, label, hint]) => (
+            <button
+              key={value}
+              type="button"
+              className="oc-segmented__item"
+              aria-pressed={mode === value}
+              title={hint}
+              onClick={() => setMode(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {stream && (
           <span className="oc-chip" style={{ position: "absolute", top: 12, left: 12 }}>
             {qualityLabel(stream.width, stream.height, stream.fps)}
@@ -69,6 +95,37 @@ export function Stage({ engine }: { engine: EngineState }) {
       </div>
     </section>
   );
+}
+
+const previewModes: [PreviewMode, string, string][] = [
+  ["Off", "Arrêté", "Aucun calcul pour l'aperçu"],
+  ["Light", "Léger", "Environ 10 images/s : ne ralentit jamais la caméra"],
+  ["Full", "Fluide", "Toutes les images : quand rien d'autre ne demande l'ordinateur"],
+];
+
+/** The preview mode, remembered by the window (localStorage) and given to the engine. */
+function usePreviewMode(): [PreviewMode, (mode: PreviewMode) => void] {
+  const [mode, setModeState] = useState<PreviewMode>(() => {
+    try {
+      const saved = localStorage.getItem("oculibre.preview");
+      if (saved === "Off" || saved === "Light" || saved === "Full") return saved;
+    } catch {
+      // storage unavailable: the default
+    }
+    return "Light";
+  });
+
+  // Tell the engine at start and at every change.
+  useEffect(() => {
+    setPreviewMode(mode);
+    try {
+      localStorage.setItem("oculibre.preview", mode);
+    } catch {
+      // not remembered, still applied
+    }
+  }, [mode]);
+
+  return [mode, setModeState];
 }
 
 /**

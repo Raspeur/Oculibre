@@ -143,6 +143,9 @@ a:hover { color: #FFB39E; }
 .oc-segmented__item { min-height: var(--oc-control-h); padding: 0 6px; border: 0; background: transparent; color: var(--oc-text-2); font-size: var(--oc-text-md); white-space: nowrap; cursor: pointer; }
 .oc-segmented__item + .oc-segmented__item { border-left: 1px solid var(--oc-border-strong); }
 .oc-segmented__item[aria-pressed="true"] { background: var(--oc-selected); color: #FFFFFF; font-weight: 600; box-shadow: inset 0 -2px 0 var(--oc-accent); }
+/* Small segmented control laid over a picture (preview rate). */
+.oc-segmented--sm { display: inline-grid; grid-auto-flow: column; grid-template-columns: none; background: rgba(11, 18, 32, 0.85); }
+.oc-segmented--sm .oc-segmented__item { min-height: 28px; padding: 0 10px; font-size: var(--oc-text-sm); }
 
 /* ---------- cards and rows */
 .oc-card { box-sizing: border-box; background: var(--oc-surface-2); border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); }

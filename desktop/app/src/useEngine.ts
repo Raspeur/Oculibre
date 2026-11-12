@@ -32,7 +32,8 @@ export interface EngineState {
   /** The phone stopped its stream for a moment (mode change). */
   paused: boolean;
   status: Status | null;
-  transform: Transform | null;
+  /** Rotation and mirror applied, and whether the rotation follows the phone. */
+  transform: (Transform & { auto: boolean }) | null;
   decoder: string | null;
   /** Size of the virtual camera (it may be locked by an app). */
   outputSize: [number, number] | null;
@@ -105,7 +106,7 @@ function reduceEvent(state: EngineState, event: EngineEvent): EngineState {
     case "Status":
       return { ...state, status: event.data };
     case "Transform":
-      return { ...state, transform: event.data.transform };
+      return { ...state, transform: { ...event.data.transform, auto: event.data.auto } };
     case "Decoder":
       return { ...state, decoder: event.data.name };
     case "VirtualCameraSize":
