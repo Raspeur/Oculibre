@@ -20,6 +20,7 @@ use rustls::ServerConfig;
 use crate::discovery::{self, Announcer};
 use crate::events::{Event, Events, Refusal, Via, WifiInfo};
 use crate::pairing::{self, Pairings};
+use crate::preview::{Previewer, Viewer, ViewerSlot};
 use crate::session::{self, Driver, End, Link, Remote, Setup, Sink, View};
 use crate::vcam::VirtualCamera;
 use crate::{adb, tls, v4l2};
@@ -108,6 +109,8 @@ pub struct Host {
     remote: Mutex<Option<Remote>>,
     /// Rotation and mirror: for the running session and the next ones.
     view: Mutex<View>,
+    /// Who receives preview pictures (a window), if anyone.
+    viewers: ViewerSlot,
 }
 
 impl Host {
@@ -191,6 +194,7 @@ impl Host {
             current: Mutex::new(None),
             remote: Mutex::new(None),
             view: Mutex::new(view),
+            viewers: ViewerSlot::default(),
         })
     }
 
@@ -207,6 +211,12 @@ impl Host {
     /// Rotation and mirror in use, or for the next phone.
     pub fn view(&self) -> View {
         *self.view.lock().unwrap()
+    }
+
+    /// Sends small JPEG pictures of the output to `viewer` (about 10 a second), or stops with
+    /// `None`. Cheap when nobody watches: nothing is made.
+    pub fn set_preview(&self, viewer: Option<Viewer>) {
+        *self.viewers.lock().unwrap() = viewer;
     }
 
     /// Changes rotation and mirror: at once for the phone being served, and for the next ones.
@@ -340,6 +350,7 @@ impl Host {
             self.device.clone(),
             self.config.portrait,
             events.clone(),
+            Some(Previewer::new(self.viewers.clone())),
         ));
         #[cfg(test)]
         if self.config.discard_pictures {

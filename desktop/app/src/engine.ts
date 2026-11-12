@@ -5,7 +5,7 @@
 // `events_as_json`). Rust and TypeScript don't check each other: when an event changes in Rust,
 // change it here too.
 
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 // --- what the events carry
@@ -220,6 +220,17 @@ export interface PairingOffer {
 /** Opens a pairing offer (needs Wi-Fi on); a `Paired` event follows when a phone takes it. */
 export function pairingOffer(): Promise<PairingOffer> {
   return invoke<PairingOffer>("pairing_offer");
+}
+
+/**
+ * Calls `handler` with a small JPEG of the virtual camera's picture, about 10 times a second
+ * while a phone streams. The bytes come through a Tauri channel, without any JSON.
+ */
+export function onPreview(handler: (jpeg: ArrayBuffer) => void): void {
+  if (!inApp) return;
+  const channel = new Channel<ArrayBuffer>();
+  channel.onmessage = handler;
+  invoke("preview", { onFrame: channel });
 }
 
 /** A phone's name for people: its own name, else its model. */

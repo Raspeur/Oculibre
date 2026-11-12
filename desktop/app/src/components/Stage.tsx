@@ -1,11 +1,13 @@
 // Centre of the main window (mockup Main2): the phone being served, its picture and its numbers;
 // or, without a phone, what to do.
 
-import { phoneName } from "../engine";
+import { useEffect, useRef, useState } from "react";
+import { onPreview, phoneName } from "../engine";
 import type { EngineState } from "../useEngine";
 
 export function Stage({ engine }: { engine: EngineState }) {
   const { phone, via, stream, paused, status } = engine;
+  const preview = usePreview(phone !== null);
 
   if (!phone) {
     return (
@@ -40,11 +42,18 @@ export function Stage({ engine }: { engine: EngineState }) {
       </header>
 
       <div className="oc-preview">
-        <div className="oc-stack" style={{ alignItems: "center", gap: 12, color: "var(--oc-text-faint)", textAlign: "center", padding: 24 }}>
-          <CameraIcon />
-          <span className="oc-text">L'image est envoyée à la caméra « Oculibre ».</span>
-          <span className="oc-small">Aperçu dans cette fenêtre : bientôt.</span>
-        </div>
+        {preview ? (
+          <img
+            src={preview}
+            alt="Aperçu de ce que reçoivent les applications"
+            style={{ width: "100%", height: "100%", objectFit: "contain", opacity: live ? 1 : 0.4 }}
+          />
+        ) : (
+          <div className="oc-stack" style={{ alignItems: "center", gap: 12, color: "var(--oc-text-faint)", textAlign: "center", padding: 24 }}>
+            <CameraIcon />
+            <span className="oc-text">L'image arrive…</span>
+          </div>
+        )}
         {stream && (
           <span className="oc-chip" style={{ position: "absolute", top: 12, left: 12 }}>
             {qualityLabel(stream.width, stream.height, stream.fps)}
@@ -60,6 +69,34 @@ export function Stage({ engine }: { engine: EngineState }) {
       </div>
     </section>
   );
+}
+
+/**
+ * The latest preview picture as an object URL (an address in memory an <img> can show), or
+ * null. Each new picture frees the previous URL: otherwise every picture would stay in memory.
+ */
+function usePreview(withPhone: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  const current = useRef<string | null>(null);
+
+  const show = (next: string | null) => {
+    if (current.current) URL.revokeObjectURL(current.current);
+    current.current = next;
+    setUrl(next);
+  };
+
+  // Subscribe once; a second call (StrictMode while developing) replaces the first channel.
+  useEffect(() => {
+    onPreview((jpeg) => show(URL.createObjectURL(new Blob([jpeg], { type: "image/jpeg" }))));
+    return () => show(null);
+  }, []);
+
+  // The phone left: no old picture when the next one comes.
+  useEffect(() => {
+    if (!withPhone) show(null);
+  }, [withPhone]);
+
+  return withPhone ? url : null;
 }
 
 const stageStyle = { flex: "999 1 520px", minWidth: 0, padding: 24, boxSizing: "border-box", gap: 16 } as const;

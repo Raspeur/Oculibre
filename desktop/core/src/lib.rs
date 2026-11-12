@@ -9,6 +9,7 @@
 //! - [`yuv`]: rotation, mirror, fit and pixel conversion; [`vcam`] over [`v4l2`]: the Linux
 //!   virtual camera; [`adb`]: USB phones
 //! - [`tls`], [`pairing`], [`discovery`]: encrypted Wi-Fi, paired phones, mDNS announcement
+//! - [`preview`]: small JPEG pictures of the output, for a window
 //! - [`bench`]: measures every camera × mode of a phone (`oculibre bench`)
 
 pub mod adb;
@@ -18,6 +19,7 @@ pub mod discovery;
 pub mod events;
 pub mod host;
 pub mod pairing;
+pub mod preview;
 pub mod session;
 pub mod tls;
 pub mod v4l2;

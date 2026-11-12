@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use openh264::formats::YUVSource;
 
 use crate::events::{Event, Events};
+use crate::preview::Previewer;
 use crate::session::Sink;
 use crate::{v4l2, yuv};
 
@@ -21,6 +22,8 @@ pub struct VirtualCamera {
     path: PathBuf,
     portrait: bool,
     events: Events,
+    /// Small copies for a window (the desktop app), if any.
+    preview: Option<Previewer>,
     device: Option<v4l2::OutputDevice>,
     /// Size asked for when the device was opened.
     requested: (usize, usize),
@@ -28,11 +31,12 @@ pub struct VirtualCamera {
 }
 
 impl VirtualCamera {
-    pub fn new(path: PathBuf, portrait: bool, events: Events) -> Self {
+    pub fn new(path: PathBuf, portrait: bool, events: Events, preview: Option<Previewer>) -> Self {
         Self {
             path,
             portrait,
             events,
+            preview,
             device: None,
             requested: (0, 0),
             frame: Vec::new(),
@@ -71,6 +75,9 @@ impl Sink for VirtualCamera {
         let (cw, ch) = device.size();
         yuv::convert(picture, transform, cw, ch, &mut self.frame);
         device.write_frame(&self.frame)?;
+        if let Some(preview) = &mut self.preview {
+            preview.offer(picture, transform);
+        }
         Ok(())
     }
 }

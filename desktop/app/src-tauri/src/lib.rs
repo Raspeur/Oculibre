@@ -11,10 +11,12 @@ use std::thread;
 
 use oculibre_core::host::{self, Config, Host};
 use oculibre_core::pairing::{self, Pairings};
+use oculibre_core::preview::Viewer;
 use oculibre_core::protocol::{Capabilities, SetMode};
 use oculibre_core::session::{ModeError, Remote, View};
 use oculibre_core::{Event, Events};
 use serde::Serialize;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, State};
 
 /// What the app keeps between two commands: the receiver, while it runs. Tauri gives every
@@ -23,6 +25,8 @@ use tauri::{AppHandle, Emitter, State};
 #[derive(Default)]
 struct Receiver {
     host: Mutex<Option<Arc<Host>>>,
+    /// Where preview pictures go (the page's channel), kept to give it to every new host.
+    viewer: Mutex<Option<Viewer>>,
 }
 
 /// Starts waiting for phones (USB, and the network when `wifi` is on). Returns where phones
@@ -45,6 +49,7 @@ fn start(app: AppHandle, receiver: State<Receiver>, wifi: bool) -> Result<String
         ..Config::default()
     };
     let host = Arc::new(Host::start(config, events)?);
+    host.set_preview(receiver.viewer.lock().unwrap().clone());
     // `run` blocks while it serves phones: on a thread of its own, so the window stays free.
     let runner = host.clone();
     thread::Builder::new()
@@ -132,6 +137,21 @@ fn pairing_offer(receiver: State<Receiver>) -> Result<PairingOffer, String> {
     })
 }
 
+/// Sends the page a small JPEG of the output about 10 times a second, through `on_frame` (raw
+/// bytes: an `ArrayBuffer` in the page). A new call replaces the previous channel (the page was
+/// reloaded).
+#[tauri::command]
+fn preview(receiver: State<Receiver>, on_frame: Channel<InvokeResponseBody>) {
+    let viewer: Viewer = Arc::new(move |frame| {
+        // The page may be gone (reloaded): then nothing listens, and that is fine.
+        let _ = on_frame.send(InvokeResponseBody::Raw(frame.jpeg));
+    });
+    *receiver.viewer.lock().unwrap() = Some(viewer.clone());
+    if let Some(host) = receiver.host.lock().unwrap().as_ref() {
+        host.set_preview(Some(viewer));
+    }
+}
+
 /// Rotation and mirror, for the phone being served and the next ones.
 #[tauri::command]
 fn set_view(receiver: State<Receiver>, view: View) -> Result<(), String> {
@@ -155,7 +175,8 @@ pub fn run() {
             set_mode,
             finish,
             paired_phones,
-            pairing_offer
+            pairing_offer,
+            preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

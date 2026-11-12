@@ -26,4 +26,7 @@ ring = "0.17"
 qrcode = { version = "0.14", default-features = false }
 # mDNS: the computer announces itself on the network (no async runtime).
 mdns-sd = { version = "0.21", default-features = false }
+# Preview pictures for the desktop app (pure Rust; licence MIT/Apache-2.0 and IJG: credit the
+# Independent JPEG Group in the app's notices).
+jpeg-encoder = "0.7"
 ffmpeg-sys-next = { version = "8", optional = true, default-features = false, features = ["avcodec"] }
