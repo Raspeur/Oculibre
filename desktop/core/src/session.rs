@@ -30,6 +30,9 @@ use oculibre_protocol::{
 use serde_json::{json, Value};
 
 use crate::decoder::VideoDecoder;
+#[cfg(test)]
+use crate::events::ignore_events;
+use crate::events::{Event, Events};
 use crate::yuv::{Picture, Transform};
 
 /// The byte stream of a session: a TCP socket (USB, through `adb reverse`) or the plaintext side of
@@ -147,7 +150,7 @@ pub const HOST_FEATURES: [&str; 4] = [
 ];
 
 /// Why a session ended normally.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum End {
     /// The phone sent `BYE`.
     Bye {
@@ -158,44 +161,6 @@ pub enum End {
     Closed,
     /// We ended the session on purpose ([`Control::finish`]).
     Finished,
-}
-
-/// What happens during a session, for the front-end to show (console text, desktop app).
-///
-/// Events are sent from the session's threads (reader, output, ticker): the receiver must be
-/// quick and must not block.
-#[derive(Debug, Clone)]
-pub enum Event {
-    /// The phone's `HELLO`, once it is accepted (paired, H.264 offered).
-    Phone(Hello),
-    /// A new video stream: after Start, or after a mode change (`set_mode`).
-    Stream(StreamConfig),
-    /// The phone stopped the stream for a while (e.g. `mode_change`); a [`Event::Stream`] follows.
-    StreamPaused { reason: String },
-    /// Rotation and mirror applied from now on (sent when they change, with a picture).
-    /// `auto`: the rotation follows the way the phone is held (`--rotate auto`).
-    Transform { transform: Transform, auto: bool },
-    /// The video decoder in use, known for sure once a picture came out ("VA-API", "OpenH264"…).
-    Decoder { name: &'static str },
-    /// The phone refused one of our requests that nobody waited for (e.g. `request_keyframe`).
-    RequestRefused {
-        id: u32,
-        code: String,
-        message: Option<String>,
-    },
-    /// Every second while the phone is connected.
-    Status(Status),
-    /// When the session ends, if it lasted at least one second.
-    Summary(Summary),
-}
-
-/// Where a session sends its [`Event`]s. Shared with the session's threads, hence `Arc` and
-/// `Send + Sync`.
-pub type Events = Arc<dyn Fn(Event) + Send + Sync>;
-
-/// For a session nobody watches (tests).
-pub fn ignore_events() -> Events {
-    Arc::new(|_| {})
 }
 
 /// Latency of the frames shown during the last second, µs.

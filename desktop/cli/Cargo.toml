@@ -17,5 +17,3 @@ ffmpeg = ["oculibre-core/ffmpeg"]
 [dependencies]
 oculibre-core = { path = "../core", default-features = false }
 oculibre-protocol = { path = "../protocol" }
-openh264 = "0.9"
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

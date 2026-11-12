@@ -430,8 +430,6 @@ version = "0.3.0"
 dependencies = [
  "oculibre-core",
  "oculibre-protocol",
- "openh264",
- "rustls",
 ]
 
 [[package]]

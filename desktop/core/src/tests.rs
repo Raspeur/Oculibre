@@ -239,7 +239,7 @@ fn the_front_end_is_told_what_happens() {
     let (stream, _) = listener.accept().unwrap();
     let hello = session::host_hello("host-id".into(), "test-host".into(), None);
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let events: session::Events = {
+    let events: crate::Events = {
         let seen = seen.clone();
         std::sync::Arc::new(move |e| seen.lock().unwrap().push(e))
     };
@@ -260,12 +260,12 @@ fn the_front_end_is_told_what_happens() {
     let kinds: Vec<&str> = seen
         .iter()
         .map(|e| match e {
-            session::Event::Phone(_) => "phone",
-            session::Event::Stream(_) => "stream",
-            session::Event::Transform { .. } => "transform",
-            session::Event::Decoder { .. } => "decoder",
-            session::Event::Status(_) => "status",
-            session::Event::Summary(_) => "summary",
+            crate::Event::Phone(_) => "phone",
+            crate::Event::Stream(_) => "stream",
+            crate::Event::Transform { .. } => "transform",
+            crate::Event::Decoder { .. } => "decoder",
+            crate::Event::Status(_) => "status",
+            crate::Event::Summary(_) => "summary",
             _ => "other",
         })
         .collect();
@@ -278,11 +278,11 @@ fn the_front_end_is_told_what_happens() {
     );
     assert!(kinds.contains(&"status"), "{kinds:?}");
     match &seen[0] {
-        session::Event::Phone(h) => assert_eq!(h.app, phone_hello().app),
+        crate::Event::Phone(h) => assert_eq!(h.app, phone_hello().app),
         other => panic!("{other:?}"),
     }
     match seen.last().unwrap() {
-        session::Event::Summary(s) => assert!(s.seconds >= 1 && s.fps > 0.0, "{s:?}"),
+        crate::Event::Summary(s) => assert!(s.seconds >= 1 && s.fps > 0.0, "{s:?}"),
         other => panic!("{other:?}"),
     }
 }
@@ -523,7 +523,7 @@ fn bench_drives_the_phone_through_every_mode() {
         &hello,
         View::default(),
         &mut sink,
-        session::ignore_events(),
+        crate::ignore_events(),
         Some(driver),
         None,
     );
@@ -578,7 +578,7 @@ fn bench_needs_a_phone_that_switches_modes() {
         &hello,
         View::default(),
         &mut sink,
-        session::ignore_events(),
+        crate::ignore_events(),
         Some(driver),
         None,
     );
@@ -654,7 +654,7 @@ fn wifi_phone_pairs_once_then_strangers_are_refused() {
                 &hello,
                 View::default(),
                 &mut sink,
-                session::ignore_events(),
+                crate::ignore_events(),
                 None,
                 Some(&authorize),
             )
@@ -682,4 +682,128 @@ fn wifi_phone_pairs_once_then_strangers_are_refused() {
     assert!(ends[2].as_ref().unwrap_err().contains("not paired"));
     assert_eq!(pairings.phones().len(), 1);
     std::fs::remove_file(path).unwrap();
+}
+
+/// A host on a free port, USB only, writing to a plain file instead of a v4l2 device (it is only
+/// opened at the first picture, and these phones send none).
+fn test_host(events: crate::Events) -> (std::sync::Arc<crate::host::Host>, std::path::PathBuf) {
+    let device = std::env::temp_dir().join(format!(
+        "oculibre-test-vcam-{}-{:?}",
+        std::process::id(),
+        thread::current().id()
+    ));
+    std::fs::write(&device, b"").unwrap();
+    let config = crate::host::Config {
+        port: 0,
+        device: Some(device.clone()),
+        adb: false,
+        ..Default::default()
+    };
+    let host = crate::host::Host::start(config, events).unwrap();
+    (std::sync::Arc::new(host), device)
+}
+
+fn recorder() -> (
+    crate::Events,
+    std::sync::Arc<std::sync::Mutex<Vec<crate::Event>>>,
+) {
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events: crate::Events = {
+        let seen = seen.clone();
+        std::sync::Arc::new(move |e| seen.lock().unwrap().push(e))
+    };
+    (events, seen)
+}
+
+#[test]
+fn host_serves_phones_one_after_the_other_until_stopped() {
+    let (events, seen) = recorder();
+    let (host, device) = test_host(events);
+    let addr = host.address();
+    let runner = {
+        let host = host.clone();
+        thread::spawn(move || host.run())
+    };
+    for i in 0..2 {
+        let mut s = TcpStream::connect(addr).unwrap();
+        let _r = handshake(&mut s);
+        let bye = Bye {
+            reason: "user_stop".into(),
+            message: None,
+        };
+        write_message(&mut s, &Message::Bye(bye)).unwrap();
+        // Wait for the host to finish this session before the next phone.
+        while seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| matches!(e, crate::Event::SessionEnded(_)))
+            .count()
+            < i + 1
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+    host.stop();
+    runner.join().unwrap(); // run() returns
+    std::fs::remove_file(device).unwrap();
+
+    let seen = seen.lock().unwrap();
+    let connected = seen
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                crate::Event::PhoneConnected {
+                    via: crate::events::Via::Usb,
+                    ..
+                }
+            )
+        })
+        .count();
+    let ended = seen
+        .iter()
+        .filter(|e| matches!(e, crate::Event::SessionEnded(Ok(End::Bye { .. }))))
+        .count();
+    assert_eq!((connected, ended), (2, 2), "{seen:?}");
+    assert!(
+        matches!(seen[0], crate::Event::VirtualCamera { .. }),
+        "{seen:?}"
+    );
+}
+
+#[test]
+fn stop_ends_the_running_session() {
+    let (events, seen) = recorder();
+    let (host, device) = test_host(events);
+    let addr = host.address();
+    let runner = {
+        let host = host.clone();
+        thread::spawn(move || host.run())
+    };
+    // A phone that stays connected and silent: only stop() can end its session quickly.
+    let mut s = TcpStream::connect(addr).unwrap();
+    let _r = handshake(&mut s);
+    while !seen
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|e| matches!(e, crate::Event::Phone(_)))
+    {
+        thread::sleep(Duration::from_millis(10));
+    }
+    let asked = std::time::Instant::now();
+    host.stop();
+    runner.join().unwrap();
+    assert!(
+        asked.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        asked.elapsed()
+    );
+    std::fs::remove_file(device).unwrap();
+    assert!(seen
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|e| matches!(e, crate::Event::SessionEnded(_))));
 }

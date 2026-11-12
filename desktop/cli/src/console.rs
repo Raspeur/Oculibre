@@ -4,12 +4,63 @@ use std::io::{self, Write};
 use std::sync::Arc;
 
 use oculibre_core::bench::{self, Progress};
-use oculibre_core::session::{Event, Events, Status, Summary, AVERAGE_WINDOW};
+use oculibre_core::events::{Refusal, Via, WifiInfo};
+use oculibre_core::session::{End, Status, Summary, AVERAGE_WINDOW};
+use oculibre_core::{Event, Events};
 use oculibre_protocol::{Hello, StreamConfig};
 
-/// Prints every session event (status line rewritten in place every second).
-pub fn events() -> Events {
-    Arc::new(|event| match event {
+/// Prints every event of the engine (status line rewritten in place every second). `port`: for
+/// the `adb reverse` message.
+pub fn events(port: u16) -> Events {
+    Arc::new(move |event| match event {
+        Event::VirtualCamera { path } => println!("Virtual camera: {}", path.display()),
+        Event::Usb(Ok(())) => {
+            println!("USB: adb reverse tcp:{port} OK — use 127.0.0.1 in the app")
+        }
+        Event::Usb(Err(e)) => eprintln!("warning: {e} — USB won't work, Wi-Fi still will"),
+        Event::Wifi(info) => println!("{}", wifi_line(&info)),
+        Event::AnnounceFailed(e) => eprintln!(
+            "warning: cannot announce this computer on the network (mDNS: {e}): \
+             phones will use the address they know"
+        ),
+        Event::PhoneConnected { peer, via } => match via {
+            Via::Usb => println!("Phone connected over USB ({peer})"),
+            Via::Wifi { tls } => {
+                println!("Phone connected over Wi-Fi ({peer}), encrypted ({tls})")
+            }
+        },
+        Event::PhoneRefused { peer, reason } => match reason {
+            Refusal::WifiOff => eprintln!(
+                "Refused a connection from {peer}: start with --wifi to accept paired phones"
+            ),
+            Refusal::Tls(e) => eprintln!("Refused a connection from {peer}: {e}"),
+        },
+        Event::AcceptFailed(e) => eprintln!("accept failed: {e}"),
+        Event::Paired { name } => {
+            println!("Paired with {name}: it can now connect over Wi-Fi with `oculibre --wifi`")
+        }
+        Event::SessionEnded(end) => match end {
+            Ok(End::Bye { reason, message }) => println!(
+                "\nPhone stopped ({reason}{}) — waiting for it…",
+                message.map(|m| format!(": {m}")).unwrap_or_default()
+            ),
+            Ok(End::Closed | End::Finished) => println!("\nPhone disconnected — waiting for it…"),
+            Err(e) => eprintln!("\nConnection ended: {e} — waiting for the phone…"),
+        },
+        Event::VirtualCameraSize {
+            wanted: (w, h),
+            size: (cw, ch),
+        } => {
+            if (cw, ch) == (w, h) {
+                println!("Virtual camera set to {cw}x{ch}");
+            } else {
+                println!(
+                    "Virtual camera is locked at {cw}x{ch} by an app that has it open \
+                     (OBS, ffplay, a browser tab…): fitting the picture into it.\n\
+                     Close those apps, then Stop/Start on the phone, to get {w}x{h}."
+                );
+            }
+        }
         Event::Phone(hello) => println!("{}", phone_line(&hello)),
         Event::Stream(config) => println!("\n{}", stream_line(&config)),
         Event::StreamPaused { reason } => println!("\nStream paused ({reason})"),
@@ -71,6 +122,26 @@ pub fn bench_progress(progress: Progress<'_>) {
         Progress::Failed(e) => println!("failed: {e}"),
         Progress::Stopped(e) => println!("stopped: {e}"),
     }
+}
+
+/// `Wi-Fi: encrypted, paired phones only (2 paired) · this computer: 192.168.1.50 · key 46B5 EE53 · …`
+fn wifi_line(info: &WifiInfo) -> String {
+    let list: Vec<String> = info.addresses.iter().map(|a| a.to_string()).collect();
+    format!(
+        "Wi-Fi: encrypted, paired phones only ({} paired) · this computer: {} · key {}{}",
+        info.paired,
+        if list.is_empty() {
+            "no network address".into()
+        } else {
+            list.join(", ")
+        },
+        info.key,
+        if info.announced {
+            " · announced (mDNS)"
+        } else {
+            ""
+        }
+    )
 }
 
 /// `Phone: Redmi Note 9 Pro (oculibre-android 0.3.0, android 12)`
