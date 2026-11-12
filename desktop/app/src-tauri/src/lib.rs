@@ -14,6 +14,7 @@ use oculibre_core::pairing::{self, Pairings};
 use oculibre_core::protocol::{Capabilities, SetMode};
 use oculibre_core::session::{ModeError, Remote, View};
 use oculibre_core::{Event, Events};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 /// What the app keeps between two commands: the receiver, while it runs. Tauri gives every
@@ -100,6 +101,37 @@ fn paired_phones() -> Vec<pairing::Phone> {
     Pairings::load(host::config_dir().join("paired-phones.json")).phones()
 }
 
+/// A one-time pairing offer, ready to show (see `Host::pairing_offer`).
+#[derive(Serialize)]
+struct PairingOffer {
+    /// `oculibre://pair?…`, what the QR code holds.
+    uri: String,
+    qr: pairing::QrGrid,
+    /// Valid this long, for one phone.
+    ttl_seconds: u64,
+    /// Also opened on the phone plugged in over USB.
+    sent_over_usb: bool,
+}
+
+/// Opens a pairing offer (Wi-Fi must be on): the window shows its QR code; the phone that scans
+/// it and confirms is paired (`Paired` event).
+#[tauri::command(async)]
+fn pairing_offer(receiver: State<Receiver>) -> Result<PairingOffer, String> {
+    let host = receiver
+        .host
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("the receiver is not running")?;
+    let offer = host.pairing_offer()?;
+    Ok(PairingOffer {
+        qr: pairing::qr_grid(&offer.uri)?,
+        uri: offer.uri,
+        ttl_seconds: offer.ttl.as_secs(),
+        sent_over_usb: offer.sent_over_usb,
+    })
+}
+
 /// Rotation and mirror, for the phone being served and the next ones.
 #[tauri::command]
 fn set_view(receiver: State<Receiver>, view: View) -> Result<(), String> {
@@ -122,7 +154,8 @@ pub fn run() {
             capabilities,
             set_mode,
             finish,
-            paired_phones
+            paired_phones,
+            pairing_offer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

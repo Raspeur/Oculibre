@@ -4,7 +4,7 @@ import logo from "../../../../oculibre_logo.svg";
 import { phoneName } from "../engine";
 import type { EngineState } from "../useEngine";
 
-export function Sidebar({ engine }: { engine: EngineState }) {
+export function Sidebar({ engine, onAddPhone }: { engine: EngineState; onAddPhone: () => void }) {
   const { phone, via, stream, paused } = engine;
   // Paired phones other than the one being served are offline (or not started).
   const others = engine.paired.filter((p) => p.id !== phone?.id);
@@ -53,8 +53,13 @@ export function Sidebar({ engine }: { engine: EngineState }) {
           </p>
         )}
 
-        {/* The pairing screen comes next (#15). */}
-        <button type="button" className="oc-nav-add" disabled title="Bientôt">
+        <button
+          type="button"
+          className="oc-nav-add"
+          disabled={!engine.running}
+          title={engine.running ? undefined : "Oculibre n'attend pas encore les téléphones"}
+          onClick={onAddPhone}
+        >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FE633C" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="M12 5v14M5 12h14" />
           </svg>

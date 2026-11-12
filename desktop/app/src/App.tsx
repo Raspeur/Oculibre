@@ -1,6 +1,8 @@
 // The main window (mockup design/mockups/Main2): phones on the left, the phone being served in
 // the middle, its settings on the right.
 
+import { useState } from "react";
+import { Pairing } from "./components/Pairing";
 import { Panel } from "./components/Panel";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
@@ -10,10 +12,15 @@ import { useEngine } from "./useEngine";
 function App() {
   // Wi-Fi on, as in the mockup's settings (paired phones only, encrypted). A setting later.
   const engine = useEngine(true);
+  // Which screen is shown. Two for now: no router library needed.
+  const [screen, setScreen] = useState<"main" | "pairing">("main");
 
+  if (screen === "pairing") {
+    return <Pairing computerKey={engine.key} onDone={() => setScreen("main")} />;
+  }
   return (
     <div className="oc-app oc-app--sidebar">
-      <Sidebar engine={engine} />
+      <Sidebar engine={engine} onAddPhone={() => setScreen("pairing")} />
       <main className="oc-main">
         <div className="oc-stack" style={{ flex: "999 1 520px", minWidth: 0 }}>
           {!inApp && (

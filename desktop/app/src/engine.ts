@@ -207,6 +207,21 @@ export function pairedPhones(): Promise<PairedPhone[]> {
   return inApp ? invoke<PairedPhone[]>("paired_phones") : Promise.resolve([]);
 }
 
+/** A one-time pairing offer: show `qr`; valid `ttl_seconds`, for one phone. */
+export interface PairingOffer {
+  uri: string;
+  /** `width` × `width` modules, row after row, true = dark (no quiet zone). */
+  qr: { width: number; dark: boolean[] };
+  ttl_seconds: number;
+  /** Also opened on the phone plugged in over USB. */
+  sent_over_usb: boolean;
+}
+
+/** Opens a pairing offer (needs Wi-Fi on); a `Paired` event follows when a phone takes it. */
+export function pairingOffer(): Promise<PairingOffer> {
+  return invoke<PairingOffer>("pairing_offer");
+}
+
 /** A phone's name for people: its own name, else its model. */
 export function phoneName(hello: Hello): string {
   return hello.name || hello.device?.model || "Phone";

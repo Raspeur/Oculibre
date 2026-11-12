@@ -179,6 +179,26 @@ fn percent(s: &str) -> String {
         .collect()
 }
 
+/// The QR code of `text` as a grid, for a front-end that draws it itself (the desktop app):
+/// `width` modules per row, row after row, `true` for dark. No quiet zone: add 4 modules around.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct QrGrid {
+    pub width: usize,
+    pub dark: Vec<bool>,
+}
+
+pub fn qr_grid(text: &str) -> Result<QrGrid, String> {
+    let code = qrcode::QrCode::new(text.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(QrGrid {
+        width: code.width(),
+        dark: code
+            .to_colors()
+            .into_iter()
+            .map(|c| c == qrcode::Color::Dark)
+            .collect(),
+    })
+}
+
 /// The QR code of `text` for a terminal with a dark background (Unicode half blocks).
 pub fn qr(text: &str) -> Result<String, String> {
     use qrcode::render::unicode::Dense1x2;
@@ -233,6 +253,15 @@ pub fn lan_addresses() -> Vec<IpAddr> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn qr_grid_is_square_with_finder_patterns() {
+        let g = super::qr_grid("oculibre://pair?v=1&k=abc").unwrap();
+        assert_eq!(g.dark.len(), g.width * g.width);
+        // Top-left finder pattern: a dark 7×7 ring.
+        assert!((0..7).all(|i| g.dark[i] && g.dark[i * g.width]));
+        assert!(!g.dark[g.width + 1]);
+    }
+
     use super::*;
 
     fn hello(name: &str, token: Option<&str>) -> Hello {
