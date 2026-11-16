@@ -115,8 +115,22 @@ class StreamSession(
 ) {
     interface Listener {
         fun onStatus(session: StreamSession, text: String)
-        fun onStopped(session: StreamSession, error: String?)
+
+        /** Pictures are going out, in this size and frame rate (again after a mode change). */
+        fun onLive(session: StreamSession, width: Int, height: Int, fps: Int) {}
+
+        /**
+         * The session is over. [retry]: the computer was lost, not refused (connection refused or
+         * cut, no answer, network too slow): a new session may find it again. Not after a stop
+         * asked on either side, a refusal (pairing, wrong computer), a camera or protocol error.
+         * [problem]: what to tell people (null after a stop on purpose, and when [retry]); [error]
+         * stays the technical detail.
+         */
+        fun onStopped(session: StreamSession, error: String?, retry: Boolean, problem: Problem?)
     }
+
+    /** A failure that trying again would not fix (pairing, wrong computer, refused by it). */
+    private class Final(message: String) : IOException(message)
 
     /**
      * An encoded message ready to send; [ptsUs] = capture time of a frame, -1 otherwise;
@@ -151,6 +165,10 @@ class StreamSession(
 
     private val running = AtomicBoolean(false)
     private val stopped = AtomicBoolean(false)
+    /** The first known cause of a failure (the later errors are its consequences). */
+    @Volatile private var problem: Problem? = null
+    /** The computer ended the session on purpose (BYE user_stop, shutdown): not a problem. */
+    @Volatile private var endedByComputer = false
 
     @Volatile private var socket: Socket? = null
     @Volatile private var writer: Protocol.MessageWriter? = null
@@ -274,11 +292,17 @@ class StreamSession(
                 }
                 startStats()
             } catch (e: PipelineException) {
-                if (running.get()) fail(e.message ?: "Camera error", "camera_lost")
+                if (running.get()) fail(e.message ?: "Camera error", "camera_lost") // CAMERA_ERROR unless known
             } catch (e: Protocol.ProtocolException) {
+                if (e.kind == "incompatible_major") cause(Problem.UPDATE_NEEDED)
                 fail(e.message ?: e.kind, if (e.kind == "incompatible_major") "version" else "protocol_error")
             } catch (e: SocketTimeoutException) {
-                fail("The computer did not answer (is it running Oculibre 0.1 or newer?)", "protocol_error")
+                fail("The computer did not answer", "protocol_error", retry = true)
+            } catch (e: Final) {
+                fail(e)
+            } catch (e: IOException) {
+                // Refused, unreachable, cut during the handshake: the computer may come back.
+                if (running.get()) fail(e.message ?: e.javaClass.simpleName, retry = true)
             } catch (e: Exception) {
                 fail(e)
             }
@@ -289,9 +313,23 @@ class StreamSession(
 
     private fun fail(e: Throwable) = fail(e.message ?: e.javaClass.simpleName)
 
-    private fun fail(message: String, byeReason: String = "other") = shutdown(message, byeReason)
+    private fun fail(message: String, byeReason: String = "other", retry: Boolean = false) {
+        if (byeReason == "camera_lost") cause(Problem.CAMERA_ERROR)
+        shutdown(message, byeReason, retry)
+    }
 
-    private fun shutdown(error: String?, byeReason: String?) {
+    /** Remembers why it fails, unless an earlier cause is known. */
+    private fun cause(p: Problem) {
+        if (problem == null) problem = p
+    }
+
+    /** A BYE from the computer: the problem it means, or none when it stops on purpose. */
+    private fun byeCause(m: Message.Bye) {
+        val p = Problem.fromBye(m.reason)
+        if (p == null) endedByComputer = true else cause(p)
+    }
+
+    private fun shutdown(error: String?, byeReason: String?, retry: Boolean = false) {
         if (!stopped.compareAndSet(false, true)) return
         running.set(false)
         thread(name = "oculibre-stop") {
@@ -317,7 +355,11 @@ class StreamSession(
             statsThread?.interrupt()
             control.shutdownNow()
             queue.clear()
-            listener.onStopped(this, error)
+            val told = when {
+                retry || error == null || endedByComputer -> null
+                else -> problem ?: Problem.UNEXPECTED
+            }
+            listener.onStopped(this, error, retry, told)
         }
     }
 
@@ -425,17 +467,19 @@ class StreamSession(
     /** Wi-Fi: TLS with the paired computer's pinned key (§13). USB (loopback) stays plaintext. */
     private fun secure(s: Socket): Socket {
         if (SecureChannel.isLoopback(target)) return s
-        val paired = PairingStore.get(appContext) ?: throw IOException(
-            "Wi-Fi needs pairing first: run `oculibre --pair` on the computer and scan its QR code " +
-                "with the phone's camera",
-        )
+        val paired = PairingStore.get(appContext)
+        if (paired == null) {
+            cause(Problem.NOT_RECOGNISED)
+            throw Final("Wi-Fi needs pairing first: show the QR code on the computer and scan it")
+        }
         status("Connected — encrypting…")
         s.soTimeout = HANDSHAKE_TIMEOUT_MS
         val tls = try {
             SecureChannel.connect(appContext, s, target, port, paired.fingerprint)
         } catch (e: javax.net.ssl.SSLException) {
             if (generateSequence<Throwable>(e) { it.cause }.any { it is SecureChannel.WrongComputer }) {
-                throw IOException(
+                cause(Problem.NOT_RECOGNISED)
+                throw Final(
                     "This computer is not the one paired with this phone (${paired.name}): " +
                         "pair again with `oculibre --pair`",
                 )
@@ -484,7 +528,8 @@ class StreamSession(
                 }
                 is Message.Bye -> {
                     if (m.reason == "unpaired" && pairingToken != null) PairingStore.clearToken(appContext)
-                    throw IOException(byeText(m))
+                    byeCause(m)
+                    throw Final(byeText(m))
                 }
                 else -> {} // nothing else is allowed before HELLO: ignore
             }
@@ -527,8 +572,7 @@ class StreamSession(
             "busy" -> "The computer is busy"
             "version" -> "Incompatible versions: update Oculibre"
             "protocol_error" -> "The computer rejected the stream (protocol error)"
-            "unpaired" -> "This phone is not paired with the computer: run `oculibre --pair` there " +
-                "and scan the QR code"
+            "unpaired" -> "This phone is not paired with the computer: show the QR code there and scan it"
             else -> "The computer closed the connection (${m.reason})"
         }
         return if (m.message.isNullOrEmpty()) why else "$why: ${m.message}"
@@ -547,7 +591,8 @@ class StreamSession(
                         is Message.Request -> handle(m)?.let { writer?.write(it) }
                         is Message.Event -> if (m.event == "stats") hostStats = m.data as? Map<*, *>
                         is Message.Bye -> {
-                            // The computer leaves on purpose: no BYE back.
+                            // The computer leaves: no BYE back.
+                            byeCause(m)
                             shutdown(byeText(m), null)
                             return@thread
                         }
@@ -557,14 +602,14 @@ class StreamSession(
             } catch (e: Protocol.ProtocolException) {
                 if (!running.get()) return@thread
                 when (e.kind) {
-                    "connection_closed" -> fail("The computer closed the connection", "other")
-                    "io" -> fail("Connection lost: ${e.message}", "other")
+                    "connection_closed" -> fail("The computer closed the connection", "other", retry = true)
+                    "io" -> fail("Connection lost: ${e.message}", "other", retry = true)
                     else -> fail("Invalid data from the computer: ${e.message}", "protocol_error")
                 }
             } catch (e: SocketTimeoutException) {
-                if (running.get()) fail("The computer stopped answering", "other")
+                if (running.get()) fail("The computer stopped answering", "other", retry = true)
             } catch (e: IOException) {
-                if (running.get()) fail("Connection lost: ${e.message}", "other")
+                if (running.get()) fail("Connection lost: ${e.message}", "other", retry = true)
             }
         }
     }
@@ -649,7 +694,7 @@ class StreamSession(
         pipeline?.close()
         val end = Protocol.encode(Message.StreamEnd(Protocol.STREAM_VIDEO, "mode_change"))
         if (!queue.offer(Packet(end), 1, TimeUnit.SECONDS)) {
-            fail("Network too slow: cannot even send the end of the stream")
+            fail("Network too slow: cannot even send the end of the stream", retry = true)
             return error(Protocol.ErrorCode.FAILED, "network too slow")
         }
         return try {
@@ -950,7 +995,7 @@ class StreamSession(
         val bytes = Protocol.encode(Message.StreamConfig(Protocol.STREAM_VIDEO, config))
         // Never dropped: wait for room (the frames behind it are useless without it).
         if (!queue.offer(Packet(bytes), 1, TimeUnit.SECONDS)) {
-            fail("Network too slow: cannot even send the stream configuration")
+            fail("Network too slow: cannot even send the stream configuration", retry = true)
         }
         waitingForKeyframe = false
     }
@@ -1013,7 +1058,7 @@ class StreamSession(
                     }
                 }
             } catch (e: IOException) {
-                if (running.get()) fail("Connection lost: ${e.message}")
+                if (running.get()) fail("Connection lost: ${e.message}", retry = true)
             } catch (e: InterruptedException) {
                 // shutting down
             }
@@ -1045,11 +1090,13 @@ class StreamSession(
 
                 override fun onDisconnected(device: CameraDevice) {
                     device.close()
+                    cause(Problem.CAMERA_BUSY) // a higher-priority app (a call…) took it
                     p.failed("Camera disconnected (used by another app?)", "camera_lost")
                 }
 
                 override fun onError(device: CameraDevice, error: Int) {
                     device.close()
+                    cause(Problem.fromCameraError(error))
                     p.failed("Camera error $error", "camera_lost")
                 }
 
@@ -1057,6 +1104,13 @@ class StreamSession(
             }, handler)
         } catch (e: Exception) {
             // CameraAccessException, IllegalArgumentException (unknown id), SecurityException…
+            cause(
+                when (e) {
+                    is SecurityException -> Problem.CAMERA_PERMISSION
+                    is CameraAccessException -> Problem.fromCameraAccess(e.reason)
+                    else -> Problem.CAMERA_ERROR
+                },
+            )
             p.failed("Cannot open camera ${p.cameraId}: ${e.message ?: e.javaClass.simpleName}")
         }
     }
@@ -1095,6 +1149,7 @@ class StreamSession(
                         session.setRepeatingRequest(request, cameraCallback, handler)
                         p.started.countDown()
                         status("Streaming ${cfg.width}x${cfg.height}…")
+                        listener.onLive(this@StreamSession, cfg.width, cfg.height, cfg.fps)
                     } catch (e: Exception) {
                         // CameraAccessException, IllegalStateException (closed meanwhile)…
                         p.failed("Camera request refused: ${e.message ?: e.javaClass.simpleName}")
@@ -1144,6 +1199,7 @@ class StreamSession(
                             )
                             p.started.countDown()
                             status("Streaming ${cfg.width}x${cfg.height} (high-speed ${cfg.highSpeedFps} → ${cfg.fps} fps)…")
+                            listener.onLive(this@StreamSession, cfg.width, cfg.height, cfg.fps)
                         } catch (e: Exception) {
                             p.failed("High-speed request refused: ${e.message ?: e.javaClass.simpleName}")
                         }

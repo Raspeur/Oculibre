@@ -8,15 +8,22 @@ import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
 import { Tour, tourSeen } from "./components/Tour";
-import { inApp, onNavigate } from "./engine";
+import { inApp, onNavigate, settings as loadSettings } from "./engine";
+import { setLanguage, t, useLang } from "./i18n";
 import { useEngine } from "./useEngine";
 
 function App() {
+  useLang();
   const engine = useEngine();
   // Which screen is shown: a few screens, no router library needed.
   const [screen, setScreen] = useState<"main" | "pairing" | "settings" | "about">("main");
   // The guided tour opens by itself the first time, then from the sidebar.
   const [touring, setTouring] = useState(() => inApp && !tourSeen());
+
+  // The language chosen in the settings ("" = the system's).
+  useEffect(() => {
+    loadSettings().then((s) => setLanguage(s.language));
+  }, []);
 
   // "Add a phone…" in the tray menu.
   useEffect(() => {
@@ -52,13 +59,12 @@ function App() {
       <main className="oc-main">
         <div className="oc-stack" style={{ flex: "999 1 520px", minWidth: 0 }}>
           {!inApp && (
-            <Notice level="info" title="Aperçu dans un navigateur">
-              Seule la mise en page s'affiche ici : pour piloter le téléphone, ouvrez la fenêtre
-              d'Oculibre (npm run tauri dev).
+            <Notice level="info" title={t("browser_title")}>
+              {t("browser_text")}
             </Notice>
           )}
           {engine.startError && (
-            <Notice level="error" title="Oculibre ne peut pas attendre les téléphones" code={startCode(engine.startError)}>
+            <Notice level="error" title={t("start_error_title")} code={startCode(engine.startError)}>
               {engine.startError}
             </Notice>
           )}
@@ -79,7 +85,7 @@ function Notice(props: { level: "info" | "error"; title: string; code?: string; 
       <div className="oc-alert__body">
         <span className="oc-alert__title">{props.title}</span>
         <span className="oc-alert__text">{props.children}</span>
-        {props.code && <span className="oc-alert__code">Code {props.code}</span>}
+        {props.code && <span className="oc-alert__code">{t("code", { code: props.code })}</span>}
       </div>
     </div>
   );

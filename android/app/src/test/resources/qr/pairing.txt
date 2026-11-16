@@ -1,0 +1,1 @@
+oculibre://pair?v=1&n=test-computer&k=46b5ee534ffeee7946b5ee534ffeee7946b5ee534ffeee7946b5ee534ffeee79&t=0123456789abcdef0123456789abcdef&a=192.168.1.50,100.112.121.63&p=47100

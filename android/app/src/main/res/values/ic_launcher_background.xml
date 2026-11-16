@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The light tile the navy logo always sits on (design/mockups/ui.css, oc-logo-tile). -->
+    <color name="ic_launcher_background">#F3F5F9</color>
+</resources>

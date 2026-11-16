@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The colour tokens of design/mockups/ui.css (oc-*), shared with the desktop app. -->
+<resources>
+    <color name="oc_bg">#0B1220</color>
+    <color name="oc_surface_1">#0E1729</color>
+    <color name="oc_surface_2">#111A2C</color>
+    <color name="oc_surface_3">#131E33</color>
+    <color name="oc_surface_4">#1A2741</color>
+    <color name="oc_logo_tile">#F3F5F9</color>
+    <color name="oc_border">#22314F</color>
+    <color name="oc_border_strong">#2B3D61</color>
+    <color name="oc_border_control">#33476E</color>
+    <color name="oc_text">#E9EEF6</color>
+    <color name="oc_text_2">#C9D3E3</color>
+    <color name="oc_text_muted">#A3B1C7</color>
+    <color name="oc_text_faint">#7F8EA8</color>
+    <color name="oc_accent">#FE633C</color>
+    <color name="oc_accent_text">#FE8A6A</color>
+    <color name="oc_on_accent">#0B1220</color>
+    <color name="oc_accent_soft">#1FFE633C</color>
+    <color name="oc_accent_line">#73FE633C</color>
+    <color name="oc_live">#3DDC97</color>
+    <color name="oc_live_soft">#1F3DDC97</color>
+    <color name="oc_off">#5D6F90</color>
+    <color name="oc_danger">#FF6B6B</color>
+    <color name="oc_danger_soft">#1FFF6B6B</color>
+    <color name="oc_danger_line">#73FF6B6B</color>
+    <color name="oc_info">#7FB2FF</color>
+    <color name="oc_info_soft">#1A7FB2FF</color>
+    <color name="oc_info_line">#597FB2FF</color>
+    <!-- Alert icon squares (.oc-alert__icon). -->
+    <color name="oc_accent_icon">#29FE633C</color>
+    <color name="oc_danger_icon">#2EFF6B6B</color>
+    <color name="oc_info_icon">#297FB2FF</color>
+    <!-- Progress segments not reached yet. -->
+    <color name="oc_track">#24344F</color>
+</resources>

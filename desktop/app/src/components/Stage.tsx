@@ -4,24 +4,23 @@
 import { useEffect, useRef, useState } from "react";
 import { type PreviewMode, onPreview, phoneName, setPreviewMode } from "../engine";
 import type { EngineState } from "../useEngine";
+import { t, useLang } from "../i18n";
 
 export function Stage({ engine }: { engine: EngineState }) {
+  useLang();
   const { phone, via, stream, paused, status } = engine;
   const [mode, setMode] = usePreviewMode();
   const preview = usePreview(phone !== null && mode !== "Off");
 
   if (!phone) {
     return (
-      <section aria-label="En attente" className="oc-stack" style={stageStyle} data-tour="stage">
+      <section aria-label={t("waiting")} className="oc-stack" style={stageStyle} data-tour="stage">
         <div className="oc-preview">
           <div className="oc-stack" style={{ alignItems: "center", gap: 14, maxWidth: 440, textAlign: "center", padding: 24 }}>
             <CameraIcon />
-            <h1 className="oc-title oc-title--md">En attente d'un téléphone</h1>
-            <p className="oc-text oc-muted">
-              Ouvrez Oculibre sur le téléphone et appuyez sur « Démarrer ». Par câble USB, il suffit
-              de le brancher ; en Wi-Fi, il doit être relié à cet ordinateur et sur le même réseau.
-            </p>
-            {engine.key && <span className="oc-small">Code de cet ordinateur : {engine.key}</span>}
+            <h1 className="oc-title oc-title--md">{t("waiting_title")}</h1>
+            <p className="oc-text oc-muted">{t("waiting_text")}</p>
+            {engine.key && <span className="oc-small">{t("computer_code", { key: engine.key })}</span>}
           </div>
         </div>
       </section>
@@ -30,15 +29,15 @@ export function Stage({ engine }: { engine: EngineState }) {
 
   const live = stream !== null && !paused;
   return (
-    <section aria-label="Aperçu" className="oc-stack" style={stageStyle} data-tour="stage">
+    <section aria-label={t("preview")} className="oc-stack" style={stageStyle} data-tour="stage">
       <header className="oc-cluster">
         <h1 className="oc-title oc-title--md">{phoneName(phone)}</h1>
         <span className={live ? "oc-pill" : "oc-pill oc-pill--paused"}>
           <span className={live ? "oc-dot" : "oc-dot oc-dot--paused"} aria-hidden="true" />
-          {live ? "En direct" : paused ? "Changement de mode…" : "Démarrage…"}
+          {live ? t("live") : paused ? t("changing_mode") : t("starting")}
         </span>
         <span className="oc-muted" style={{ fontSize: "var(--oc-text-md)" }}>
-          {via?.kind === "Wifi" ? "Wi-Fi chiffré" : "Câble USB"}
+          {via?.kind === "Wifi" ? t("wifi_encrypted") : t("usb_cable")}
         </span>
       </header>
 
@@ -46,28 +45,28 @@ export function Stage({ engine }: { engine: EngineState }) {
         {mode === "Off" ? (
           <div className="oc-stack" style={{ alignItems: "center", gap: 12, color: "var(--oc-text-faint)", textAlign: "center", padding: 24 }}>
             <CameraIcon />
-            <span className="oc-text">Aperçu arrêté</span>
-            <span className="oc-small">Les applications reçoivent l'image normalement.</span>
+            <span className="oc-text">{t("preview_off")}</span>
+            <span className="oc-small">{t("preview_off_text")}</span>
           </div>
         ) : preview ? (
           <img
             src={preview}
-            alt="Aperçu de ce que reçoivent les applications"
+            alt={t("preview_alt")}
             style={{ width: "100%", height: "100%", objectFit: "contain", opacity: live ? 1 : 0.4 }}
           />
         ) : (
           <div className="oc-stack" style={{ alignItems: "center", gap: 12, color: "var(--oc-text-faint)", textAlign: "center", padding: 24 }}>
             <CameraIcon />
-            <span className="oc-text">L'image arrive…</span>
+            <span className="oc-text">{t("picture_coming")}</span>
           </div>
         )}
         <div
           className="oc-segmented oc-segmented--sm"
           role="group"
-          aria-label="Aperçu"
+          aria-label={t("preview")}
           style={{ position: "absolute", top: 12, right: 12 }}
         >
-          {previewModes.map(([value, label, hint]) => (
+          {previewModes().map(([value, label, hint]) => (
             <button
               key={value}
               type="button"
@@ -88,19 +87,20 @@ export function Stage({ engine }: { engine: EngineState }) {
       </div>
 
       <div className="oc-stats">
-        <Stat label="Latence" value={status?.latency != null ? `${status.latency.toFixed(0)} ms` : "—"} />
-        <Stat label="Images/s" value={status ? status.shown_fps.toFixed(0) : "—"} />
-        <Stat label="Débit" value={status ? `${status.mbits.toFixed(1)} Mbit/s` : "—"} />
-        <Stat label="Connexion" value={via?.kind === "Wifi" ? "Wi-Fi" : "USB"} />
+        <Stat label={t("latency")} value={status?.latency != null ? `${status.latency.toFixed(0)} ms` : "—"} />
+        <Stat label={t("frames_per_second")} value={status ? status.shown_fps.toFixed(0) : "—"} />
+        <Stat label={t("bitrate")} value={status ? `${status.mbits.toFixed(1)} Mbit/s` : "—"} />
+        <Stat label={t("connection")} value={via?.kind === "Wifi" ? "Wi-Fi" : "USB"} />
       </div>
     </section>
   );
 }
 
-const previewModes: [PreviewMode, string, string][] = [
-  ["Off", "Arrêté", "Aucun calcul pour l'aperçu"],
-  ["Light", "Léger", "Environ 10 images/s : ne ralentit jamais la caméra"],
-  ["Full", "Fluide", "Toutes les images : quand rien d'autre ne demande l'ordinateur"],
+/** In the current language: a function, not a constant made once at load. */
+const previewModes = (): [PreviewMode, string, string][] => [
+  ["Off", t("preview_mode_off"), t("preview_mode_off_hint")],
+  ["Light", t("preview_mode_light"), t("preview_mode_light_hint")],
+  ["Full", t("preview_mode_full"), t("preview_mode_full_hint")],
 ];
 
 /** The preview mode, remembered by the window (localStorage) and given to the engine. */
@@ -167,10 +167,10 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** "1080p · 60 i/s": the short side, like everyone says it; 2160 lines is called 4K. */
+/** "1080p · 60 fps": the short side, like everyone says it; 2160 lines is called 4K. */
 function qualityLabel(width: number, height: number, fps: number): string {
   const lines = Math.min(width, height);
-  return `${lines >= 2160 ? "4K" : `${lines}p`} · ${fps} i/s`;
+  return t("quality", { size: lines >= 2160 ? "4K" : `${lines}p`, fps });
 }
 
 function CameraIcon() {

@@ -7,6 +7,7 @@
 
 import { useEffect, useLayoutEffect, useState } from "react";
 import logo from "../../../../oculibre_logo.svg";
+import { t, useLang } from "../i18n";
 
 interface Step {
   target: string;
@@ -16,36 +17,37 @@ interface Step {
   text: string;
 }
 
-const steps: Step[] = [
+/** In the current language: a function, not a constant made once at load. */
+const steps = (): Step[] => [
   {
     target: "add",
     side: "right",
-    title: "Reliez votre téléphone",
-    text: "Par câble USB, rien à faire : branchez-le et appuyez sur « Démarrer » dans l'app du téléphone. Pour le Wi-Fi, reliez-le une seule fois ici, avec un QR code.",
+    title: t("tour1_title"),
+    text: t("tour1_text"),
   },
   {
     target: "phones",
     side: "right",
-    title: "Vos téléphones",
-    text: "Point vert : en direct. Cercle gris : arrêté ou trop loin. Oculibre se souvient des réglages de chacun.",
+    title: t("tour2_title"),
+    text: t("tour2_text"),
   },
   {
     target: "stage",
     side: "left",
-    title: "Démarrer depuis le téléphone",
-    text: "Le téléphone filme quand vous appuyez sur « Démarrer » dans son app. Ici, vous voyez ce que reçoivent les applications.",
+    title: t("tour3_title"),
+    text: t("tour3_text"),
   },
   {
     target: "source",
     side: "left",
-    title: "Caméra, qualité et image",
-    text: "Arrière ou avant, résolution, images par seconde, rotation, miroir : tout se règle ici, sans toucher au téléphone. Oculibre s'en souvient pour ce téléphone.",
+    title: t("tour4_title"),
+    text: t("tour4_text"),
   },
   {
     target: "output",
     side: "left",
-    title: "Dans vos applications",
-    text: "Dans Zoom, Teams, Discord ou OBS, choisissez la caméra « Oculibre ». Fermer cette fenêtre la garde disponible.",
+    title: t("tour5_title"),
+    text: t("tour5_text"),
   },
 ];
 
@@ -73,19 +75,24 @@ function markSeen() {
 
 /** `step`: 0 welcome, 1–5 the parts, 6 the end. */
 export function Tour(props: { onClose: () => void; onAddPhone: () => void }) {
+  useLang();
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
-  const current = step >= 1 && step <= steps.length ? steps[step - 1] : null;
+  const all = steps();
+  const current = step >= 1 && step <= all.length ? all[step - 1] : null;
 
   // Find the part to light up, and follow it when the window changes size.
+  // Keyed on the target's name: `steps()` makes new objects at each drawing, `current` itself
+  // would run this again every time (and setRect would draw again: an endless loop).
+  const target = current?.target;
   useLayoutEffect(() => {
-    if (!current) {
+    if (!target) {
       setRect(null);
       return;
     }
     const measure = () => {
       // Every part with this name, joined into one box.
-      const boxes = [...document.querySelectorAll(`[data-tour="${current.target}"]`)].map((e) =>
+      const boxes = [...document.querySelectorAll(`[data-tour="${target}"]`)].map((e) =>
         e.getBoundingClientRect(),
       );
       if (boxes.length === 0) {
@@ -101,7 +108,7 @@ export function Tour(props: { onClose: () => void; onAddPhone: () => void }) {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [current]);
+  }, [target]);
 
   // Escape closes the tour.
   useEffect(() => {
@@ -115,8 +122,8 @@ export function Tour(props: { onClose: () => void; onAddPhone: () => void }) {
     props.onClose();
   }
 
-  if (step === 0 || step > steps.length) {
-    const end = step > steps.length;
+  if (step === 0 || step > all.length) {
+    const end = step > all.length;
     return (
       <div className="oc-scrim">
         <div className="oc-dialog" role="dialog" aria-labelledby="tour-title" style={{ alignItems: "center", textAlign: "center" }}>
@@ -131,23 +138,21 @@ export function Tour(props: { onClose: () => void; onAddPhone: () => void }) {
               <img src={logo} alt="" />
             </div>
           )}
-          <h2 id="tour-title" className="oc-title oc-title--md">{end ? "C'est tout !" : "Bienvenue dans Oculibre"}</h2>
+          <h2 id="tour-title" className="oc-title oc-title--md">{end ? t("tour_end_title") : t("tour_welcome_title")}</h2>
           <p className="oc-text oc-muted">
-            {end
-              ? "Première chose à faire : brancher votre téléphone, ou le relier en Wi-Fi. La visite reste disponible dans la barre de gauche."
-              : "Votre téléphone devient la webcam de cet ordinateur. Une visite d'une minute pour savoir où cliquer ?"}
+            {end ? t("tour_end_text") : t("tour_welcome_text")}
           </p>
           <div className="oc-cluster" style={{ justifyContent: "center", paddingTop: 6 }}>
             <button type="button" className="oc-btn oc-btn--ghost" onClick={close}>
-              {end ? "Fermer" : "Plus tard"}
+              {end ? t("close") : t("later")}
             </button>
             {end ? (
               <button type="button" className="oc-btn oc-btn--primary" onClick={() => { close(); props.onAddPhone(); }}>
-                Ajouter un téléphone
+                {t("add_phone")}
               </button>
             ) : (
               <button type="button" className="oc-btn oc-btn--primary" autoFocus onClick={() => setStep(1)}>
-                Commencer la visite
+                {t("tour_start")}
               </button>
             )}
           </div>
@@ -193,24 +198,24 @@ export function Tour(props: { onClose: () => void; onAddPhone: () => void }) {
       <div
         className={`oc-coach oc-coach--${current!.side}`}
         role="dialog"
-        aria-label="Visite guidée"
+        aria-label={t("tour")}
         style={{ position: "fixed", left, top, right: "auto", bottom: "auto", width: BUBBLE_WIDTH }}
       >
-        <span className="oc-coach__step">Étape {step} sur {steps.length}</span>
+        <span className="oc-coach__step">{t("tour_step", { n: step, total: all.length })}</span>
         <h2 className="oc-coach__title">{current!.title}</h2>
         <p className="oc-coach__text">{current!.text}</p>
         <div className="oc-coach__actions">
           <button type="button" className="oc-btn oc-btn--ghost" style={quiet} onClick={close}>
-            Passer la visite
+            {t("tour_skip")}
           </button>
           <span className="oc-cluster" style={{ gap: 4, flexWrap: "nowrap" }}>
             {step > 1 && (
               <button type="button" className="oc-btn oc-btn--ghost" style={quiet} onClick={() => setStep(step - 1)}>
-                Retour
+                {t("back")}
               </button>
             )}
             <button type="button" className="oc-btn oc-btn--primary" style={{ whiteSpace: "nowrap" }} autoFocus onClick={() => setStep(step + 1)}>
-              {step === steps.length ? "Terminer" : "Suivant"}
+              {step === all.length ? t("done") : t("next")}
             </button>
           </span>
         </div>

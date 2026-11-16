@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import java.util.concurrent.CopyOnWriteArraySet
 
 /**
@@ -22,25 +23,58 @@ import java.util.concurrent.CopyOnWriteArraySet
  *
  * - foreground service of type `camera` (required to keep the camera in the background);
  * - partial wake lock (CPU keeps encoding with the screen off) and Wi-Fi lock;
- * - ongoing notification with a Stop action.
+ * - ongoing notification with a Stop action;
+ * - when the computer is lost (not when it refuses or stops the stream), a new session is tried
+ *   after 1, 2, 4… up to 10 s, for at most [GIVE_UP_MS]; Stop cancels it.
  *
  * The UI talks to it through [start], [stop] and [observe] (same process, no binding needed).
  */
 class StreamService : Service() {
 
-    /** What the UI shows. */
-    data class Snapshot(val running: Boolean, val status: String?)
+    /** Where the service is, for the screen. */
+    enum class Phase { IDLE, CONNECTING, LIVE, SEARCHING }
+
+    /**
+     * What the UI shows: [status] is a technical line (English, for the advanced screen), [phase]
+     * and [problem] what to say to people, [live] the quality being streamed ("1080p · 60"),
+     * [retryInS] when searching, [detail] the technical cause of [problem].
+     */
+    data class Snapshot(
+        val running: Boolean,
+        val status: String?,
+        val phase: Phase = if (running) Phase.CONNECTING else Phase.IDLE,
+        val live: String? = null,
+        val problem: Problem? = null,
+        val detail: String? = null,
+        val retryInS: Int? = null,
+    )
 
     private class Request(val host: String, val port: Int, val config: StreamConfig)
 
     private var session: StreamSession? = null
+    /** What the user started: kept to try again when the computer is lost. */
+    private var request: Request? = null
+    /** Failed attempts in a row, and since when the computer is missing (elapsedRealtime ms). */
+    private var attempts = 0
+    private var lostSince = 0L
+    /**
+     * The current session went live: its loss is a fresh start (no backoff). Not its duration: a
+     * failed attempt over Wi-Fi (cable, direct, mDNS, VPN tries) can last more than 10 s.
+     */
+    private var wentLive = false
+    private val retry = Runnable { request?.let { if (session == null) startSession(it) } }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // The notification in the app's language (settings), like the screens.
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            main.removeCallbacks(retry)
+            request = null
             val current = session
             if (current != null) current.stop() else shutdown(null)
             return START_NOT_STICKY
@@ -57,35 +91,84 @@ class StreamService : Service() {
             startInForeground(request)
         } catch (e: Exception) {
             // e.g. Android 12+ refusing a foreground service started from the background.
-            publish(Snapshot(false, "Cannot start the streaming service: ${e.message}"))
+            publish(Snapshot(false, "Cannot start the streaming service: ${e.message}",
+                problem = Problem.UNEXPECTED, detail = e.message ?: e.javaClass.simpleName))
             stopSelf()
             return START_NOT_STICKY
         }
         acquireLocks()
 
-        val newSession = StreamSession(applicationContext, request.host, request.port, request.config, sessionListener)
-        session = newSession
+        this.request = request
+        attempts = 0
+        lostSince = 0L
         publish(Snapshot(true, "Connecting to ${request.host}:${request.port}…"))
-        newSession.start()
+        startSession(request)
         // Not sticky: if Android kills us, don't restart a stream nobody asked for.
         return START_NOT_STICKY
     }
 
+    private fun startSession(request: Request) {
+        val newSession = StreamSession(applicationContext, request.host, request.port, request.config, sessionListener)
+        session = newSession
+        wentLive = false
+        newSession.start()
+    }
+
+    /** The computer was lost: try again later, keeping the notification and the locks. */
+    private fun scheduleRetry(error: String?) {
+        val now = SystemClock.elapsedRealtime()
+        if (wentLive || lostSince == 0L) {
+            // It had been streaming (or this is the first loss): start counting again.
+            attempts = 0
+            lostSince = now
+        }
+        if (now - lostSince >= GIVE_UP_MS) {
+            request = null
+            shutdown("Stopped: the computer could not be reached for ${GIVE_UP_MS / 60_000} minutes",
+                Problem.NOT_FOUND, error)
+            return
+        }
+        val delay = minOf(1000L shl attempts.coerceAtMost(4), MAX_DELAY_MS)
+        attempts++
+        val why = error?.let { " ($it)" } ?: ""
+        // The first minute: "looking for it"; after that, "cannot be found" (it keeps looking).
+        val problem = if (now - lostSince < Problem.SEARCHING_MS) Problem.SEARCHING else Problem.NOT_FOUND
+        publish(Snapshot(true, "Looking for the computer — trying again in ${delay / 1000} s$why", Phase.SEARCHING,
+            problem = problem, detail = error, retryInS = (delay / 1000).toInt()))
+        main.postDelayed(retry, delay)
+    }
+
     private val sessionListener = object : StreamSession.Listener {
         override fun onStatus(session: StreamSession, text: String) {
-            main.post { if (this@StreamService.session === session) publish(Snapshot(true, text)) }
+            main.post { if (this@StreamService.session === session) publish(current.copy(running = true, status = text)) }
         }
 
-        override fun onStopped(session: StreamSession, error: String?) {
+        override fun onLive(session: StreamSession, width: Int, height: Int, fps: Int) {
+            main.post {
+                if (this@StreamService.session !== session) return@post
+                wentLive = true
+                val lines = minOf(width, height)
+                val size = if (lines >= 2160) "4K" else "${lines}p"
+                publish(current.copy(running = true, phase = Phase.LIVE, live = "$size · $fps", problem = null, detail = null, retryInS = null))
+            }
+        }
+
+        override fun onStopped(session: StreamSession, error: String?, retry: Boolean, problem: Problem?) {
             main.post {
                 if (this@StreamService.session !== session) return@post
                 this@StreamService.session = null
-                shutdown(if (error == null) "Stopped" else "Stopped: $error")
+                if (retry && request != null) {
+                    scheduleRetry(error)
+                } else {
+                    request = null
+                    shutdown(if (error == null) "Stopped" else "Stopped: $error", problem, error)
+                }
             }
         }
     }
 
-    private fun shutdown(status: String?) {
+    private fun shutdown(status: String?, problem: Problem? = null, detail: String? = null) {
+        main.removeCallbacks(retry)
         releaseLocks()
         if (Build.VERSION.SDK_INT >= 24) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -93,11 +176,13 @@ class StreamService : Service() {
             @Suppress("DEPRECATION")
             stopForeground(true)
         }
-        publish(Snapshot(false, status ?: current.status))
+        publish(Snapshot(false, status ?: current.status, problem = problem, detail = detail))
         stopSelf()
     }
 
     override fun onDestroy() {
+        main.removeCallbacks(retry)
+        request = null
         session?.stop()
         session = null
         releaseLocks()
@@ -111,8 +196,8 @@ class StreamService : Service() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Streaming", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Shown while the phone is used as a webcam"
+                NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW).apply {
+                    description = getString(R.string.notification_channel_text)
                 },
             )
         }
@@ -133,11 +218,11 @@ class StreamService : Service() {
         @Suppress("DEPRECATION") // addAction(int, …) is the only variant on API 21–22
         val notification = builder
             .setSmallIcon(android.R.drawable.presence_video_online)
-            .setContentTitle("Oculibre is streaming")
-            .setContentText("${cfg.width}×${cfg.height} · ${cfg.fps} fps → ${request.host}")
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(getString(R.string.notification_text, cfg.width, cfg.height, cfg.fps))
             .setOngoing(true)
             .setContentIntent(openApp)
-            .addAction(0, "Stop", stopIntent)
+            .addAction(0, getString(R.string.stop), stopIntent)
             .build()
 
         if (Build.VERSION.SDK_INT >= 29) {
@@ -177,6 +262,9 @@ class StreamService : Service() {
         private const val ACTION_STOP = "org.oculibre.action.STOP"
         private const val CHANNEL_ID = "streaming"
         private const val NOTIFICATION_ID = 1
+        private const val MAX_DELAY_MS = 10_000L
+        /** Then the phone stops looking, so as not to drain the battery with the computer off. */
+        private const val GIVE_UP_MS = 10 * 60_000L
 
         private val main = Handler(Looper.getMainLooper())
         private val observers = CopyOnWriteArraySet<(Snapshot) -> Unit>()
@@ -207,6 +295,11 @@ class StreamService : Service() {
 
         fun removeObserver(observer: (Snapshot) -> Unit) {
             observers -= observer
+        }
+
+        /** The user fixed (or dismissed) the problem of a stopped stream: stop showing it. */
+        fun clearProblem() {
+            if (!current.running && current.problem != null) publish(current.copy(problem = null, detail = null))
         }
 
         private fun publish(snapshot: Snapshot) {
