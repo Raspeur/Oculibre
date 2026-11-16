@@ -14,8 +14,10 @@ import {
   setView,
 } from "../engine";
 import type { EngineState } from "../useEngine";
+import { locale, t, useLang } from "../i18n";
 
 export function Panel({ engine }: { engine: EngineState }) {
+  useLang();
   const { phone, stream } = engine;
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -59,7 +61,7 @@ export function Panel({ engine }: { engine: EngineState }) {
     } catch (e) {
       const error = e as ModeError;
       if (error.kind === "Refused") {
-        setRefused(`${qualityText(mode)} : ${error.data}`);
+        setRefused(t("mode_failed_text", { mode: qualityText(mode), why: error.data }));
       }
     } finally {
       setSwitching(false);
@@ -79,14 +81,14 @@ export function Panel({ engine }: { engine: EngineState }) {
     : [];
 
   return (
-    <aside className="oc-panel" aria-label="Réglages de la caméra">
+    <aside className="oc-panel" aria-label={t("camera_settings")}>
       <div className="oc-panel__section" style={{ gap: 10 }} data-tour="source">
-        <span className="oc-label">Source</span>
+        <span className="oc-label">{t("source")}</span>
         {caps && caps.cameras.length > 0 ? (
           <div
             className="oc-segmented"
             role="group"
-            aria-label="Caméra du téléphone"
+            aria-label={t("phone_camera")}
             style={{ gridTemplateColumns: `repeat(${Math.min(caps.cameras.length, 3)}, minmax(0, 1fr))` }}
           >
             {caps.cameras.map((c) => (
@@ -103,14 +105,14 @@ export function Panel({ engine }: { engine: EngineState }) {
             ))}
           </div>
         ) : (
-          <span className="oc-small">{phone ? "Lecture des caméras…" : "Aucun téléphone connecté."}</span>
+          <span className="oc-small">{phone ? t("reading_cameras") : t("no_phone_connected")}</span>
         )}
       </div>
 
       <div className="oc-panel__section" data-tour="source">
-        <span className="oc-label" style={{ paddingBottom: 6 }}>Vidéo</span>
+        <span className="oc-label" style={{ paddingBottom: 6 }}>{t("video")}</span>
         <div className="oc-row oc-row--panel">
-          <label htmlFor="res" className="oc-row__label">Résolution</label>
+          <label htmlFor="res" className="oc-row__label">{t("resolution")}</label>
           <select
             id="res"
             className="oc-select"
@@ -133,7 +135,7 @@ export function Panel({ engine }: { engine: EngineState }) {
           </select>
         </div>
         <div className="oc-row oc-row--panel">
-          <label htmlFor="fps" className="oc-row__label">Images/s</label>
+          <label htmlFor="fps" className="oc-row__label">{t("frames_per_second")}</label>
           <select
             id="fps"
             className="oc-select"
@@ -153,30 +155,30 @@ export function Panel({ engine }: { engine: EngineState }) {
             ))}
           </select>
         </div>
-        {switching && <span className="oc-small">Changement en cours…</span>}
+        {switching && <span className="oc-small">{t("switching")}</span>}
         {refused && (
           <div className="oc-alert oc-alert--info" role="status" style={{ marginTop: 6 }}>
             <span className="oc-alert__icon" aria-hidden="true">i</span>
             <div className="oc-alert__body">
-              <span className="oc-alert__title">Ce mode n'a pas fonctionné</span>
-              <span className="oc-alert__text">{refused}. Le téléphone garde le mode précédent.</span>
-              <span className="oc-alert__code">Code 302</span>
+              <span className="oc-alert__title">{t("mode_failed_title")}</span>
+              <span className="oc-alert__text">{refused}</span>
+              <span className="oc-alert__code">{t("code", { code: 302 })}</span>
             </div>
           </div>
         )}
       </div>
 
       <div className="oc-panel__section" data-tour="source">
-        <span className="oc-label" style={{ paddingBottom: 6 }}>Image</span>
+        <span className="oc-label" style={{ paddingBottom: 6 }}>{t("picture")}</span>
         <div className="oc-row oc-row--panel">
-          <label htmlFor="rot" className="oc-row__label">Rotation</label>
+          <label htmlFor="rot" className="oc-row__label">{t("rotation")}</label>
           <select
             id="rot"
             className="oc-select"
             value={view.rotate.kind === "Auto" ? "auto" : String(view.rotate.degrees)}
             onChange={(e) => changeView({ ...view, rotate: rotateFrom(e.currentTarget.value) })}
           >
-            <option value="auto">Automatique</option>
+            <option value="auto">{t("automatic")}</option>
             <option value="0">0°</option>
             <option value="90">90°</option>
             <option value="180">180°</option>
@@ -184,7 +186,7 @@ export function Panel({ engine }: { engine: EngineState }) {
           </select>
         </div>
         <div className="oc-row oc-row--panel">
-          <span id="mirror-label" className="oc-row__label">Miroir</span>
+          <span id="mirror-label" className="oc-row__label">{t("mirror")}</span>
           <button
             type="button"
             className="oc-switch"
@@ -198,19 +200,19 @@ export function Panel({ engine }: { engine: EngineState }) {
       </div>
 
       <div className="oc-panel__section" data-tour="output">
-        <span className="oc-label" style={{ paddingBottom: 6 }}>Sortie</span>
+        <span className="oc-label" style={{ paddingBottom: 6 }}>{t("output")}</span>
         <div className="oc-row oc-row--panel oc-row--info">
-          <span className="oc-row__label">Nom dans les applications</span>
+          <span className="oc-row__label">{t("name_in_apps")}</span>
           <span className="oc-row__value">Oculibre</span>
         </div>
         <div className="oc-row oc-row--panel oc-row--info">
-          <span className="oc-row__label">Format envoyé</span>
+          <span className="oc-row__label">{t("format_sent")}</span>
           <span className="oc-row__value">
             {engine.outputSize ? `${engine.outputSize[0]} × ${engine.outputSize[1]}` : "—"}
           </span>
         </div>
         <div className="oc-row oc-row--panel oc-row--info">
-          <span className="oc-row__label">Décodage</span>
+          <span className="oc-row__label">{t("decoding")}</span>
           <span className="oc-row__value oc-row__value--muted">{engine.decoder ?? "—"}</span>
         </div>
       </div>
@@ -221,7 +223,7 @@ export function Panel({ engine }: { engine: EngineState }) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M6 6h12v12H6z" />
             </svg>
-            Arrêter la caméra
+            {t("stop_camera")}
           </button>
         </div>
       )}
@@ -230,12 +232,13 @@ export function Panel({ engine }: { engine: EngineState }) {
 }
 
 /**
- * "Arrière", "Avant"; when several cameras face the same way, their zoom against the first one,
- * like camera apps: "Arrière 0,6×", "Avant 1,2×". Without focal lengths (apps before 0.3.1), or
- * for two cameras with the same one: "Arrière 2".
+ * "Back", "Front"; when several cameras face the same way, their zoom against the first one,
+ * like camera apps: "Back 0.6×" ("Arrière 0,6×" in French), "Front 1.2×". Without focal lengths
+ * (apps before 0.3.1), or for two cameras with the same one: "Back 2".
  */
 function cameraLabel(camera: CameraCapabilities, all: CameraCapabilities[]): string {
-  const name = camera.facing === "front" ? "Avant" : camera.facing === "back" ? "Arrière" : "Externe";
+  const name =
+    camera.facing === "front" ? t("camera_front") : camera.facing === "back" ? t("camera_back") : t("camera_external");
   const same = all.filter((c) => c.facing === camera.facing);
   const index = same.indexOf(camera);
   if (same.length <= 1 || index === 0) return name;
@@ -245,7 +248,7 @@ function cameraLabel(camera: CameraCapabilities, all: CameraCapabilities[]): str
   const zoom = focal / reference;
   if (Math.abs(zoom - 1) < 0.05) return `${name} ${index + 1}`;
   const digits = zoom >= 2 ? 0 : 1;
-  return `${name} ${zoom.toLocaleString("fr-FR", { maximumFractionDigits: digits })}×`;
+  return `${name} ${zoom.toLocaleString(locale(), { maximumFractionDigits: digits })}×`;
 }
 
 /** On another camera, the same size and rate if it has them, else its closest to 1080p. */
@@ -269,7 +272,7 @@ function sizeLabel(width: number, height: number): string {
 }
 
 function qualityText(mode: ModeCapabilities): string {
-  return `${sizeLabel(mode.width, mode.height)} à ${mode.fps} i/s`;
+  return t("quality_at", { size: sizeLabel(mode.width, mode.height), fps: mode.fps });
 }
 
 function rotateFrom(value: string): Rotate {

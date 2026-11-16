@@ -2,6 +2,7 @@
 
 import logo from "../../../../oculibre_logo.svg";
 import { phoneName } from "../engine";
+import { t, useLang } from "../i18n";
 import type { EngineState } from "../useEngine";
 
 export function Sidebar(props: {
@@ -11,6 +12,7 @@ export function Sidebar(props: {
   onAbout: () => void;
   onTour: () => void;
 }) {
+  useLang();
   const { engine, onAddPhone } = props;
   const { phone, via, stream, paused } = engine;
   // Known phones other than the one being served are offline (or not started). A phone gets a
@@ -37,7 +39,7 @@ export function Sidebar(props: {
       </div>
 
       <div className="oc-stack">
-        <span className="oc-label">Téléphones</span>
+        <span className="oc-label">{t("phones")}</span>
         <div className="oc-stack" data-tour="phones">
 
         {phone && (
@@ -49,7 +51,7 @@ export function Sidebar(props: {
             <span className="oc-row__label">
               <span className="oc-nav-item__name">{phoneName(phone)}</span>
               <span className="oc-small">
-                {stream && !paused ? "En direct" : "Connecté"} · {link}
+                {stream && !paused ? t("live") : t("connected")} · {link}
               </span>
             </span>
           </button>
@@ -60,14 +62,14 @@ export function Sidebar(props: {
             <span className="oc-dot oc-dot--lg oc-dot--off" aria-hidden="true" />
             <span className="oc-row__label">
               <span className="oc-nav-item__name">{p.name}</span>
-              <span className="oc-small">Hors ligne · {p.last_via === "usb" ? "USB" : "Wi-Fi"}</span>
+              <span className="oc-small">{t("offline")} · {p.last_via === "usb" ? "USB" : "Wi-Fi"}</span>
             </span>
           </button>
         ))}
 
         {!phone && others.length === 0 && (
           <p className="oc-small" style={{ margin: "0 4px" }}>
-            Aucun téléphone pour l'instant.
+            {t("no_phone_yet")}
           </p>
         )}
 
@@ -78,13 +80,13 @@ export function Sidebar(props: {
           className="oc-nav-add"
           data-tour="add"
           disabled={!engine.running}
-          title={engine.running ? undefined : "Oculibre n'attend pas encore les téléphones"}
+          title={engine.running ? undefined : t("not_waiting")}
           onClick={onAddPhone}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FE633C" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          Ajouter un téléphone
+          {t("add_phone")}
         </button>
       </div>
 
@@ -93,21 +95,21 @@ export function Sidebar(props: {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />
           </svg>
-          Réglages
+          {t("settings")}
         </button>
         <button type="button" className="oc-nav-link" onClick={props.onTour}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10" />
             <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01" />
           </svg>
-          Visite guidée
+          {t("tour")}
         </button>
         <button type="button" className="oc-nav-link" onClick={props.onAbout}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10" />
             <path d="M12 16v-4M12 8h.01" />
           </svg>
-          À propos
+          {t("about")}
         </button>
       </div>
     </nav>

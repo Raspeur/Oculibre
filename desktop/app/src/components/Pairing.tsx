@@ -5,8 +5,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { type AppSettings, type PairingOffer, onEngineEvent, pairingOffer, setSettings, settings as loadSettings } from "../engine";
+import { t, useLang } from "../i18n";
 
 export function Pairing(props: { computerKey: string | null; phoneLive: boolean; onDone: () => void }) {
+  useLang();
   const { computerKey, onDone } = props;
   const [values, setValues] = useState<AppSettings | null>(null);
   const [turningOn, setTurningOn] = useState(false);
@@ -78,14 +80,14 @@ export function Pairing(props: { computerKey: string | null; phoneLive: boolean;
   return (
     <div className="oc-app oc-app--stack" style={{ paddingBottom: 32, gap: 28 }}>
       <header className="oc-header">
-        <button type="button" className="oc-icon-btn" aria-label="Retour" onClick={onDone}>
+        <button type="button" className="oc-icon-btn" aria-label={t("back")} onClick={onDone}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
         <div className="oc-row__label" style={{ gap: 2 }}>
-          <span className="oc-small">Téléphones</span>
-          <h1 className="oc-title oc-title--sm">Ajouter un téléphone</h1>
+          <span className="oc-small">{t("phones")}</span>
+          <h1 className="oc-title oc-title--sm">{t("add_phone")}</h1>
         </div>
       </header>
 
@@ -96,12 +98,10 @@ export function Pairing(props: { computerKey: string | null; phoneLive: boolean;
               <path d="M20 6L9 17l-5-5" />
             </svg>
           </div>
-          <h2 className="oc-title" style={{ fontSize: 28 }}>{paired} est prêt</h2>
-          <p className="oc-text oc-text--lg oc-muted">
-            Appuyez sur « Démarrer » sur le téléphone. La prochaine fois, il suffira d'ouvrir l'app.
-          </p>
+          <h2 className="oc-title" style={{ fontSize: 28 }}>{t("pair_ready", { name: paired })}</h2>
+          <p className="oc-text oc-text--lg oc-muted">{t("pair_ready_text")}</p>
           <button type="button" className="oc-btn oc-btn--primary" style={{ minHeight: 40, padding: "0 24px" }} onClick={onDone}>
-            Terminer
+            {t("done")}
           </button>
         </section>
       ) : (
@@ -110,15 +110,13 @@ export function Pairing(props: { computerKey: string | null; phoneLive: boolean;
             <div className="oc-card oc-card--raised oc-cluster" style={{ flexWrap: "nowrap", gap: 14, padding: "14px 16px", borderRadius: "var(--oc-r-sm)" }}>
               <span className="oc-badge oc-badge--ok" aria-hidden="true">✓</span>
               <span className="oc-row__label" style={{ gap: 4 }}>
-                <span className="oc-text oc-text--lg oc-strong">Par câble USB : rien à faire</span>
-                <span className="oc-text oc-muted">Branchez le téléphone et appuyez sur « Démarrer » dans l'app Oculibre du téléphone.</span>
+                <span className="oc-text oc-text--lg oc-strong">{t("usb_nothing")}</span>
+                <span className="oc-text oc-muted">{t("usb_nothing_text")}</span>
               </span>
             </div>
-            <p className="oc-text oc-text--lg oc-muted">
-              Pour l'utiliser aussi en Wi-Fi, reliez-le une seule fois. Ensuite, il se reconnecte tout seul.
-            </p>
+            <p className="oc-text oc-text--lg oc-muted">{t("wifi_once")}</p>
             <ol className="oc-stack" style={{ margin: 0, padding: 0, listStyle: "none", gap: 14 }}>
-              {steps.map((s, i) => (
+              {steps().map((s, i) => (
                 <li key={s.title} className="oc-card oc-card--raised" style={stepStyle}>
                   <span className="oc-badge oc-badge--round">{i + 1}</span>
                   <span className="oc-row__label" style={{ gap: 4 }}>
@@ -133,35 +131,31 @@ export function Pairing(props: { computerKey: string | null; phoneLive: boolean;
                 <path d="M12 22V12M12 12l-4-4M12 12l4-4M5 8h14" />
               </svg>
               {offer?.sent_over_usb
-                ? "Envoyé aussi au téléphone branché en USB : confirmez sur son écran."
-                : "Téléphone branché en USB ? L'invitation lui est envoyée directement."}
+                ? t("sent_usb")
+                : t("usb_hint")}
             </div>
           </section>
 
-          <section aria-label="QR code d'appairage" className="oc-card oc-card--raised oc-stack" style={qrCardStyle}>
+          <section aria-label={t("qr_label")} className="oc-card oc-card--raised oc-stack" style={qrCardStyle}>
             {values && !values.wifi ? (
               <div className="oc-stack" style={{ alignItems: "center", gap: 12, textAlign: "center" }}>
-                <span className="oc-text oc-strong">Le Wi-Fi est désactivé</span>
-                <span className="oc-text oc-muted">
-                  Oculibre n'accepte pour l'instant que le câble. Activez le Wi-Fi pour relier ce téléphone.
-                </span>
+                <span className="oc-text oc-strong">{t("wifi_off")}</span>
+                <span className="oc-text oc-muted">{t("wifi_off_text")}</span>
                 {props.phoneLive && (
-                  <span className="oc-small">
-                    La vidéo du téléphone en direct va s'interrompre : appuyez ensuite à nouveau sur « Démarrer » sur le téléphone.
-                  </span>
+                  <span className="oc-small">{t("wifi_off_live")}</span>
                 )}
                 <button type="button" className="oc-btn oc-btn--primary" disabled={turningOn} onClick={turnWifiOn}>
-                  {turningOn ? "Activation…" : "Activer le Wi-Fi"}
+                  {turningOn ? t("turning_on") : t("turn_wifi_on")}
                 </button>
               </div>
             ) : error ? (
               <div className="oc-alert oc-alert--error" role="alert">
                 <span className="oc-alert__icon" aria-hidden="true">×</span>
                 <div className="oc-alert__body">
-                  <span className="oc-alert__title">Impossible de créer un QR code</span>
+                  <span className="oc-alert__title">{t("qr_failed")}</span>
                   <span className="oc-alert__text">{error}</span>
                   <div className="oc-alert__actions">
-                    <button type="button" className="oc-btn oc-btn--secondary" onClick={newOffer}>Réessayer</button>
+                    <button type="button" className="oc-btn oc-btn--secondary" onClick={newOffer}>{t("retry")}</button>
                   </div>
                 </div>
               </div>
@@ -169,28 +163,26 @@ export function Pairing(props: { computerKey: string | null; phoneLive: boolean;
               <div className="oc-alert" role="alert">
                 <span className="oc-alert__icon" aria-hidden="true">!</span>
                 <div className="oc-alert__body">
-                  <span className="oc-alert__title">Ce QR code a expiré</span>
-                  <span className="oc-alert__text">
-                    Pour votre sécurité, un QR code ne sert que 10 minutes et pour un seul téléphone.
-                  </span>
+                  <span className="oc-alert__title">{t("qr_expired")}</span>
+                  <span className="oc-alert__text">{t("qr_expired_text")}</span>
                   <div className="oc-alert__actions">
-                    <button type="button" className="oc-btn oc-btn--primary" onClick={newOffer}>Nouveau QR code</button>
+                    <button type="button" className="oc-btn oc-btn--primary" onClick={newOffer}>{t("new_qr")}</button>
                   </div>
-                  <span className="oc-alert__code">Code 201</span>
+                  <span className="oc-alert__code">{t("code", { code: 201 })}</span>
                 </div>
               </div>
             ) : offer ? (
               <QrCode grid={offer.qr} />
             ) : (
-              <span className="oc-small">Préparation…</span>
+              <span className="oc-small">{t("preparing")}</span>
             )}
             <div className="oc-stack" style={{ alignItems: "center", gap: 6 }}>
-              <span className="oc-muted" style={{ fontSize: "var(--oc-text-md)" }}>Code de cet ordinateur</span>
+              <span className="oc-muted" style={{ fontSize: "var(--oc-text-md)" }}>{t("this_computer_code")}</span>
               <span className="oc-title oc-title--lg" style={{ letterSpacing: 2 }}>{computerKey ?? "—"}</span>
             </div>
             {offer && !expired && (
               <span className="oc-muted" style={{ fontSize: "var(--oc-text-md)" }}>
-                Valable encore {minutes(secondsLeft)} · pour un seul téléphone
+                {t("valid_for", { time: minutes(secondsLeft) })}
               </span>
             )}
           </section>
@@ -213,7 +205,7 @@ function QrCode({ grid }: { grid: PairingOffer["qr"] }) {
       width={260}
       height={260}
       role="img"
-      aria-label="QR code à scanner avec le téléphone"
+      aria-label={t("qr_alt")}
       shapeRendering="crispEdges"
       style={{ borderRadius: "var(--oc-r-sm)" }}
     >
@@ -227,19 +219,10 @@ function minutes(seconds: number): string {
   return seconds >= 60 ? `${Math.ceil(seconds / 60)} min` : `${seconds} s`;
 }
 
-const steps = [
-  {
-    title: "Installez Oculibre sur le téléphone",
-    text: "Android 5 ou plus récent.",
-  },
-  {
-    title: "Scannez le QR code avec le téléphone",
-    text: "Avec l'appareil photo. Le téléphone et l'ordinateur doivent être sur le même Wi-Fi.",
-  },
-  {
-    title: "Vérifiez le code et confirmez sur le téléphone",
-    text: "Le téléphone affiche un code : il doit être identique à celui sous le QR code. C'est ce qui garantit que personne d'autre ne s'est glissé entre les deux.",
-  },
+const steps = () => [
+  { title: t("pair_step1_title"), text: t("pair_step1_text") },
+  { title: t("pair_step2_title"), text: t("pair_step2_text") },
+  { title: t("pair_step3_title"), text: t("pair_step3_text") },
 ];
 
 const contentStyle = {

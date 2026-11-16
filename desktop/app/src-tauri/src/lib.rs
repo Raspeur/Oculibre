@@ -149,12 +149,12 @@ fn follow_in_tray(app: &AppHandle, event: &Event) {
                 hello.name.clone()
             };
             let via = *receiver.via.lock().unwrap();
-            if let Some(menu) = receiver.tray.lock().unwrap().as_ref() {
+            if let Some(menu) = receiver.tray.lock().unwrap().as_mut() {
                 menu.show_phone(Some((&name, via)));
             }
         }
         Event::SessionEnded(_) => {
-            if let Some(menu) = receiver.tray.lock().unwrap().as_ref() {
+            if let Some(menu) = receiver.tray.lock().unwrap().as_mut() {
                 menu.show_phone(None);
             }
         }
@@ -227,6 +227,11 @@ fn set_settings(
     let before = std::mem::replace(&mut *receiver.settings.lock().unwrap(), settings.clone());
     settings.save()?;
     decoder::set_choice(Choice::parse(&settings.decoder).unwrap_or(Choice::Auto));
+    if before.language != settings.language {
+        if let Some(menu) = receiver.tray.lock().unwrap().as_mut() {
+            menu.set_language(settings.lang());
+        }
+    }
     if !before.needs_restart(&settings) || receiver.host.lock().unwrap().is_none() {
         return Ok(Applied::Now);
     }
@@ -408,7 +413,8 @@ pub fn run() {
         .manage(receiver)
         .setup(|app| {
             let handle = app.handle().clone();
-            *app.state::<Receiver>().tray.lock().unwrap() = Some(tray::build(&handle)?);
+            let lang = app.state::<Receiver>().settings.lock().unwrap().lang();
+            *app.state::<Receiver>().tray.lock().unwrap() = Some(tray::build(&handle, lang)?);
             if std::env::args().any(|a| a == "--hidden") {
                 if let Some(window) = app.get_webview_window("main") {
                     window.hide()?;

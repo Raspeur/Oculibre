@@ -7,6 +7,7 @@
 
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { locale, t } from "./i18n";
 
 // --- what the events carry
 
@@ -210,6 +211,8 @@ export interface AppSettings {
   decoder: DecoderChoice;
   /** Closing the window keeps Oculibre in the system tray. */
   tray: boolean;
+  /** "fr", "en", or "" for the system's language (the window and the tray menu). */
+  language: string;
 }
 
 /** When changed settings take effect: now, or when the phone streaming now leaves. */
@@ -218,7 +221,7 @@ export type Applied = "Now" | "AfterThisPhone";
 export function settings(): Promise<AppSettings> {
   return inApp
     ? invoke<AppSettings>("settings")
-    : Promise.resolve({ wifi: true, portrait: false, decoder: "auto", tray: true });
+    : Promise.resolve({ wifi: true, portrait: false, decoder: "auto", tray: true, language: "" });
 }
 
 /**
@@ -309,16 +312,16 @@ export function setPreviewMode(mode: PreviewMode): Promise<void> {
   return inApp ? invoke("set_preview_mode", { mode }) : Promise.resolve();
 }
 
-/** "12 nov. à 11:53" (local time) from "2026-11-12T10:53Z"; "12 nov." from a date alone. */
+/** "12 nov. à 11:53" / "12 Nov at 11:53" (local time) from "2026-11-12T10:53Z"; the day alone from a date. */
 export function when(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  const day = date.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const day = date.toLocaleDateString(locale(), { day: "numeric", month: "short" });
   if (!iso.includes("T")) return day;
-  return `${day} à ${date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  return t("at_time", { day, time: date.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) });
 }
 
 /** A phone's name for people: its own name, else its model. */
 export function phoneName(hello: Hello): string {
-  return hello.name || hello.device?.model || "Phone";
+  return hello.name || hello.device?.model || t("phone");
 }
