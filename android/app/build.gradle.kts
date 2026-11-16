@@ -11,8 +11,8 @@ android {
         applicationId = "org.oculibre"
         minSdk = 21 // Android 5.0 — the whole point of the project
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.3.4" // speaks protocol 0.3 (+ cameras' equivalent focal length)
+        versionCode = 9
+        versionName = "0.3.5" // speaks protocol 0.3 (+ cameras' equivalent focal length)
     }
 
     buildTypes {

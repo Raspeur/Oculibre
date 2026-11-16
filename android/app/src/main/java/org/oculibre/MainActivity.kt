@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -33,9 +34,7 @@ class MainActivity : Activity() {
 
     override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
 
-    private lateinit var alert: LinearLayout
-    private lateinit var alertTitle: TextView
-    private lateinit var alertText: TextView
+    private lateinit var banner: ProblemBanner
     private lateinit var computerName: TextView
     private lateinit var computerDetail: TextView
     private lateinit var bigButton: LinearLayout
@@ -51,8 +50,12 @@ class MainActivity : Activity() {
      */
     private var probedWithCamera = false
     private var supportedModes: List<ModeSupport> = emptyList()
-    /** What the warning banner fixes, if shown. */
-    private var fixAlert: (() -> Unit)? = null
+    /** The phone is overheating (Android 10+ thermal status), and the user said OK to it. */
+    private var hot = false
+    private var hotDismissed = false
+    private var thermalListener: Any? = null
+    /** When the camera permission was asked from the banner: an instant refusal = asked no more. */
+    private var askedCameraAt = 0L
 
     private val ui = Handler(Looper.getMainLooper())
     private val observer: (StreamService.Snapshot) -> Unit = { render(it) }
@@ -81,22 +84,7 @@ class MainActivity : Activity() {
             })
         }
 
-        alertTitle = Ui.text(c, Ui.TEXT_BASE, strong = true)
-        alertText = Ui.text(c, Ui.TEXT_MD, R.color.oc_text_2)
-        alert = Ui.row(c, 12f).apply {
-            background = Ui.rounded(c, R.color.oc_accent_soft, Ui.RADIUS_MD, R.color.oc_accent_line)
-            val p = Ui.dp(c, 12f)
-            setPadding(p, p, p, p)
-            visibility = View.GONE
-            isClickable = true
-            setOnClickListener { fixAlert?.invoke() }
-            addView(Ui.badge(c, "!", R.color.oc_accent_soft, R.color.oc_accent_text, 28f))
-            addView(Ui.grow(Ui.column(c, 2f).apply {
-                addView(alertTitle)
-                addView(alertText)
-            }))
-            addView(Ui.text(c, Ui.TEXT_MD, R.color.oc_accent_text, strong = true).apply { text = getString(R.string.fix) })
-        }
+        banner = ProblemBanner(c)
 
         computerName = Ui.text(c, Ui.TEXT_LG, strong = true)
         computerDetail = Ui.text(c, Ui.TEXT_MD, R.color.oc_text_muted)
@@ -163,7 +151,7 @@ class MainActivity : Activity() {
             val p = Ui.dp(c, 20f)
             setPadding(p, Ui.dp(c, 24f), p, Ui.dp(c, 24f))
             addView(header)
-            addView(alert)
+            addView(banner.view)
             addView(computer)
             addView(center)
             addView(screenOff)
@@ -213,9 +201,12 @@ class MainActivity : Activity() {
         bigButton.background = Ui.oval(this, fill, ring, 6f)
         bigSymbol.setTextColor(Ui.color(this, ink))
         bigLabel.setTextColor(Ui.color(this, ink))
-        val canStart = running || supportedModes.isNotEmpty()
+        val shown = renderProblem(state)
+        // A blocking problem greys Start out: nothing can work until it is fixed.
+        val blocked = !running && shown?.blocking == true
+        val canStart = running || (supportedModes.isNotEmpty() && !blocked)
         bigButton.isEnabled = canStart
-        bigButton.alpha = if (canStart) 1f else 0.4f
+        bigButton.alpha = if (canStart) 1f else 0.35f
 
         stateTitle.setTextColor(Ui.color(this, if (live) R.color.oc_live else R.color.oc_text))
         when {
@@ -233,17 +224,16 @@ class MainActivity : Activity() {
             }
             state.phase == StreamService.Phase.SEARCHING -> {
                 stateTitle.text = getString(R.string.state_searching)
-                stateDetail.text = state.status ?: ""
+                stateDetail.text = state.retryInS?.let { getString(R.string.retry_in, it) } ?: ""
             }
             running -> {
                 stateTitle.text = getString(R.string.state_connecting)
-                stateDetail.text = state.status ?: ""
+                stateDetail.text = getString(R.string.connecting_detail)
             }
             else -> {
                 stateTitle.text = getString(R.string.state_ready)
-                // After a stop with an error, say why; else what to do.
-                val status = state.status
-                stateDetail.text = if (status != null && status.startsWith("Stopped:")) status else getString(R.string.ready_detail)
+                // Why it stopped is in the banner; here, what to do.
+                stateDetail.text = getString(if (blocked) R.string.blocked_detail else R.string.ready_detail)
             }
         }
         renderComputer()
@@ -265,41 +255,117 @@ class MainActivity : Activity() {
         }
     }
 
-    /** The warning banner: camera access withdrawn first, then battery saving. */
-    private fun renderAlert() {
-        val (title, text, fix) = when {
-            !hasCameraPermission() && prefs.getBoolean(PREF_CAMERA_GRANTED_ONCE, false) -> Triple(
-                R.string.alert_camera_title,
-                R.string.alert_camera_text,
-                { openAppSettings() },
-            )
-            !isBatteryExempt() && prefs.getBoolean(PREF_ASKED_BATTERY, false) -> Triple(
-                R.string.alert_battery_title,
-                R.string.alert_battery_text,
-                { if (isXiaomi()) openMiuiBatterySettings() else requestBatteryExemption() },
-            )
-            else -> {
-                alert.visibility = View.GONE
-                fixAlert = null
-                return
-            }
+    /**
+     * The banner (design/mockups/PhoneProblems): camera access withdrawn first (blocking), then
+     * what stopped or holds the stream, overheating while live, battery saving. Returns the
+     * problem shown, if any.
+     */
+    private fun renderProblem(state: StreamService.Snapshot): Problem? {
+        val problem = when {
+            !hasCameraPermission() && prefs.getBoolean(PREF_CAMERA_GRANTED_ONCE, false) -> Problem.CAMERA_PERMISSION
+            state.problem != null -> state.problem
+            state.phase == StreamService.Phase.LIVE && hot && !hotDismissed -> Problem.HOT
+            else -> null
         }
-        alertTitle.text = getString(title)
-        alertText.text = getString(text)
-        fixAlert = fix
-        alert.visibility = View.VISIBLE
+        if (problem == null) {
+            if (!isBatteryExempt() && prefs.getBoolean(PREF_ASKED_BATTERY, false)) {
+                // An advice, not a catalogue problem: no code.
+                banner.show(Problem.Level.WARNING, null, getString(R.string.alert_battery_title),
+                    getString(R.string.alert_battery_text),
+                    listOf(ProblemBanner.Action(getString(R.string.fix), ProblemBanner.Style.SECONDARY) {
+                        if (isXiaomi()) openMiuiBatterySettings() else requestBatteryExemption()
+                    }))
+            } else {
+                banner.hide()
+            }
+            return null
+        }
+        // The technical cause helps when reporting an unexpected error, not otherwise.
+        val withDetail = problem == Problem.UNEXPECTED || problem == Problem.CAMERA_ERROR
+        val detail = state.detail?.takeIf { withDetail && problem == state.problem }
+        val code = if (detail != null) getString(R.string.problem_code_detail, problem.code, detail)
+        else getString(R.string.problem_code, problem.code)
+        banner.show(problem.level, code, problemString(problem, "title"), problemString(problem, "text"),
+            problemActions(problem, state.running))
+        return problem
+    }
+
+    private fun problemString(problem: Problem, part: String): String {
+        val id = resources.getIdentifier("problem_${problem.code}_$part", "string", packageName)
+        return if (id != 0) getString(id) else "${problem.name} ($part)"
+    }
+
+    private fun problemActions(problem: Problem, running: Boolean): List<ProblemBanner.Action> {
+        fun retry() = ProblemBanner.Action(getString(R.string.retry)) { start() }
+        return when (problem) {
+            // Still looking: the big button stops it.
+            Problem.SEARCHING -> emptyList()
+            Problem.NOT_FOUND -> if (running) emptyList() else listOf(retry())
+            Problem.COMPUTER_BUSY, Problem.CAMERA_BUSY, Problem.CAMERA_ERROR, Problem.UNEXPECTED ->
+                if (running) emptyList() else listOf(retry())
+            Problem.UPDATE_NEEDED -> listOf(ProblemBanner.Action(getString(R.string.ok), ProblemBanner.Style.SECONDARY) {
+                StreamService.clearProblem()
+            })
+            Problem.NOT_RECOGNISED -> listOf(ProblemBanner.Action(getString(R.string.scan_title)) {
+                @Suppress("DEPRECATION")
+                startActivityForResult(Intent(this, ScannerActivity::class.java), REQ_SCAN)
+            })
+            Problem.HOT -> listOf(ProblemBanner.Action(getString(R.string.ok), ProblemBanner.Style.SECONDARY) {
+                hotDismissed = true
+                render(StreamService.current)
+            })
+            Problem.CAMERA_PERMISSION -> listOf(ProblemBanner.Action(getString(R.string.allow_camera)) { askCamera() })
+        }
+    }
+
+    /** Android asks again if it still may; else (refused for good, or withdrawn) its settings page. */
+    private fun askCamera() {
+        if (Build.VERSION.SDK_INT < 23) return openAppSettings()
+        askedCameraAt = SystemClock.elapsedRealtime()
+        requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_CAMERA_ONLY)
+    }
+
+    @Deprecated("Platform API; no AndroidX here")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_SCAN && resultCode == RESULT_OK) {
+            // Paired again: the refusal is solved.
+            StreamService.clearProblem()
+            PairingStore.get(this)?.let { stateDetail.text = getString(R.string.pair_done, it.name) }
+        }
+    }
+
+    /** Android 10+: the phone's thermal status, to warn before it slows down by itself. */
+    private fun watchHeat(on: Boolean) {
+        if (Build.VERSION.SDK_INT < 29) return
+        val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (on) {
+            val listener = PowerManager.OnThermalStatusChangedListener { status ->
+                val nowHot = status >= PowerManager.THERMAL_STATUS_SEVERE
+                if (nowHot && !hot) hotDismissed = false // hot again: say it again
+                hot = nowHot
+                render(StreamService.current)
+            }
+            thermalListener = listener
+            power.addThermalStatusListener(listener)
+        } else {
+            (thermalListener as? PowerManager.OnThermalStatusChangedListener)?.let { power.removeThermalStatusListener(it) }
+            thermalListener = null
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        watchHeat(true)
         StreamService.observe(observer)
-        renderAlert()
         // Camera permission granted elsewhere (system settings) since the cameras were read.
         if (capabilities != null && !probedWithCamera && hasCameraPermission()) probeCapabilities()
     }
 
     override fun onPause() {
         StreamService.removeObserver(observer)
+        watchHeat(false)
         super.onPause()
     }
 
@@ -379,7 +445,7 @@ class MainActivity : Activity() {
                     supportedModes = it.main.modes.filter { m -> m.supported }
                     render(StreamService.current)
                     then?.invoke()
-                }.onFailure { stateDetail.text = "Cannot read camera capabilities: ${it.message}" }
+                }.onFailure { stateDetail.text = getString(R.string.cannot_read_cameras, it.message ?: it.javaClass.simpleName) }
             }
         }
     }
@@ -431,6 +497,16 @@ class MainActivity : Activity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_CAMERA_ONLY) {
+            if (hasCameraPermission()) {
+                probeCapabilities()
+            } else if (SystemClock.elapsedRealtime() - askedCameraAt < INSTANT_REFUSAL_MS) {
+                // No dialog was shown (refused for good): only the settings page can give it.
+                openAppSettings()
+            }
+            render(StreamService.current)
+            return
+        }
         if (requestCode != REQ_CAMERA) return
         if (hasCameraPermission()) {
             prefs.edit().putBoolean(PREF_CAMERA_GRANTED_ONCE, true).apply()
@@ -488,6 +564,10 @@ class MainActivity : Activity() {
         const val PREF_HOST = PairingStore.HOST_PREF
         const val PREF_MODE = "mode"
         private const val REQ_CAMERA = 1
+        private const val REQ_CAMERA_ONLY = 2
+        private const val REQ_SCAN = 3
+        /** A refusal faster than this came without a dialog. */
+        private const val INSTANT_REFUSAL_MS = 300L
         const val PREF_ASKED_NOTIFICATIONS = "asked_notifications"
         const val PREF_ASKED_BATTERY = "asked_battery"
         /** The camera was granted once: if it is missing now, it was withdrawn. */

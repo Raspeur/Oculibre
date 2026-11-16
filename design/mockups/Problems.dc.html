@@ -108,6 +108,9 @@ class Component extends DCLogic {
       P('102', 'warning', 'Galaxy S23 Ultra n’est pas joignable', 'Ouvrez Oculibre sur le téléphone. En Wi-Fi, le téléphone et l’ordinateur doivent être sur le même réseau ; sinon, branchez le câble USB.', 'à la place de l’aperçu, quand on choisit un téléphone hors ligne', 'Aide'),
       P('103', 'error', 'Oculibre est déjà ouvert', 'Une autre copie d’Oculibre attend déjà les téléphones. Fermez-la ; si vous ne la trouvez pas, redémarrez l’ordinateur.', 'fenêtre au lancement', 'Fermer celle-ci'),
       P('104', 'warning', 'Le pare-feu bloque peut-être le Wi-Fi', 'Aucun téléphone n’a pu se connecter en Wi-Fi depuis 2 minutes alors qu’un téléphone relié est sur le réseau.', 'page « Ajouter un téléphone » et réglages', 'Autoriser Oculibre', 'Utiliser le câble'),
+      P('105', 'error', 'Versions incompatibles', 'Le téléphone et l’ordinateur ont des versions d’Oculibre qui ne fonctionnent pas ensemble. Mettez à jour la plus ancienne.', 'bandeau, à la place de l’aperçu', 'OK'),
+      P('106', 'warning', 'Un autre téléphone est déjà en direct', 'L’ordinateur reçoit un téléphone à la fois. Arrêtez l’autre, puis réessayez.', 'sur le téléphone refusé', 'Réessayer'),
+      P('199', 'error', 'Un problème inattendu est survenu', 'Réessayez. Si cela recommence, signalez-le avec le code et le détail technique.', 'bandeau, avec le détail technique', 'Réessayer'),
 
       H('2xx · Appairage et sécurité'),
       P('201', 'warning', 'Ce QR code a expiré', 'Pour votre sécurité, un QR code ne sert que 10 minutes et pour un seul téléphone.', 'à la place du QR code', 'Nouveau QR code'),
@@ -120,6 +123,7 @@ class Component extends DCLogic {
       P('303', 'warning', 'L’image est très sombre', 'Allumez une lampe face à vous, ou passez à 30 images par seconde : le téléphone pourra capter plus de lumière.', 'bandeau, une fois par session', 'Passer à 30 i/s', 'Ignorer'),
       P('304', 'warning', 'Le téléphone chauffe', 'Il risque de baisser la qualité de lui-même. Retirez la coque, ou passez en 720p.', 'bandeau', 'Passer en 720p', 'Ignorer'),
       P('305', 'error', 'Le téléphone n’a plus accès à la caméra', 'Android a retiré l’autorisation. Ouvrez Oculibre sur le téléphone pour la rétablir.', 'dans l’aperçu'),
+      P('306', 'error', 'La caméra n’a pas pu démarrer', 'Réessayez. Si cela recommence, redémarrez le téléphone.', 'dans l’aperçu, avec le détail technique', 'Réessayer'),
 
       H('4xx · Caméra virtuelle et ordinateur'),
       P('401', 'error', 'La caméra virtuelle n’est pas installée', 'Sans elle, Zoom, Teams ou OBS ne voient pas Oculibre. L’installation demande le mot de passe de l’ordinateur.', 'assistant de premier lancement, puis bandeau', 'Installer'),

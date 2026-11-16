@@ -35,14 +35,18 @@ class StreamService : Service() {
     enum class Phase { IDLE, CONNECTING, LIVE, SEARCHING }
 
     /**
-     * What the UI shows: [status] is a technical line (English), [phase] what to say to people,
-     * [live] the quality being streamed ("1080p · 60").
+     * What the UI shows: [status] is a technical line (English, for the advanced screen), [phase]
+     * and [problem] what to say to people, [live] the quality being streamed ("1080p · 60"),
+     * [retryInS] when searching, [detail] the technical cause of [problem].
      */
     data class Snapshot(
         val running: Boolean,
         val status: String?,
         val phase: Phase = if (running) Phase.CONNECTING else Phase.IDLE,
         val live: String? = null,
+        val problem: Problem? = null,
+        val detail: String? = null,
+        val retryInS: Int? = null,
     )
 
     private class Request(val host: String, val port: Int, val config: StreamConfig)
@@ -60,6 +64,9 @@ class StreamService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    // The notification in the app's language (settings), like the screens.
+    override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -81,7 +88,8 @@ class StreamService : Service() {
             startInForeground(request)
         } catch (e: Exception) {
             // e.g. Android 12+ refusing a foreground service started from the background.
-            publish(Snapshot(false, "Cannot start the streaming service: ${e.message}"))
+            publish(Snapshot(false, "Cannot start the streaming service: ${e.message}",
+                problem = Problem.UNEXPECTED, detail = e.message ?: e.javaClass.simpleName))
             stopSelf()
             return START_NOT_STICKY
         }
@@ -113,13 +121,17 @@ class StreamService : Service() {
         }
         if (now - lostSince >= GIVE_UP_MS) {
             request = null
-            shutdown("Stopped: the computer could not be reached for ${GIVE_UP_MS / 60_000} minutes")
+            shutdown("Stopped: the computer could not be reached for ${GIVE_UP_MS / 60_000} minutes",
+                Problem.NOT_FOUND, error)
             return
         }
         val delay = minOf(1000L shl attempts.coerceAtMost(4), MAX_DELAY_MS)
         attempts++
         val why = error?.let { " ($it)" } ?: ""
-        publish(Snapshot(true, "Looking for the computer — trying again in ${delay / 1000} s$why", Phase.SEARCHING))
+        // The first minute: "looking for it"; after that, "cannot be found" (it keeps looking).
+        val problem = if (now - lostSince < Problem.SEARCHING_MS) Problem.SEARCHING else Problem.NOT_FOUND
+        publish(Snapshot(true, "Looking for the computer — trying again in ${delay / 1000} s$why", Phase.SEARCHING,
+            problem = problem, detail = error, retryInS = (delay / 1000).toInt()))
         main.postDelayed(retry, delay)
     }
 
@@ -133,11 +145,11 @@ class StreamService : Service() {
                 if (this@StreamService.session !== session) return@post
                 val lines = minOf(width, height)
                 val size = if (lines >= 2160) "4K" else "${lines}p"
-                publish(current.copy(running = true, phase = Phase.LIVE, live = "$size · $fps"))
+                publish(current.copy(running = true, phase = Phase.LIVE, live = "$size · $fps", problem = null, detail = null, retryInS = null))
             }
         }
 
-        override fun onStopped(session: StreamSession, error: String?, retry: Boolean) {
+        override fun onStopped(session: StreamSession, error: String?, retry: Boolean, problem: Problem?) {
             main.post {
                 if (this@StreamService.session !== session) return@post
                 this@StreamService.session = null
@@ -145,13 +157,13 @@ class StreamService : Service() {
                     scheduleRetry(error)
                 } else {
                     request = null
-                    shutdown(if (error == null) "Stopped" else "Stopped: $error")
+                    shutdown(if (error == null) "Stopped" else "Stopped: $error", problem, error)
                 }
             }
         }
     }
 
-    private fun shutdown(status: String?) {
+    private fun shutdown(status: String?, problem: Problem? = null, detail: String? = null) {
         main.removeCallbacks(retry)
         releaseLocks()
         if (Build.VERSION.SDK_INT >= 24) {
@@ -160,7 +172,7 @@ class StreamService : Service() {
             @Suppress("DEPRECATION")
             stopForeground(true)
         }
-        publish(Snapshot(false, status ?: current.status))
+        publish(Snapshot(false, status ?: current.status, problem = problem, detail = detail))
         stopSelf()
     }
 
@@ -180,8 +192,8 @@ class StreamService : Service() {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Streaming", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Shown while the phone is used as a webcam"
+                NotificationChannel(CHANNEL_ID, getString(R.string.notification_channel), NotificationManager.IMPORTANCE_LOW).apply {
+                    description = getString(R.string.notification_channel_text)
                 },
             )
         }
@@ -202,11 +214,11 @@ class StreamService : Service() {
         @Suppress("DEPRECATION") // addAction(int, …) is the only variant on API 21–22
         val notification = builder
             .setSmallIcon(android.R.drawable.presence_video_online)
-            .setContentTitle("Oculibre is streaming")
-            .setContentText("${cfg.width}×${cfg.height} · ${cfg.fps} fps → ${request.host}")
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(getString(R.string.notification_text, cfg.width, cfg.height, cfg.fps))
             .setOngoing(true)
             .setContentIntent(openApp)
-            .addAction(0, "Stop", stopIntent)
+            .addAction(0, getString(R.string.stop), stopIntent)
             .build()
 
         if (Build.VERSION.SDK_INT >= 29) {
@@ -281,6 +293,11 @@ class StreamService : Service() {
 
         fun removeObserver(observer: (Snapshot) -> Unit) {
             observers -= observer
+        }
+
+        /** The user fixed (or dismissed) the problem of a stopped stream: stop showing it. */
+        fun clearProblem() {
+            if (!current.running && current.problem != null) publish(current.copy(problem = null, detail = null))
         }
 
         private fun publish(snapshot: Snapshot) {

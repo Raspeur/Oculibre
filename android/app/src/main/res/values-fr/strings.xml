@@ -18,8 +18,6 @@
     <string name="footer">La caméra et la qualité se choisissent depuis l\'ordinateur.</string>
     <string name="alert_battery_title">L\'économie de batterie peut couper la webcam</string>
     <string name="alert_battery_text">Écran éteint, Android peut arrêter Oculibre.</string>
-    <string name="alert_camera_title">L\'accès à la caméra a été retiré</string>
-    <string name="alert_camera_text">Oculibre en a besoin pour filmer.</string>
     <string name="fix">Corriger ›</string>
     <string name="no_quality">Aucune qualité prise en charge par ce téléphone</string>
     <string name="camera_denied">Accès à la caméra refusé : Oculibre ne peut pas filmer.</string>
@@ -100,4 +98,36 @@
     <string name="pair_action">Relier</string>
     <string name="pair_invalid">Ce code d\'appairage n\'est pas valide, ou vient d\'une version plus récente d\'Oculibre : mettez l\'application à jour</string>
     <string name="pair_done">Relié à %1$s : appuyez sur Démarrer</string>
+    <!-- Problèmes (design/mockups/PhoneProblems) : codes communs avec l'ordinateur -->
+    <string name="problem_code">Code %1$d</string>
+    <string name="problem_code_detail">Code %1$d · %2$s</string>
+    <string name="problem_101_title">Recherche de l\'ordinateur…</string>
+    <string name="problem_101_text">Vérifiez qu\'Oculibre est ouvert sur l\'ordinateur. La recherche continue toute seule.</string>
+    <string name="problem_102_title">Ordinateur introuvable</string>
+    <string name="problem_102_text">Le téléphone et l\'ordinateur sont-ils sur le même Wi-Fi ? Oculibre est-il ouvert sur l\'ordinateur ? Le câble USB marche toujours.</string>
+    <string name="problem_105_title">Mettez Oculibre à jour</string>
+    <string name="problem_105_text">Le téléphone et l\'ordinateur ont des versions d\'Oculibre qui ne fonctionnent pas ensemble. Mettez à jour la plus ancienne.</string>
+    <string name="problem_106_title">L\'ordinateur est occupé</string>
+    <string name="problem_106_text">Il reçoit déjà un autre téléphone. Arrêtez-le, puis réessayez.</string>
+    <string name="problem_203_title">Cet ordinateur ne reconnaît plus ce téléphone</string>
+    <string name="problem_203_text">L\'un des deux a peut-être été réinstallé, ou a oublié l\'autre. Affichez un QR code sur l\'ordinateur (« Ajouter un téléphone ») et scannez-le.</string>
+    <string name="problem_301_title">La caméra est occupée</string>
+    <string name="problem_301_text">Une autre application l\'utilise (appareil photo, appel vidéo). Fermez-la puis réessayez.</string>
+    <string name="problem_304_title">Le téléphone chauffe</string>
+    <string name="problem_304_text">Retirez la coque ou posez-le à l\'ombre. Sinon, il risque de baisser la qualité de lui-même.</string>
+    <string name="problem_305_title">Accès à la caméra retiré</string>
+    <string name="problem_305_text">Android a retiré l\'autorisation, par exemple après une longue période sans utiliser Oculibre.</string>
+    <string name="problem_306_title">La caméra n\'a pas pu démarrer</string>
+    <string name="problem_306_text">Réessayez. Si cela recommence, redémarrez le téléphone.</string>
+    <string name="problem_199_title">Un problème inattendu est survenu</string>
+    <string name="problem_199_text">Réessayez. Si cela recommence, signalez-le avec le code ci-dessous.</string>
+    <string name="allow_camera">Autoriser la caméra</string>
+    <string name="retry_in">Nouvel essai dans %1$d s</string>
+    <string name="connecting_detail">Oculibre doit être ouvert sur l\'ordinateur</string>
+    <string name="blocked_detail">Démarrer sera possible une fois le problème réglé</string>
+    <string name="cannot_read_cameras">Impossible de lire les caméras : %1$s</string>
+    <string name="notification_channel">Direct</string>
+    <string name="notification_channel_text">Affichée pendant que le téléphone sert de webcam</string>
+    <string name="notification_title">Oculibre est en direct</string>
+    <string name="notification_text">%1$d×%2$d · %3$d i/s</string>
 </resources>

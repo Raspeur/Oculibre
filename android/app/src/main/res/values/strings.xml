@@ -22,8 +22,6 @@
     <string name="footer">The camera and the quality are chosen from the computer.</string>
     <string name="alert_battery_title">Battery saving may cut the webcam</string>
     <string name="alert_battery_text">With the screen off, Android can stop Oculibre.</string>
-    <string name="alert_camera_title">Camera access was withdrawn</string>
-    <string name="alert_camera_text">Oculibre needs it to film.</string>
     <string name="fix">Fix ›</string>
     <string name="no_quality">No quality supported by this phone was found</string>
     <string name="camera_denied">Camera access refused: Oculibre cannot film.</string>
@@ -106,4 +104,36 @@
     <string name="pair_action">Pair</string>
     <string name="pair_invalid">This pairing code is not valid, or comes from a newer Oculibre: update the app</string>
     <string name="pair_done">Paired with %1$s: press Start</string>
+    <!-- Problems (design/mockups/PhoneProblems): codes shared with the computer -->
+    <string name="problem_code">Code %1$d</string>
+    <string name="problem_code_detail">Code %1$d · %2$s</string>
+    <string name="problem_101_title">Looking for the computer…</string>
+    <string name="problem_101_text">Check that Oculibre is open on the computer. The phone keeps looking by itself.</string>
+    <string name="problem_102_title">Computer not found</string>
+    <string name="problem_102_text">Are the phone and the computer on the same Wi-Fi? Is Oculibre open on the computer? The USB cable always works.</string>
+    <string name="problem_105_title">Update Oculibre</string>
+    <string name="problem_105_text">The phone and the computer have versions of Oculibre that cannot work together. Update the older one.</string>
+    <string name="problem_106_title">The computer is busy</string>
+    <string name="problem_106_text">It is already receiving another phone. Stop that one, then try again.</string>
+    <string name="problem_203_title">The computer no longer recognises this phone</string>
+    <string name="problem_203_text">One of them may have been reinstalled, or has forgotten the other. Show a QR code on the computer (\"Add a phone\") and scan it.</string>
+    <string name="problem_301_title">The camera is busy</string>
+    <string name="problem_301_text">Another app is using it (camera, video call). Close it, then try again.</string>
+    <string name="problem_304_title">The phone is getting hot</string>
+    <string name="problem_304_text">Take off its case or move it out of the sun. Otherwise it may lower the quality by itself.</string>
+    <string name="problem_305_title">Camera access withdrawn</string>
+    <string name="problem_305_text">Android withdrew the permission, for example after a long time without using Oculibre.</string>
+    <string name="problem_306_title">The camera could not start</string>
+    <string name="problem_306_text">Try again. If it happens again, restart the phone.</string>
+    <string name="problem_199_title">Something went wrong</string>
+    <string name="problem_199_text">Try again. If it happens again, report it with the code below.</string>
+    <string name="allow_camera">Allow the camera</string>
+    <string name="retry_in">Trying again in %1$d s</string>
+    <string name="connecting_detail">Oculibre must be open on the computer</string>
+    <string name="blocked_detail">Start will be possible once the problem is fixed</string>
+    <string name="cannot_read_cameras">Cannot read the cameras: %1$s</string>
+    <string name="notification_channel">Streaming</string>
+    <string name="notification_channel_text">Shown while the phone is used as a webcam</string>
+    <string name="notification_title">Oculibre is streaming</string>
+    <string name="notification_text">%1$d×%2$d · %3$d fps</string>
 </resources>

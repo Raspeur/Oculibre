@@ -23,6 +23,15 @@
     <color name="oc_live_soft">#1F3DDC97</color>
     <color name="oc_off">#5D6F90</color>
     <color name="oc_danger">#FF6B6B</color>
+    <color name="oc_danger_soft">#1FFF6B6B</color>
+    <color name="oc_danger_line">#73FF6B6B</color>
+    <color name="oc_info">#7FB2FF</color>
+    <color name="oc_info_soft">#1A7FB2FF</color>
+    <color name="oc_info_line">#597FB2FF</color>
+    <!-- Alert icon squares (.oc-alert__icon). -->
+    <color name="oc_accent_icon">#29FE633C</color>
+    <color name="oc_danger_icon">#2EFF6B6B</color>
+    <color name="oc_info_icon">#297FB2FF</color>
     <!-- Progress segments not reached yet. -->
     <color name="oc_track">#24344F</color>
 </resources>
