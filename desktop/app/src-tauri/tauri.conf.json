@@ -44,11 +44,10 @@
       "deb": {
         "section": "video",
         "depends": [
-          "libavcodec62",
-          "libavutil60",
           "linux-modules-v4l2loopback-generic | v4l2loopback-dkms"
         ],
         "recommends": [
+          "libavcodec62",
           "adb",
           "pkexec"
         ],

@@ -194,6 +194,12 @@ fn start(app: AppHandle, receiver: State<Receiver>) -> Result<String, String> {
     start_host(&app, &receiver)
 }
 
+/// Whether FFmpeg could be loaded (`Err`: why); without it, OpenH264 decodes (problem 502).
+#[tauri::command(async)]
+fn ffmpeg_status() -> Result<(), String> {
+    decoder::ffmpeg_available()
+}
+
 /// Whether the virtual camera is there (problem 401 when not, 404 when its module is missing).
 #[tauri::command(async)]
 fn vcam_status() -> VcamStatus {
@@ -478,7 +484,8 @@ pub fn run() {
             set_autostart,
             forget_phone,
             vcam_status,
-            fix_vcam
+            fix_vcam,
+            ffmpeg_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

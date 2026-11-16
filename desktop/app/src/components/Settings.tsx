@@ -17,6 +17,7 @@ import {
   setSettings,
   settings as loadSettings,
   vcamStatus,
+  ffmpegMissing,
 } from "../engine";
 import { VcamProblem } from "./VcamProblem";
 import type { EngineState } from "../useEngine";
@@ -31,12 +32,14 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
   const [version, setVersion] = useState<string>("");
   const [startsWithComputer, setStartsWithComputer] = useState(false);
   const [vcam, setVcam] = useState<VcamStatus | null>(null);
+  const [noFfmpeg, setNoFfmpeg] = useState<string | null>(null);
   const about = useRef<HTMLElement>(null);
 
   useEffect(() => {
     loadSettings().then(setValues);
     loadAutostart().then(setStartsWithComputer);
     vcamStatus().then(setVcam);
+    ffmpegMissing().then(setNoFfmpeg);
     if (inApp) getVersion().then(setVersion);
   }, []);
 
@@ -246,6 +249,16 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
               <option value="openh264">{t("decoder_openh264")}</option>
             </select>
           </div>
+          {noFfmpeg && (
+            <div className="oc-alert oc-alert--info" role="status" style={{ margin: "0 16px 12px" }}>
+              <span className="oc-alert__icon" aria-hidden="true">i</span>
+              <div className="oc-alert__body">
+                <span className="oc-alert__title">{t("ffmpeg_missing_title")}</span>
+                <span className="oc-alert__text">{t("ffmpeg_missing_text")}</span>
+                <span className="oc-alert__code">{t("code", { code: 502 })} · {noFfmpeg}</span>
+              </div>
+            </div>
+          )}
         </Section>
 
         <section id="about" ref={about} aria-labelledby="s-about" className="oc-stack">

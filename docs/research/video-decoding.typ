@@ -106,10 +106,14 @@ FFmpeg breaks its binary interface at each major version (the number in `libavco
 
 = Proposals <proposals>
 
-+ *Start without FFmpeg (\#18)*: load `libavcodec` ourselves at start (`dlopen`, only the major
-  version we were built against) instead of linking it. Missing or another version: fall back to
-  OpenH264 and tell the user, with the problem code of the mockups (`502`, "decoding by the
-  processor"). The `.deb` then only *recommends* `libavcodec` instead of requiring it.
++ *Start without FFmpeg (\#18), done*: `libavcodec.so.<major>` (the major version we were built
+  against) is loaded at the first decoder with `dlopen`, its 17 functions found with `dlsym`
+  (`decoder.rs`, `ffmpeg::Lib`). `ffmpeg-sys-next` still gives the types, but none of its functions
+  is called directly, so the linker (`--as-needed`) leaves libavcodec out of the binary's needed
+  libraries (`readelf -d`); a test checks at compile time that each function type is the one of
+  `ffmpeg-sys-next`. Missing or another version: OpenH264, and Settings shows problem `502`. The
+  `.deb` only *recommends* `libavcodec`. Check on a computer:
+  `cargo run --release -p oculibre-core --example decoder_check`.
 + *Linux packages (\#18)*: `.deb` per Ubuntu/Debian release, linked to the system FFmpeg; AppImage or
   Flatpak with our minimal LGPL FFmpeg (or the Flatpak runtime's codecs extension, to check).
 + *Windows (\#17)*: decode with the OS (Media Foundation, D3D11 hardware decoding) first; FFmpeg

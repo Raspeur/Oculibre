@@ -351,3 +351,13 @@ export function vcamStatus(): Promise<VcamStatus> {
 export function fixVcam(): Promise<void> {
   return invoke<void>("fix_vcam");
 }
+
+/** null when FFmpeg is there; else why not ("libavcodec.so.62 is not installed"): OpenH264 decodes. */
+export function ffmpegMissing(): Promise<string | null> {
+  return inApp
+    ? invoke<void>("ffmpeg_status").then(
+        () => null,
+        (why) => String(why),
+      )
+    : Promise.resolve(null);
+}
