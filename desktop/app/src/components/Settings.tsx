@@ -8,6 +8,7 @@ import {
   type AppSettings,
   type DecoderChoice,
   type KnownPhone,
+  type VcamStatus,
   autostart as loadAutostart,
   setAutostart,
   when,
@@ -15,7 +16,9 @@ import {
   inApp,
   setSettings,
   settings as loadSettings,
+  vcamStatus,
 } from "../engine";
+import { VcamProblem } from "./VcamProblem";
 import type { EngineState } from "../useEngine";
 import { LANGUAGES, setLanguage, t, useLang } from "../i18n";
 
@@ -27,11 +30,13 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState<string>("");
   const [startsWithComputer, setStartsWithComputer] = useState(false);
+  const [vcam, setVcam] = useState<VcamStatus | null>(null);
   const about = useRef<HTMLElement>(null);
 
   useEffect(() => {
     loadSettings().then(setValues);
     loadAutostart().then(setStartsWithComputer);
+    vcamStatus().then(setVcam);
     if (inApp) getVersion().then(setVersion);
   }, []);
 
@@ -149,15 +154,20 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
         <Section id="s-vcam" title={t("virtual_camera")}>
           <div className="oc-row">
             <span className="oc-row__label">{t("status")}</span>
-            {engine.running ? (
+            {vcam?.kind === "Ready" ? (
               <span className="oc-status oc-strong">
                 <span className="oc-dot" style={{ width: 7, height: 7 }} aria-hidden="true" />
                 {t("installed")}
               </span>
+            ) : vcam?.kind === "Other" ? (
+              <span className="oc-row__value">{t("vcam_other", { device: vcam.data.device })}</span>
             ) : (
-              <span className="oc-row__value oc-row__value--todo">{t("unavailable")}</span>
+              <span className="oc-row__value oc-row__value--todo">{vcam ? t("unavailable") : "—"}</span>
             )}
           </div>
+          {(vcam?.kind === "NotLoaded" || vcam?.kind === "NotInstalled") && (
+            <VcamProblem style={{ margin: "0 16px 12px" }} onFixed={() => vcamStatus().then(setVcam)} />
+          )}
           <div className="oc-row">
             <span className="oc-row__label">{t("name_in_apps")}</span>
             <span className="oc-row__value">Oculibre</span>

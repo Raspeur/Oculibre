@@ -8,6 +8,7 @@ import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
 import { Tour, tourSeen } from "./components/Tour";
+import { VcamProblem } from "./components/VcamProblem";
 import { inApp, onNavigate, settings as loadSettings } from "./engine";
 import { setLanguage, t, useLang } from "./i18n";
 import { useEngine } from "./useEngine";
@@ -63,7 +64,10 @@ function App() {
               {t("browser_text")}
             </Notice>
           )}
-          {engine.startError && (
+          {engine.startError && vcamMissing(engine.startError) && (
+            <VcamProblem style={{ margin: "24px 24px 0" }} />
+          )}
+          {engine.startError && !vcamMissing(engine.startError) && (
             <Notice level="error" title={t("start_error_title")} code={startCode(engine.startError)}>
               {engine.startError}
             </Notice>
@@ -89,6 +93,11 @@ function Notice(props: { level: "info" | "error"; title: string; code?: string; 
       </div>
     </div>
   );
+}
+
+/** No virtual camera at all (core v4l2::find_loopback): one click sets it up. */
+function vcamMissing(error: string): boolean {
+  return error.includes("no v4l2loopback device");
 }
 
 /** Problem codes of the mockups (design/mockups/Problems): 103 another Oculibre, 401 no virtual camera. */

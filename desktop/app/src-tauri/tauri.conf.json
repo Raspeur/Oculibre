@@ -49,11 +49,14 @@
           "linux-modules-v4l2loopback-generic | v4l2loopback-dkms"
         ],
         "recommends": [
-          "adb"
+          "adb",
+          "pkexec"
         ],
         "files": {
           "/etc/modprobe.d/oculibre.conf": "linux/modprobe-oculibre.conf",
-          "/etc/modules-load.d/oculibre.conf": "linux/modules-load-oculibre.conf"
+          "/etc/modules-load.d/oculibre.conf": "linux/modules-load-oculibre.conf",
+          "/usr/lib/oculibre/vcam-setup": "linux/vcam-setup.sh",
+          "/usr/share/polkit-1/actions/org.oculibre.vcam.policy": "linux/org.oculibre.vcam.policy"
         },
         "postInstallScript": "linux/postinst.sh"
       }

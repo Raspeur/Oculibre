@@ -185,6 +185,22 @@ const en = {
   notice_ffmpeg: "Your system's library, depending on how it was built.",
   notice_jpeg: "This software is based in part on the work of the Independent JPEG Group.",
   notice_fonts: "Fonts included in the app.",
+
+  // Virtual camera (problems 401, 403, 404, 405)
+  vcam_missing_title: "The virtual camera is not set up",
+  vcam_missing_text: "Without it, Zoom, Teams or OBS cannot see Oculibre. Setting it up asks for the computer's password.",
+  vcam_install: "Set up the virtual camera",
+  vcam_installing: "Setting up…",
+  vcam_module_title: "A package is missing for the virtual camera",
+  vcam_module_text:
+    "The v4l2loopback module is not installed for this Linux kernel. Install the package linux-modules-v4l2loopback-generic (or v4l2loopback-dkms), then try again.",
+  vcam_secureboot_title: "Secure Boot blocks the virtual camera",
+  vcam_secureboot_text:
+    "Its module was built on this computer and its key is not accepted yet. In a terminal: sudo update-secureboot-policy --enroll-key, choose a password, restart, choose \u201cEnroll MOK\u201d on the blue screen and type that password.",
+  vcam_inuse_title: "Another virtual camera is in the way",
+  vcam_inuse_text: "Another app already created a virtual camera with other settings. Restart the computer: the Oculibre camera will then be ready.",
+  vcam_failed_title: "The virtual camera could not be set up",
+  vcam_other: "Another app's camera ({device})",
 };
 
 export type Key = keyof typeof en;
@@ -364,6 +380,23 @@ const fr: Record<Key, string> = {
   notice_ffmpeg: "La bibliothèque de votre système, selon sa construction.",
   notice_jpeg: "Ce logiciel est basé en partie sur les travaux de l'Independent JPEG Group.",
   notice_fonts: "Polices incluses dans l'application.",
+
+  vcam_missing_title: "La caméra virtuelle n'est pas installée",
+  vcam_missing_text:
+    "Sans elle, Zoom, Teams ou OBS ne voient pas Oculibre. L'installation demande le mot de passe de l'ordinateur.",
+  vcam_install: "Installer la caméra virtuelle",
+  vcam_installing: "Installation…",
+  vcam_module_title: "Il manque un paquet pour la caméra virtuelle",
+  vcam_module_text:
+    "Le module v4l2loopback n'est pas installé pour ce noyau Linux. Installez le paquet linux-modules-v4l2loopback-generic (ou v4l2loopback-dkms), puis réessayez.",
+  vcam_secureboot_title: "Le démarrage sécurisé bloque la caméra virtuelle",
+  vcam_secureboot_text:
+    "Son module a été construit sur cet ordinateur et sa clé n'est pas encore acceptée. Dans un terminal : sudo update-secureboot-policy --enroll-key, choisissez un mot de passe, redémarrez, choisissez « Enroll MOK » sur l'écran bleu et tapez ce mot de passe.",
+  vcam_inuse_title: "Une autre caméra virtuelle gêne",
+  vcam_inuse_text:
+    "Une autre application a déjà créé une caméra virtuelle avec d'autres réglages. Redémarrez l'ordinateur : la caméra Oculibre sera alors prête.",
+  vcam_failed_title: "La caméra virtuelle n'a pas pu être installée",
+  vcam_other: "Celle d'une autre application ({device})",
 };
 
 const texts: Record<Lang, Record<Key, string>> = { en, fr };

@@ -325,3 +325,29 @@ export function when(iso: string): string {
 export function phoneName(hello: Hello): string {
   return hello.name || hello.device?.model || t("phone");
 }
+
+// --- the virtual camera (Linux, #18): core vcam_setup.rs
+
+/** What the virtual camera looks like now. */
+export type VcamStatus =
+  | { kind: "Ready"; data: { device: string } }
+  | { kind: "Other"; data: { device: string } }
+  | { kind: "NotLoaded" }
+  | { kind: "NotInstalled" };
+
+/** Why setting it up did not work ("Cancelled": the password window was closed). */
+export type FixError =
+  | { kind: "Cancelled" }
+  | { kind: "NotInstalled" }
+  | { kind: "SecureBoot" }
+  | { kind: "InUse" }
+  | { kind: "Failed"; data: string };
+
+export function vcamStatus(): Promise<VcamStatus> {
+  return inApp ? invoke<VcamStatus>("vcam_status") : Promise.resolve({ kind: "NotLoaded" });
+}
+
+/** Asks for the password (polkit), sets the camera up, restarts the receiver. */
+export function fixVcam(): Promise<void> {
+  return invoke<void>("fix_vcam");
+}

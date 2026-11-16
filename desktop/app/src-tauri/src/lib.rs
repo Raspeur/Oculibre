@@ -20,6 +20,7 @@ use oculibre_core::pairing::{self, Pairings};
 use oculibre_core::preview::{Rate, Viewer, Watch};
 use oculibre_core::protocol::{Capabilities, SetMode};
 use oculibre_core::session::{ModeError, Remote, View};
+use oculibre_core::vcam_setup::{self, FixError, VcamStatus};
 use oculibre_core::{Event, Events};
 use serde::{Deserialize, Serialize};
 use settings::AppSettings;
@@ -191,6 +192,30 @@ fn restart(app: &AppHandle) {
 #[tauri::command(async)]
 fn start(app: AppHandle, receiver: State<Receiver>) -> Result<String, String> {
     start_host(&app, &receiver)
+}
+
+/// Whether the virtual camera is there (problem 401 when not, 404 when its module is missing).
+#[tauri::command(async)]
+fn vcam_status() -> VcamStatus {
+    vcam_setup::status()
+}
+
+/// Sets the virtual camera up as root (the desktop asks for the password), then starts the
+/// receiver again: it could not start without the camera.
+#[tauri::command(async)]
+fn fix_vcam(app: AppHandle) -> Result<(), FixError> {
+    // While developing (debug build, nothing installed): the script of the source tree.
+    let dev = cfg!(debug_assertions)
+        .then(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("linux/vcam-setup.sh"));
+    let helper = vcam_setup::helper_path(dev).ok_or_else(|| {
+        FixError::Failed(format!(
+            "{} is missing: reinstall Oculibre",
+            vcam_setup::HELPER
+        ))
+    })?;
+    vcam_setup::fix(&helper)?;
+    restart(&app);
+    Ok(())
 }
 
 /// Stops the receiver: the phone being served (if any) is let go, the port is closed.
@@ -451,7 +476,9 @@ pub fn run() {
             set_settings,
             autostart,
             set_autostart,
-            forget_phone
+            forget_phone,
+            vcam_status,
+            fix_vcam
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

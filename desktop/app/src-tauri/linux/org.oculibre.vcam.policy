@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Lets Oculibre set up its virtual camera (vcam-setup) after asking for the administrator
+     password, with a message that says why. Installed in /usr/share/polkit-1/actions. -->
+<policyconfig>
+  <vendor>Oculibre</vendor>
+  <vendor_url>https://github.com/Raspeur/Oculibre</vendor_url>
+  <action id="org.oculibre.vcam">
+    <description>Set up the Oculibre virtual camera</description>
+    <description xml:lang="fr">Installer la caméra virtuelle d'Oculibre</description>
+    <message>Oculibre needs your password to set up its virtual camera, so that video apps can see the phone.</message>
+    <message xml:lang="fr">Oculibre a besoin de votre mot de passe pour installer sa caméra virtuelle, afin que les applications vidéo voient le téléphone.</message>
+    <icon_name>oculibre-app</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/oculibre/vcam-setup</annotate>
+  </action>
+</policyconfig>

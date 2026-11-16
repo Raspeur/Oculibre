@@ -27,6 +27,7 @@ pub mod store;
 pub mod tls;
 pub mod v4l2;
 pub mod vcam;
+pub mod vcam_setup;
 pub mod yuv;
 
 pub use events::{ignore_events, Event, Events};
