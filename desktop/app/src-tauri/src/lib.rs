@@ -452,6 +452,11 @@ pub fn run() {
         ..Receiver::default()
     };
     tauri::Builder::default()
+        // First plugin, as its documentation asks: a second launch (menu, autostart while the
+        // window is in the tray) shows the running Oculibre's window and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_window(app);
+        }))
         // Started with the computer: `--hidden`, straight to the tray.
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
