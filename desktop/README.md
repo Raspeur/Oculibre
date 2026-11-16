@@ -29,6 +29,24 @@ To build: `sudo apt install build-essential pkg-config libavcodec-dev libavutil-
 builds only (not covered by Cisco's patent licence). AMD's own driver stack (`/opt/amdgpu`) is found automatically; check VA-API with
 `vainfo`.
 
+### Fedora (no package yet)
+
+Fedora ships FFmpeg without H.264 (`ffmpeg-free`) and Mesa's VA-API driver without H.264 either:
+Oculibre would then fall back to OpenH264, or find no decoder at all. Take the full versions from
+[RPM Fusion](https://rpmfusion.org/Configuration), with the virtual camera module, then build
+Oculibre from source:
+
+```sh
+sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+sudo dnf swap ffmpeg-free ffmpeg --allowerasing                   # FFmpeg with H.264
+sudo dnf swap mesa-va-drivers mesa-va-drivers-freeworld           # AMD/Intel hardware decoding
+sudo dnf install v4l2loopback                                     # the virtual camera module
+sudo dnf install gcc pkgconf-pkg-config clang-devel ffmpeg-devel  # to build
+```
+
+Then `cargo run --release -p oculibre-core --example decoder_check` should say
+`Decoder: VA-API (hardware)` (or `FFmpeg (software)` without a graphics card).
+
 ## Use it
 
 ```sh
@@ -69,6 +87,27 @@ and writes it into `devices/<brand>/<model>/report.md` (found through its "Model
 `python3 scripts/device-report.py` first for a new phone). USB and Wi-Fi (`--wifi`) results get
 their own section, replaced at each run. `--seconds`, `--warmup`, `--report <path>`, `--no-report`.
 Needs app 0.2 or newer.
+
+## Packages (`.deb`)
+
+```sh
+bash ../scripts/build-deb.sh                 # Ubuntu 26.04, Ubuntu 24.04, Debian 13
+bash ../scripts/build-deb.sh ubuntu-24.04    # one release
+```
+
+One package per release, each built in a Docker container of that release (needs Docker), then
+installed on a clean container of the same release to check that its dependencies resolve and no
+library is missing. Packages land in `target/deb/` (`Oculibre_<version>_<release>_amd64.deb`).
+Why one per release: FFmpeg changes its binary interface at each major version (Ubuntu 24.04:
+libavcodec 60, Debian 13: 61, Ubuntu 26.04: 62), and Oculibre loads the one it was built against.
+
+| Release | Decoding recommended | Virtual camera module |
+|---|---|---|
+| Ubuntu 26.04 | `libavcodec62`, or `libopenh264-8` | signed package (`linux-modules-v4l2loopback-generic`), else DKMS |
+| Ubuntu 24.04 | `libavcodec60` (its OpenH264 2.4 has another ABI) | DKMS (`v4l2loopback-dkms`): with Secure Boot, its key must be enrolled once |
+| Debian 13 | `libavcodec61`, or `libopenh264-8` | DKMS (`v4l2loopback-dkms`) |
+
+For quick local tests, `cd app && npm run tauri build -- --bundles deb` builds for this computer only.
 
 ## Develop
 
