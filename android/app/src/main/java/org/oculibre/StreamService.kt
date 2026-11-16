@@ -57,8 +57,11 @@ class StreamService : Service() {
     /** Failed attempts in a row, and since when the computer is missing (elapsedRealtime ms). */
     private var attempts = 0
     private var lostSince = 0L
-    /** When the current session started: one that lasted is a fresh start (no backoff). */
-    private var sessionStartedAt = 0L
+    /**
+     * The current session went live: its loss is a fresh start (no backoff). Not its duration: a
+     * failed attempt over Wi-Fi (cable, direct, mDNS, VPN tries) can last more than 10 s.
+     */
+    private var wentLive = false
     private val retry = Runnable { request?.let { if (session == null) startSession(it) } }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
@@ -107,14 +110,14 @@ class StreamService : Service() {
     private fun startSession(request: Request) {
         val newSession = StreamSession(applicationContext, request.host, request.port, request.config, sessionListener)
         session = newSession
-        sessionStartedAt = SystemClock.elapsedRealtime()
+        wentLive = false
         newSession.start()
     }
 
     /** The computer was lost: try again later, keeping the notification and the locks. */
     private fun scheduleRetry(error: String?) {
         val now = SystemClock.elapsedRealtime()
-        if (now - sessionStartedAt >= LASTED_MS || lostSince == 0L) {
+        if (wentLive || lostSince == 0L) {
             // It had been streaming (or this is the first loss): start counting again.
             attempts = 0
             lostSince = now
@@ -143,6 +146,7 @@ class StreamService : Service() {
         override fun onLive(session: StreamSession, width: Int, height: Int, fps: Int) {
             main.post {
                 if (this@StreamService.session !== session) return@post
+                wentLive = true
                 val lines = minOf(width, height)
                 val size = if (lines >= 2160) "4K" else "${lines}p"
                 publish(current.copy(running = true, phase = Phase.LIVE, live = "$size · $fps", problem = null, detail = null, retryInS = null))
@@ -258,8 +262,6 @@ class StreamService : Service() {
         private const val ACTION_STOP = "org.oculibre.action.STOP"
         private const val CHANNEL_ID = "streaming"
         private const val NOTIFICATION_ID = 1
-        /** A session that lasted this long was streaming: the next loss starts the count again. */
-        private const val LASTED_MS = 10_000L
         private const val MAX_DELAY_MS = 10_000L
         /** Then the phone stops looking, so as not to drain the battery with the computer off. */
         private const val GIVE_UP_MS = 10 * 60_000L
