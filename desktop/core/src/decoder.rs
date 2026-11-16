@@ -209,6 +209,34 @@ pub fn openh264_available() -> Result<(), String> {
     openh264_decoder().map(drop)
 }
 
+/// FFmpeg as found on this computer (About screen): its licence depends on how the distribution
+/// built it (LGPL, or GPL with GPL parts enabled).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FfmpegInfo {
+    /// "8.0.1-3ubuntu2": FFmpeg's own version string.
+    pub version: String,
+    /// "62.11.100"
+    pub libavcodec: String,
+    /// "LGPL version 2.1 or later", "GPL version 2 or later"…
+    pub license: String,
+}
+
+pub fn ffmpeg_info() -> Result<FfmpegInfo, String> {
+    #[cfg(feature = "ffmpeg")]
+    return ffmpeg::info();
+    #[cfg(not(feature = "ffmpeg"))]
+    Err("this Oculibre was built without FFmpeg".into())
+}
+
+/// "2.6.0": the OpenH264 library in use (About screen).
+pub fn openh264_version() -> Result<String, String> {
+    use openh264_sys2::API;
+    let api = openh264_api()?;
+    // SAFETY: a plain getter of the loaded library.
+    let v = unsafe { api.WelsGetCodecVersion() };
+    Ok(format!("{}.{}.{}", v.uMajor, v.uMinor, v.uRevision))
+}
+
 /// Whether FFmpeg's libavcodec could be loaded (`Err`: why, e.g. "libavcodec.so.62 is not
 /// installed"). Without it, decoding falls back to OpenH264 (problem 502).
 pub fn ffmpeg_available() -> Result<(), String> {
@@ -295,6 +323,40 @@ mod ffmpeg {
         fn av_packet_free(*mut *mut AVPacket);
         fn avcodec_free_context(*mut *mut AVCodecContext);
         fn av_buffer_unref(*mut *mut AVBufferRef);
+        fn av_version_info() -> *const c_char;
+        fn avcodec_version() -> std::ffi::c_uint;
+        fn avcodec_license() -> *const c_char;
+    }
+
+    /// FFmpeg as found on this computer.
+    pub fn info() -> Result<super::FfmpegInfo, String> {
+        let lib = lib()?;
+        let text = |p: *const c_char| {
+            // SAFETY: FFmpeg returns static NUL-terminated strings (or null, checked).
+            if p.is_null() {
+                String::new()
+            } else {
+                unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+            }
+        };
+        // SAFETY: plain getters of the loaded library.
+        let (version, packed, license) = unsafe {
+            (
+                text((lib.av_version_info)()),
+                (lib.avcodec_version)(),
+                text((lib.avcodec_license)()),
+            )
+        };
+        Ok(super::FfmpegInfo {
+            version,
+            libavcodec: format!(
+                "{}.{}.{}",
+                packed >> 16,
+                (packed >> 8) & 0xff,
+                packed & 0xff
+            ),
+            license,
+        })
     }
 
     /// "libavcodec.so.62": the major version Oculibre was built against (FFmpeg 8).

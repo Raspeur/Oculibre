@@ -359,8 +359,14 @@ export function fixVcam(): Promise<void> {
 export interface Decoders {
   ffmpeg: string | null;
   openh264: string | null;
+  /** FFmpeg as found: version, libavcodec version, licence ("GPL version 2 or later"…). */
+  ffmpeg_info: { version: string; libavcodec: string; license: string } | null;
+  /** "2.6.0" */
+  openh264_version: string | null;
 }
 
 export function decoders(): Promise<Decoders> {
-  return inApp ? invoke<Decoders>("decoders") : Promise.resolve({ ffmpeg: null, openh264: null });
+  return inApp
+    ? invoke<Decoders>("decoders")
+    : Promise.resolve({ ffmpeg: null, openh264: null, ffmpeg_info: null, openh264_version: null });
 }

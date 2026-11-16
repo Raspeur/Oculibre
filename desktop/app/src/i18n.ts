@@ -182,7 +182,9 @@ const en = {
   cancel: "Cancel",
   forget: "Forget",
   forget_ask: "Forget…",
-  notice_ffmpeg: "Your system's library, depending on how it was built.",
+  notice_ffmpeg: "libavcodec {libavcodec}: your system's library.",
+  notice_openh264: "© Cisco Systems. Your system's library.",
+  notice_not_installed: "Not installed on this computer.",
   notice_jpeg: "This software is based in part on the work of the Independent JPEG Group.",
   notice_fonts: "Fonts included in the app.",
 
@@ -383,7 +385,9 @@ const fr: Record<Key, string> = {
   cancel: "Annuler",
   forget: "Oublier",
   forget_ask: "Oublier…",
-  notice_ffmpeg: "La bibliothèque de votre système, selon sa construction.",
+  notice_ffmpeg: "libavcodec {libavcodec} : la bibliothèque de votre système.",
+  notice_openh264: "© Cisco Systems. La bibliothèque de votre système.",
+  notice_not_installed: "Pas installé sur cet ordinateur.",
   notice_jpeg: "Ce logiciel est basé en partie sur les travaux de l'Independent JPEG Group.",
   notice_fonts: "Polices incluses dans l'application.",
 

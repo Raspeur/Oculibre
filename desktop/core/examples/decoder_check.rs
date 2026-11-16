@@ -5,12 +5,15 @@ use oculibre_core::decoder::{self, Choice, VideoDecoder};
 
 fn main() {
     decoder::prepare_environment();
-    match decoder::ffmpeg_available() {
-        Ok(()) => println!("FFmpeg: found"),
+    match decoder::ffmpeg_info() {
+        Ok(i) => println!(
+            "FFmpeg: {} (libavcodec {}, {})",
+            i.version, i.libavcodec, i.license
+        ),
         Err(why) => println!("FFmpeg: not used ({why})"),
     }
-    match decoder::openh264_available() {
-        Ok(()) => println!("OpenH264: found"),
+    match decoder::openh264_version() {
+        Ok(v) => println!("OpenH264: {v}"),
         Err(why) => println!("OpenH264: not used ({why})"),
     }
     match VideoDecoder::with(Choice::Auto) {

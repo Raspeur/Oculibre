@@ -196,10 +196,14 @@ fn start(app: AppHandle, receiver: State<Receiver>) -> Result<String, String> {
 
 /// Why each decoding library is missing (`None`: it is there). Without FFmpeg OpenH264 decodes
 /// (problem 502); without either, nothing does (503).
+/// With what was found, for About: FFmpeg's version and licence (as the distribution built it),
+/// OpenH264's version.
 #[derive(Serialize)]
 struct Decoders {
     ffmpeg: Option<String>,
     openh264: Option<String>,
+    ffmpeg_info: Option<decoder::FfmpegInfo>,
+    openh264_version: Option<String>,
 }
 
 #[tauri::command(async)]
@@ -207,6 +211,8 @@ fn decoders() -> Decoders {
     Decoders {
         ffmpeg: decoder::ffmpeg_available().err(),
         openh264: decoder::openh264_available().err(),
+        ffmpeg_info: decoder::ffmpeg_info().ok(),
+        openh264_version: decoder::openh264_version().ok(),
     }
 }
 
