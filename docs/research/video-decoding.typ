@@ -114,8 +114,8 @@ FFmpeg breaks its binary interface at each major version (the number in `libavco
   `ffmpeg-sys-next`. Missing or another version: OpenH264, and Settings shows problem `502`. The
   `.deb` only *recommends* `libavcodec`. Check on a computer:
   `cargo run --release -p oculibre-core --example decoder_check`.
-+ *Linux packages (\#18)*: `.deb` per Ubuntu/Debian release, linked to the system FFmpeg; AppImage or
-  Flatpak with our minimal LGPL FFmpeg (or the Flatpak runtime's codecs extension, to check).
++ *Linux packages (\#18), done*: `.deb` per Ubuntu/Debian release (`scripts/build-deb.sh`), using the
+  system FFmpeg. No AppImage or Flatpak for now: see `docs/research/linux-packages.typ`.
 + *Windows (\#17)*: decode with the OS (Media Foundation, D3D11 hardware decoding) first; FFmpeg
   LGPL bundle only if that falls short. Same idea with VideoToolbox on macOS (\#19).
 + *OpenH264, decided (\#18, 2026-11-16)*: Oculibre ships no H.264 code. Its BSD-2 code is free, but

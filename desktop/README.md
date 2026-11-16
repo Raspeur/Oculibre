@@ -107,6 +107,9 @@ libavcodec 60, Debian 13: 61, Ubuntu 26.04: 62), and Oculibre loads the one it w
 | Ubuntu 24.04 | `libavcodec60` (its OpenH264 2.4 has another ABI) | DKMS (`v4l2loopback-dkms`): with Secure Boot, its key must be enrolled once |
 | Debian 13 | `libavcodec61`, or `libopenh264-8` | DKMS (`v4l2loopback-dkms`) |
 
+No Flatpak, Snap or AppImage for now: none of them can bring the virtual camera's kernel module
+(see [`docs/research/linux-packages.typ`](../docs/research/linux-packages.typ)).
+
 For quick local tests, `cd app && npm run tauri build -- --bundles deb` builds for this computer only.
 
 ## Develop
