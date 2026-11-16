@@ -352,12 +352,15 @@ export function fixVcam(): Promise<void> {
   return invoke<void>("fix_vcam");
 }
 
-/** null when FFmpeg is there; else why not ("libavcodec.so.62 is not installed"): OpenH264 decodes. */
-export function ffmpegMissing(): Promise<string | null> {
-  return inApp
-    ? invoke<void>("ffmpeg_status").then(
-        () => null,
-        (why) => String(why),
-      )
-    : Promise.resolve(null);
+/**
+ * Why each decoding library is missing (null: it is there, e.g. "libavcodec.so.62 is not
+ * installed"). Without FFmpeg OpenH264 decodes (problem 502); without either, nothing does (503).
+ */
+export interface Decoders {
+  ffmpeg: string | null;
+  openh264: string | null;
+}
+
+export function decoders(): Promise<Decoders> {
+  return inApp ? invoke<Decoders>("decoders") : Promise.resolve({ ffmpeg: null, openh264: null });
 }

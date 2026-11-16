@@ -201,6 +201,9 @@ const en = {
   vcam_inuse_text: "Another app already created a virtual camera with other settings. Restart the computer: the Oculibre camera will then be ready.",
   vcam_failed_title: "The virtual camera could not be set up",
   vcam_other: "Another app's camera ({device})",
+  no_decoder_title: "No video decoder on this computer",
+  no_decoder_text:
+    "Oculibre cannot show the phone's video without FFmpeg or OpenH264. Install the package libavcodec (recommended) or libopenh264, then restart Oculibre.",
   ffmpeg_missing_title: "Decoding by the processor",
   ffmpeg_missing_text:
     "FFmpeg is not installed on this computer: Oculibre decodes the video with OpenH264, slower in high resolution. For decoding by the graphics card, install the package libavcodec.",
@@ -400,6 +403,9 @@ const fr: Record<Key, string> = {
     "Une autre application a déjà créé une caméra virtuelle avec d'autres réglages. Redémarrez l'ordinateur : la caméra Oculibre sera alors prête.",
   vcam_failed_title: "La caméra virtuelle n'a pas pu être installée",
   vcam_other: "Celle d'une autre application ({device})",
+  no_decoder_title: "Aucun décodeur vidéo sur cet ordinateur",
+  no_decoder_text:
+    "Sans FFmpeg ni OpenH264, Oculibre ne peut pas afficher la vidéo du téléphone. Installez le paquet libavcodec (conseillé) ou libopenh264, puis relancez Oculibre.",
   ffmpeg_missing_title: "Décodage par le processeur",
   ffmpeg_missing_text:
     "FFmpeg n'est pas installé sur cet ordinateur : Oculibre décode la vidéo avec OpenH264, plus lent en haute résolution. Pour le décodage par la carte graphique, installez le paquet libavcodec.",

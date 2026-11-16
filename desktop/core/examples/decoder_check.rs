@@ -9,6 +9,10 @@ fn main() {
         Ok(()) => println!("FFmpeg: found"),
         Err(why) => println!("FFmpeg: not used ({why})"),
     }
+    match decoder::openh264_available() {
+        Ok(()) => println!("OpenH264: found"),
+        Err(why) => println!("OpenH264: not used ({why})"),
+    }
     match VideoDecoder::with(Choice::Auto) {
         Ok(d) => println!("Decoder: {}", d.name()),
         Err(e) => println!("No decoder: {e}"),

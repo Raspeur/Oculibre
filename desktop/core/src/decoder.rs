@@ -1,6 +1,7 @@
 //! H.264 decoding (#11): hardware decoding through FFmpeg when the computer can (VA-API for AMD
 //! and Intel, NVDEC through CUDA for NVIDIA's own driver), FFmpeg's software decoder otherwise,
-//! OpenH264 as a last resort (built without FFmpeg, or FFmpeg failing).
+//! OpenH264 as a last resort (built without FFmpeg, or FFmpeg failing). Both libraries are the
+//! system's, loaded at run time (#18): Oculibre starts without them and ships no H.264 code.
 //!
 //! On a Ryzen 5 9600X, for a 4K frame: OpenH264 10.6 ms (26–34 ms on real camera streams), FFmpeg
 //! software 5.0 ms, VA-API on a Radeon RX 7800 XT 5.2 ms including the copy back to the CPU, and
@@ -128,7 +129,14 @@ impl VideoDecoder {
         if choice != Choice::OpenH264 && choice != Choice::Auto {
             return Err("this oculibre was built without FFmpeg: only openh264".into());
         }
-        let d = openh264::decoder::Decoder::new().map_err(|e| e.to_string())?;
+        let d = openh264_decoder().map_err(|why| {
+            if choice == Choice::Auto {
+                // Neither FFmpeg nor OpenH264: nothing can decode (problem 503).
+                format!("no H.264 decoder on this computer ({why}): install FFmpeg (libavcodec) or OpenH264 (libopenh264)")
+            } else {
+                why
+            }
+        })?;
         Ok(Self {
             backend: Backend::OpenH264(Box::new(d)),
         })
@@ -162,6 +170,43 @@ impl VideoDecoder {
             },
         }
     }
+}
+
+/// The system's OpenH264: the one version the `openh264` crate is written for (OpenH264 2.6,
+/// ABI 8; Ubuntu's package libopenh264-8, Cisco's binary libopenh264-2.6.0-linux64.8.so).
+#[cfg(any(not(feature = "bundled-openh264"), test))]
+const OPENH264_SONAME: &str = "libopenh264.so.8";
+
+/// OpenH264's decoder. Oculibre ships no H.264 code: the library is the system's, loaded at run
+/// time (#18). Only `bundled-openh264` builds, and the tests, use a copy compiled in.
+fn openh264_decoder() -> Result<openh264::decoder::Decoder, String> {
+    use openh264::decoder::{Decoder, DecoderConfig};
+    Decoder::with_api_config(openh264_api()?, DecoderConfig::new()).map_err(|e| e.to_string())
+}
+
+#[cfg(any(feature = "bundled-openh264", test))]
+fn openh264_api() -> Result<openh264::OpenH264API, String> {
+    Ok(openh264::OpenH264API::from_source())
+}
+
+#[cfg(not(any(feature = "bundled-openh264", test)))]
+fn openh264_api() -> Result<openh264::OpenH264API, String> {
+    system_openh264()
+}
+
+/// The system's libopenh264, by its soname (searched like any library: ld.so.conf paths).
+/// Not checked against Cisco's hashes: a distribution's own build is as good, as long as it is
+/// the same ABI, which the soname guarantees.
+#[cfg(any(not(feature = "bundled-openh264"), test))]
+fn system_openh264() -> Result<openh264::OpenH264API, String> {
+    // SAFETY: libopenh264.so.8 is OpenH264 2.6's ABI, the one openh264-sys2 0.9 is written for.
+    unsafe { openh264::OpenH264API::from_blob_path_unchecked(OPENH264_SONAME) }
+        .map_err(|_| format!("{OPENH264_SONAME} is not installed"))
+}
+
+/// Whether OpenH264 could be loaded (`Err`: why). With neither it nor FFmpeg, nothing decodes.
+pub fn openh264_available() -> Result<(), String> {
+    openh264_decoder().map(drop)
 }
 
 /// Whether FFmpeg's libavcodec could be loaded (`Err`: why, e.g. "libavcodec.so.62 is not
@@ -562,6 +607,24 @@ mod tests {
     #[test]
     fn openh264() {
         decodes_every_frame_at_once(Choice::OpenH264);
+    }
+
+    /// The system's libopenh264 (what published builds use), when this computer has it.
+    #[test]
+    fn system_openh264() {
+        let Ok(api) = super::system_openh264() else {
+            eprintln!("{OPENH264_SONAME} not installed here");
+            return;
+        };
+        let mut d = openh264::decoder::Decoder::with_api_config(
+            api,
+            openh264::decoder::DecoderConfig::new(),
+        )
+        .unwrap();
+        for (i, au) in clip(8, 320, 240).iter().enumerate() {
+            let picture = d.decode(au).unwrap();
+            assert!(picture.is_some(), "frame {i}");
+        }
     }
 
     #[cfg(feature = "ffmpeg")]

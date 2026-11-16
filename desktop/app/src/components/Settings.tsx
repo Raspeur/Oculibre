@@ -17,7 +17,7 @@ import {
   setSettings,
   settings as loadSettings,
   vcamStatus,
-  ffmpegMissing,
+  decoders,
 } from "../engine";
 import { VcamProblem } from "./VcamProblem";
 import type { EngineState } from "../useEngine";
@@ -39,7 +39,8 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
     loadSettings().then(setValues);
     loadAutostart().then(setStartsWithComputer);
     vcamStatus().then(setVcam);
-    ffmpegMissing().then(setNoFfmpeg);
+    // OpenH264 there but no FFmpeg: 502 here (no decoder at all: 503 in the main window).
+    decoders().then((d) => setNoFfmpeg(d.ffmpeg && !d.openh264 ? d.ffmpeg : null));
     if (inApp) getVersion().then(setVersion);
   }, []);
 

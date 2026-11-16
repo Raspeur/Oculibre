@@ -4,16 +4,29 @@ Rust workspace.
 
 | Crate | State |
 |---|---|
-| `cli` → binary `oculibre` | **Works on Linux**: protocol 0.2 session → H.264 decode (OpenH264) → v4l2loopback; `oculibre bench` |
-| `protocol` | **Protocol v0.2** ([`docs/protocol.typ`](../docs/protocol.typ)): preamble, header, messages, reader with the §14 limits, clock sync, `auto` rotation. Shared test vectors in [`tests/protocol/vectors`](../tests/protocol/vectors), fuzz target in `protocol/fuzz` |
-| `core`, `app-tauri` | Planned |
+| `core` | The engine (library): sessions, decoding, virtual camera, pairing, preview, bench |
+| `app/src-tauri` → `oculibre-app` | **The desktop app** (Tauri + React, [`app`](app)): `cd app && npm run tauri dev` |
+| `cli` → binary `oculibre` | **Works on Linux**: the engine in a terminal; `oculibre bench` |
+| `protocol` | **Protocol v0.3** ([`docs/protocol.typ`](../docs/protocol.typ)): preamble, header, messages, reader with the §14 limits, clock sync, `auto` rotation. Shared test vectors in [`tests/protocol/vectors`](../tests/protocol/vectors), fuzz target in `protocol/fuzz` |
 
-Decoding: FFmpeg (libavcodec, LGPL, linked dynamically) with **hardware decoding** when the computer
-can (VA-API: AMD, Intel; NVDEC: NVIDIA with its proprietary driver, not tested yet), FFmpeg's software
-decoder otherwise, OpenH264 (BSD-2-Clause, compiled from source) as a last resort.
-`--decoder auto|vaapi|nvdec|software|openh264`; the decoder in use is printed when the stream starts. To build: `sudo apt install build-essential pkg-config libavcodec-dev libavutil-dev
-libclang-dev` (or `bash ../scripts/setup-dev.sh`); without FFmpeg: `cargo build --no-default-features`
-(OpenH264 only). AMD's own driver stack (`/opt/amdgpu`) is found automatically; check VA-API with
+Decoding: FFmpeg (libavcodec, LGPL) with **hardware decoding** when the computer can (VA-API: AMD,
+Intel; NVDEC: NVIDIA with its proprietary driver, not tested yet), FFmpeg's software decoder
+otherwise, OpenH264 (BSD-2-Clause) as a last resort. Both are the system's libraries, loaded at run
+time (`dlopen`), not linked: without FFmpeg Oculibre uses OpenH264, without either it still starts
+and says what to install. Oculibre ships no H.264 code of its own (patents: see
+[`docs/research/video-decoding.typ`](../docs/research/video-decoding.typ)).
+`--decoder auto|vaapi|nvdec|software|openh264`; the decoder in use is printed when the stream starts.
+
+**Which decoder will this computer use, and why?**
+
+```sh
+cd desktop && cargo run --release -p oculibre-core --example decoder_check
+```
+
+To build: `sudo apt install build-essential pkg-config libavcodec-dev libavutil-dev libclang-dev`
+(or `bash ../scripts/setup-dev.sh`); without FFmpeg at all: `cargo build --no-default-features`
+(OpenH264 only). `--features oculibre-core/bundled-openh264` compiles OpenH264 in, for personal
+builds only (not covered by Cisco's patent licence). AMD's own driver stack (`/opt/amdgpu`) is found automatically; check VA-API with
 `vainfo`.
 
 ## Use it
