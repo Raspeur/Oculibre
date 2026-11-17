@@ -33,7 +33,7 @@ export function VcamProblem(props: { style?: React.CSSProperties; onFixed?: () =
 
   // What to say: the outcome of the last try first, else what the computer looks like.
   const problem: [code: number, title: Key, text: Key | null] =
-    error?.kind === "SecureBoot"
+    error?.kind === "SecureBoot" || (!error && status?.kind === "SecureBoot")
       ? [403, "vcam_secureboot_title", "vcam_secureboot_text"]
       : error?.kind === "InUse"
         ? [405, "vcam_inuse_title", "vcam_inuse_text"]

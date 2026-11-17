@@ -41,7 +41,12 @@ if ! out=$(modprobe v4l2loopback 2>&1); then
     echo "$out" >&2
     case "$out" in
         *"Key was rejected"*|*"Required key not available"*) exit 3 ;;
-        *"not found"*) exit 2 ;;
+        *"not found"*)
+            # DKMS has the source but could not build it: the kernel headers are missing.
+            if [ -d /var/lib/dkms/v4l2loopback ] && [ ! -e "/lib/modules/$(uname -r)/build" ]; then
+                echo "no kernel headers for $(uname -r): install linux-headers-$(uname -r), DKMS then builds the module" >&2
+            fi
+            exit 2 ;;
         *) exit 1 ;;
     esac
 fi

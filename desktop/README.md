@@ -105,7 +105,7 @@ libavcodec 60, Debian 13: 61, Ubuntu 26.04: 62), and Oculibre loads the one it w
 |---|---|---|
 | Ubuntu 26.04 | `libavcodec62`, or `libopenh264-8` | signed package (`linux-modules-v4l2loopback-generic`), else DKMS |
 | Ubuntu 24.04 | `libavcodec60` (its OpenH264 2.4 has another ABI) | signed, with the 7.0 kernel (HWE, the desktop default): its module package provides `v4l2loopback-dkms`; DKMS only on the 6.8 kernel (Secure Boot: key enrolled once) |
-| Debian 13 | `libavcodec61`, or `libopenh264-8` | DKMS (`v4l2loopback-dkms`): with Secure Boot, its key must be enrolled once |
+| Debian 13 | `libavcodec61`, or `libopenh264-8` | DKMS (`v4l2loopback-dkms` + `linux-headers-amd64`, which Debian's dkms does not pull): with Secure Boot, its key must be enrolled once (`mokutil --import /var/lib/dkms/mok.pub`, problem 403) |
 
 No Flatpak, Snap or AppImage for now: none of them can bring the virtual camera's kernel module
 (see [`docs/research/linux-packages.typ`](../docs/research/linux-packages.typ)).

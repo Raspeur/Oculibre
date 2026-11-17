@@ -174,7 +174,7 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
               <span className="oc-row__value oc-row__value--todo">{vcam ? t("unavailable") : "—"}</span>
             )}
           </div>
-          {(vcam?.kind === "NotLoaded" || vcam?.kind === "NotInstalled") && (
+          {(vcam?.kind === "NotLoaded" || vcam?.kind === "NotInstalled" || vcam?.kind === "SecureBoot") && (
             <VcamProblem style={{ margin: "0 16px 12px" }} onFixed={() => vcamStatus().then(setVcam)} />
           )}
           <div className="oc-row">

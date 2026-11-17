@@ -11,12 +11,18 @@ chmod 755 /usr/lib/oculibre/vcam-setup
 case $? in
     0) ;;
     2)
-        echo "Oculibre: no v4l2loopback module for this kernel yet: install linux-modules-v4l2loopback-generic" >&2
-        echo "Oculibre: (or v4l2loopback-dkms), then open Oculibre." >&2
+        if [ -d /var/lib/dkms/v4l2loopback ]; then
+            echo "Oculibre: the virtual camera module could not be built for this kernel (DKMS)." >&2
+            echo "Oculibre: install the kernel headers: sudo apt install linux-headers-$(uname -r), then open Oculibre." >&2
+        else
+            echo "Oculibre: no v4l2loopback module for this kernel yet: install linux-modules-v4l2loopback-generic" >&2
+            echo "Oculibre: (or v4l2loopback-dkms), then open Oculibre." >&2
+        fi
         ;;
     3)
         echo "Oculibre: Secure Boot refused the virtual camera module built on this computer (DKMS)." >&2
-        echo "Oculibre: enrol its key: sudo update-secureboot-policy --enroll-key, then reboot and choose Enroll MOK." >&2
+        echo "Oculibre: enrol its key (Ubuntu: sudo update-secureboot-policy --enroll-key; Debian:" >&2
+        echo "Oculibre: sudo mokutil --import /var/lib/dkms/mok.pub), then reboot and choose Enroll MOK." >&2
         ;;
     4)
         echo "Oculibre: v4l2loopback is already loaded with other settings (another app?)." >&2

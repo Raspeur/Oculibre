@@ -29,6 +29,16 @@ declare -A DECODERS=(
     [debian-13]='libavcodec61 | libopenh264-8'
 )
 
+# The virtual camera module. Ubuntu: the signed module of the kernel first (26.04; 24.04's 7.0
+# kernel provides v4l2loopback-dkms), else DKMS, whose package recommends the kernel headers there.
+# Debian has no signed module, and its dkms does not pull the headers: without them nothing is built.
+UBUNTU_MODULE='"linux-modules-v4l2loopback-generic | v4l2loopback-dkms"'
+declare -A MODULE=(
+    [ubuntu-26.04]=$UBUNTU_MODULE
+    [ubuntu-24.04]=$UBUNTU_MODULE
+    [debian-13]='"v4l2loopback-dkms", "linux-headers-amd64 | linux-headers-cloud-amd64 | linux-headers-rt-amd64"'
+)
+
 targets=("$@")
 [ ${#targets[@]} -eq 0 ] && targets=(ubuntu-26.04 ubuntu-24.04 debian-13)
 for t in "${targets[@]}"; do
@@ -49,7 +59,7 @@ for t in "${targets[@]}"; do
     mkdir -p "$work/src" "$work/cache"
     rsync -a --delete --exclude target --exclude node_modules "$ROOT/desktop/" "$work/src/desktop/"
 
-    config=$(printf '{"build":{"beforeBuildCommand":""},"bundle":{"linux":{"deb":{"recommends":["%s","adb","pkexec"]}}}}' "${DECODERS[$t]}")
+    config=$(printf '{"build":{"beforeBuildCommand":""},"bundle":{"linux":{"deb":{"depends":[%s],"recommends":["%s","adb","pkexec"]}}}}' "${MODULE[$t]}" "${DECODERS[$t]}")
     echo "== $t: build (first time: several minutes)"
     docker run --rm --user "$(id -u):$(id -g)" \
         -e HOME=/tmp -e CARGO_HOME=/cache/cargo -e CARGO_TARGET_DIR=/cache/target -e npm_config_cache=/cache/npm \

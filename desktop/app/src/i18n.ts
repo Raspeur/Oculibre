@@ -195,10 +195,10 @@ const en = {
   vcam_installing: "Setting up…",
   vcam_module_title: "A package is missing for the virtual camera",
   vcam_module_text:
-    "The v4l2loopback module is not installed for this Linux kernel. Install the package linux-modules-v4l2loopback-generic (or v4l2loopback-dkms), then try again.",
+    "The v4l2loopback module is not installed for this Linux kernel. Install the package linux-modules-v4l2loopback-generic (Ubuntu), or v4l2loopback-dkms with the kernel headers (linux-headers-amd64 on Debian), then try again.",
   vcam_secureboot_title: "Secure Boot blocks the virtual camera",
   vcam_secureboot_text:
-    "Its module was built on this computer and its key is not accepted yet. In a terminal: sudo update-secureboot-policy --enroll-key, choose a password, restart, choose \u201cEnroll MOK\u201d on the blue screen and type that password.",
+    "Its module was built on this computer and its key is not accepted yet. In a terminal: sudo update-secureboot-policy --enroll-key (Ubuntu) or sudo mokutil --import /var/lib/dkms/mok.pub (Debian), choose a password, restart, choose \u201cEnroll MOK\u201d on the blue screen and type that password.",
   vcam_inuse_title: "Another virtual camera is in the way",
   vcam_inuse_text: "Another app already created a virtual camera with other settings. Restart the computer: the Oculibre camera will then be ready.",
   vcam_failed_title: "The virtual camera could not be set up",
@@ -398,10 +398,10 @@ const fr: Record<Key, string> = {
   vcam_installing: "Installation…",
   vcam_module_title: "Il manque un paquet pour la caméra virtuelle",
   vcam_module_text:
-    "Le module v4l2loopback n'est pas installé pour ce noyau Linux. Installez le paquet linux-modules-v4l2loopback-generic (ou v4l2loopback-dkms), puis réessayez.",
+    "Le module v4l2loopback n'est pas installé pour ce noyau Linux. Installez le paquet linux-modules-v4l2loopback-generic (Ubuntu), ou v4l2loopback-dkms avec les en-têtes du noyau (linux-headers-amd64 sous Debian), puis réessayez.",
   vcam_secureboot_title: "Le démarrage sécurisé bloque la caméra virtuelle",
   vcam_secureboot_text:
-    "Son module a été construit sur cet ordinateur et sa clé n'est pas encore acceptée. Dans un terminal : sudo update-secureboot-policy --enroll-key, choisissez un mot de passe, redémarrez, choisissez « Enroll MOK » sur l'écran bleu et tapez ce mot de passe.",
+    "Son module a été construit sur cet ordinateur et sa clé n'est pas encore acceptée. Dans un terminal : sudo update-secureboot-policy --enroll-key (Ubuntu) ou sudo mokutil --import /var/lib/dkms/mok.pub (Debian), choisissez un mot de passe, redémarrez, choisissez « Enroll MOK » sur l'écran bleu et tapez ce mot de passe.",
   vcam_inuse_title: "Une autre caméra virtuelle gêne",
   vcam_inuse_text:
     "Une autre application a déjà créé une caméra virtuelle avec d'autres réglages. Redémarrez l'ordinateur : la caméra Oculibre sera alors prête.",

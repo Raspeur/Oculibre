@@ -333,7 +333,8 @@ export type VcamStatus =
   | { kind: "Ready"; data: { device: string } }
   | { kind: "Other"; data: { device: string } }
   | { kind: "NotLoaded" }
-  | { kind: "NotInstalled" };
+  | { kind: "NotInstalled" }
+  | { kind: "SecureBoot" };
 
 /** Why setting it up did not work ("Cancelled": the password window was closed). */
 export type FixError =
