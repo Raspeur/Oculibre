@@ -20,6 +20,7 @@ use oculibre_core::pairing::{self, Pairings};
 use oculibre_core::preview::{Rate, Viewer, Watch};
 use oculibre_core::protocol::{Capabilities, SetMode};
 use oculibre_core::session::{ModeError, Remote, View};
+use oculibre_core::vcam_setup::{self, FixError, VcamStatus};
 use oculibre_core::{Event, Events};
 use serde::{Deserialize, Serialize};
 use settings::AppSettings;
@@ -191,6 +192,52 @@ fn restart(app: &AppHandle) {
 #[tauri::command(async)]
 fn start(app: AppHandle, receiver: State<Receiver>) -> Result<String, String> {
     start_host(&app, &receiver)
+}
+
+/// Why each decoding library is missing (`None`: it is there). Without FFmpeg OpenH264 decodes
+/// (problem 502); without either, nothing does (503).
+/// With what was found, for About: FFmpeg's version and licence (as the distribution built it),
+/// OpenH264's version.
+#[derive(Serialize)]
+struct Decoders {
+    ffmpeg: Option<String>,
+    openh264: Option<String>,
+    ffmpeg_info: Option<decoder::FfmpegInfo>,
+    openh264_version: Option<String>,
+}
+
+#[tauri::command(async)]
+fn decoders() -> Decoders {
+    Decoders {
+        ffmpeg: decoder::ffmpeg_available().err(),
+        openh264: decoder::openh264_available().err(),
+        ffmpeg_info: decoder::ffmpeg_info().ok(),
+        openh264_version: decoder::openh264_version().ok(),
+    }
+}
+
+/// Whether the virtual camera is there (problem 401 when not, 404 when its module is missing).
+#[tauri::command(async)]
+fn vcam_status() -> VcamStatus {
+    vcam_setup::status()
+}
+
+/// Sets the virtual camera up as root (the desktop asks for the password), then starts the
+/// receiver again: it could not start without the camera.
+#[tauri::command(async)]
+fn fix_vcam(app: AppHandle) -> Result<(), FixError> {
+    // While developing (debug build, nothing installed): the script of the source tree.
+    let dev = cfg!(debug_assertions)
+        .then(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("linux/vcam-setup.sh"));
+    let helper = vcam_setup::helper_path(dev).ok_or_else(|| {
+        FixError::Failed(format!(
+            "{} is missing: reinstall Oculibre",
+            vcam_setup::HELPER
+        ))
+    })?;
+    vcam_setup::fix(&helper)?;
+    restart(&app);
+    Ok(())
 }
 
 /// Stops the receiver: the phone being served (if any) is let go, the port is closed.
@@ -405,7 +452,12 @@ pub fn run() {
         ..Receiver::default()
     };
     tauri::Builder::default()
-        // Started with the computer: `--hidden`, straight to the tray.
+        // First plugin, as its documentation asks: a second launch (menu, autostart while the
+        // window is in the tray) shows the running Oculibre's window and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_window(app);
+        }))
+        // Started with the computer: `--hidden`, straight to the tray (minimised without one).
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
@@ -417,7 +469,7 @@ pub fn run() {
             *app.state::<Receiver>().tray.lock().unwrap() = Some(tray::build(&handle, lang)?);
             if std::env::args().any(|a| a == "--hidden") {
                 if let Some(window) = app.get_webview_window("main") {
-                    window.hide()?;
+                    tray::put_away(&window);
                 }
             }
             // The receiver starts now, without waiting for the page (the window may be hidden).
@@ -427,12 +479,15 @@ pub fn run() {
             });
             Ok(())
         })
-        // Closing the window keeps Oculibre in the tray (the setting), so the camera stays.
+        // Closing the window keeps Oculibre running (the setting), so the camera stays: in the
+        // tray, or minimised on a desktop without one.
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.state::<Receiver>().settings.lock().unwrap().tray {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if let Some(window) = window.app_handle().get_webview_window(window.label()) {
+                        tray::put_away(&window);
+                    }
                 }
             }
         })
@@ -451,7 +506,10 @@ pub fn run() {
             set_settings,
             autostart,
             set_autostart,
-            forget_phone
+            forget_phone,
+            vcam_status,
+            fix_vcam,
+            decoders
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

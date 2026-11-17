@@ -8,7 +8,8 @@ import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
 import { Tour, tourSeen } from "./components/Tour";
-import { inApp, onNavigate, settings as loadSettings } from "./engine";
+import { VcamProblem } from "./components/VcamProblem";
+import { decoders, inApp, onNavigate, settings as loadSettings } from "./engine";
 import { setLanguage, t, useLang } from "./i18n";
 import { useEngine } from "./useEngine";
 
@@ -19,6 +20,17 @@ function App() {
   const [screen, setScreen] = useState<"main" | "pairing" | "settings" | "about">("main");
   // The guided tour opens by itself the first time, then from the sidebar.
   const [touring, setTouring] = useState(() => inApp && !tourSeen());
+
+  // Neither FFmpeg nor OpenH264: no phone video can be shown (problem 503). OpenH264 only: it
+  // works, slower in high resolution (502, also in Settings › Performance).
+  const [noDecoder, setNoDecoder] = useState<string | null>(null);
+  const [noFfmpeg, setNoFfmpeg] = useState<string | null>(null);
+  useEffect(() => {
+    decoders().then((d) => {
+      setNoDecoder(d.ffmpeg && d.openh264 ? `${d.ffmpeg}; ${d.openh264}` : null);
+      setNoFfmpeg(d.ffmpeg && !d.openh264 ? d.ffmpeg : null);
+    });
+  }, []);
 
   // The language chosen in the settings ("" = the system's).
   useEffect(() => {
@@ -63,7 +75,20 @@ function App() {
               {t("browser_text")}
             </Notice>
           )}
-          {engine.startError && (
+          {noDecoder && (
+            <Notice level="error" title={t("no_decoder_title")} code="503">
+              {t("no_decoder_text")} ({noDecoder})
+            </Notice>
+          )}
+          {noFfmpeg && (
+            <Notice level="info" title={t("ffmpeg_missing_title")} code={`502 · ${noFfmpeg}`}>
+              {t("ffmpeg_missing_text")}
+            </Notice>
+          )}
+          {engine.startError && vcamMissing(engine.startError) && (
+            <VcamProblem style={{ margin: "24px 24px 0" }} />
+          )}
+          {engine.startError && !vcamMissing(engine.startError) && (
             <Notice level="error" title={t("start_error_title")} code={startCode(engine.startError)}>
               {engine.startError}
             </Notice>
@@ -89,6 +114,11 @@ function Notice(props: { level: "info" | "error"; title: string; code?: string; 
       </div>
     </div>
   );
+}
+
+/** No virtual camera at all (core v4l2::find_loopback): one click sets it up. */
+function vcamMissing(error: string): boolean {
+  return error.includes("no v4l2loopback device");
 }
 
 /** Problem codes of the mockups (design/mockups/Problems): 103 another Oculibre, 401 no virtual camera. */

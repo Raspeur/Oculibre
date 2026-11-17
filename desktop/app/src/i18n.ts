@@ -182,9 +182,33 @@ const en = {
   cancel: "Cancel",
   forget: "Forget",
   forget_ask: "Forget…",
-  notice_ffmpeg: "Your system's library, depending on how it was built.",
+  notice_ffmpeg: "libavcodec {libavcodec}: your system's library.",
+  notice_openh264: "© Cisco Systems. Your system's library.",
+  notice_not_installed: "Not installed on this computer.",
   notice_jpeg: "This software is based in part on the work of the Independent JPEG Group.",
   notice_fonts: "Fonts included in the app.",
+
+  // Virtual camera (problems 401, 403, 404, 405)
+  vcam_missing_title: "The virtual camera is not set up",
+  vcam_missing_text: "Without it, Zoom, Teams or OBS cannot see Oculibre. Setting it up asks for the computer's password.",
+  vcam_install: "Set up the virtual camera",
+  vcam_installing: "Setting up…",
+  vcam_module_title: "A package is missing for the virtual camera",
+  vcam_module_text:
+    "The v4l2loopback module is not installed for this Linux kernel. Install the package linux-modules-v4l2loopback-generic (Ubuntu), or v4l2loopback-dkms with the kernel headers (linux-headers-amd64 on Debian), then try again.",
+  vcam_secureboot_title: "Secure Boot blocks the virtual camera",
+  vcam_secureboot_text:
+    "Its module was built on this computer and its key is not accepted yet. In a terminal: sudo update-secureboot-policy --enroll-key (Ubuntu) or sudo mokutil --import /var/lib/dkms/mok.pub (Debian), choose a password, restart, choose \u201cEnroll MOK\u201d on the blue screen and type that password.",
+  vcam_inuse_title: "Another virtual camera is in the way",
+  vcam_inuse_text: "Another app already created a virtual camera with other settings. Restart the computer: the Oculibre camera will then be ready.",
+  vcam_failed_title: "The virtual camera could not be set up",
+  vcam_other: "Another app's camera ({device})",
+  no_decoder_title: "No video decoder on this computer",
+  no_decoder_text:
+    "Oculibre cannot show the phone's video without FFmpeg or OpenH264. Install the package libavcodec (recommended) or libopenh264, then restart Oculibre.",
+  ffmpeg_missing_title: "Decoding by the processor",
+  ffmpeg_missing_text:
+    "FFmpeg is not installed on this computer: Oculibre decodes the video with OpenH264, slower in high resolution. For decoding by the graphics card, install the package libavcodec.",
 };
 
 export type Key = keyof typeof en;
@@ -361,9 +385,34 @@ const fr: Record<Key, string> = {
   cancel: "Annuler",
   forget: "Oublier",
   forget_ask: "Oublier…",
-  notice_ffmpeg: "La bibliothèque de votre système, selon sa construction.",
+  notice_ffmpeg: "libavcodec {libavcodec} : la bibliothèque de votre système.",
+  notice_openh264: "© Cisco Systems. La bibliothèque de votre système.",
+  notice_not_installed: "Pas installé sur cet ordinateur.",
   notice_jpeg: "Ce logiciel est basé en partie sur les travaux de l'Independent JPEG Group.",
   notice_fonts: "Polices incluses dans l'application.",
+
+  vcam_missing_title: "La caméra virtuelle n'est pas installée",
+  vcam_missing_text:
+    "Sans elle, Zoom, Teams ou OBS ne voient pas Oculibre. L'installation demande le mot de passe de l'ordinateur.",
+  vcam_install: "Installer la caméra virtuelle",
+  vcam_installing: "Installation…",
+  vcam_module_title: "Il manque un paquet pour la caméra virtuelle",
+  vcam_module_text:
+    "Le module v4l2loopback n'est pas installé pour ce noyau Linux. Installez le paquet linux-modules-v4l2loopback-generic (Ubuntu), ou v4l2loopback-dkms avec les en-têtes du noyau (linux-headers-amd64 sous Debian), puis réessayez.",
+  vcam_secureboot_title: "Le démarrage sécurisé bloque la caméra virtuelle",
+  vcam_secureboot_text:
+    "Son module a été construit sur cet ordinateur et sa clé n'est pas encore acceptée. Dans un terminal : sudo update-secureboot-policy --enroll-key (Ubuntu) ou sudo mokutil --import /var/lib/dkms/mok.pub (Debian), choisissez un mot de passe, redémarrez, choisissez « Enroll MOK » sur l'écran bleu et tapez ce mot de passe.",
+  vcam_inuse_title: "Une autre caméra virtuelle gêne",
+  vcam_inuse_text:
+    "Une autre application a déjà créé une caméra virtuelle avec d'autres réglages. Redémarrez l'ordinateur : la caméra Oculibre sera alors prête.",
+  vcam_failed_title: "La caméra virtuelle n'a pas pu être installée",
+  vcam_other: "Celle d'une autre application ({device})",
+  no_decoder_title: "Aucun décodeur vidéo sur cet ordinateur",
+  no_decoder_text:
+    "Sans FFmpeg ni OpenH264, Oculibre ne peut pas afficher la vidéo du téléphone. Installez le paquet libavcodec (conseillé) ou libopenh264, puis relancez Oculibre.",
+  ffmpeg_missing_title: "Décodage par le processeur",
+  ffmpeg_missing_text:
+    "FFmpeg n'est pas installé sur cet ordinateur : Oculibre décode la vidéo avec OpenH264, plus lent en haute résolution. Pour le décodage par la carte graphique, installez le paquet libavcodec.",
 };
 
 const texts: Record<Lang, Record<Key, string>> = { en, fr };

@@ -7,7 +7,9 @@ import logo from "../../../../oculibre_logo.svg";
 import {
   type AppSettings,
   type DecoderChoice,
+  type Decoders,
   type KnownPhone,
+  type VcamStatus,
   autostart as loadAutostart,
   setAutostart,
   when,
@@ -15,7 +17,10 @@ import {
   inApp,
   setSettings,
   settings as loadSettings,
+  vcamStatus,
+  decoders,
 } from "../engine";
+import { VcamProblem } from "./VcamProblem";
 import type { EngineState } from "../useEngine";
 import { LANGUAGES, setLanguage, t, useLang } from "../i18n";
 
@@ -27,11 +32,20 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState<string>("");
   const [startsWithComputer, setStartsWithComputer] = useState(false);
+  const [vcam, setVcam] = useState<VcamStatus | null>(null);
+  const [noFfmpeg, setNoFfmpeg] = useState<string | null>(null);
+  const [libraries, setLibraries] = useState<Decoders | null>(null);
   const about = useRef<HTMLElement>(null);
 
   useEffect(() => {
     loadSettings().then(setValues);
     loadAutostart().then(setStartsWithComputer);
+    vcamStatus().then(setVcam);
+    // OpenH264 there but no FFmpeg: 502 here (no decoder at all: 503 in the main window).
+    decoders().then((d) => {
+      setNoFfmpeg(d.ffmpeg && !d.openh264 ? d.ffmpeg : null);
+      setLibraries(d);
+    });
     if (inApp) getVersion().then(setVersion);
   }, []);
 
@@ -149,15 +163,20 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
         <Section id="s-vcam" title={t("virtual_camera")}>
           <div className="oc-row">
             <span className="oc-row__label">{t("status")}</span>
-            {engine.running ? (
+            {vcam?.kind === "Ready" ? (
               <span className="oc-status oc-strong">
                 <span className="oc-dot" style={{ width: 7, height: 7 }} aria-hidden="true" />
                 {t("installed")}
               </span>
+            ) : vcam?.kind === "Other" ? (
+              <span className="oc-row__value">{t("vcam_other", { device: vcam.data.device })}</span>
             ) : (
-              <span className="oc-row__value oc-row__value--todo">{t("unavailable")}</span>
+              <span className="oc-row__value oc-row__value--todo">{vcam ? t("unavailable") : "—"}</span>
             )}
           </div>
+          {(vcam?.kind === "NotLoaded" || vcam?.kind === "NotInstalled" || vcam?.kind === "SecureBoot") && (
+            <VcamProblem style={{ margin: "0 16px 12px" }} onFixed={() => vcamStatus().then(setVcam)} />
+          )}
           <div className="oc-row">
             <span className="oc-row__label">{t("name_in_apps")}</span>
             <span className="oc-row__value">Oculibre</span>
@@ -236,6 +255,16 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
               <option value="openh264">{t("decoder_openh264")}</option>
             </select>
           </div>
+          {noFfmpeg && (
+            <div className="oc-alert oc-alert--info" role="status" style={{ margin: "0 16px 12px" }}>
+              <span className="oc-alert__icon" aria-hidden="true">i</span>
+              <div className="oc-alert__body">
+                <span className="oc-alert__title">{t("ffmpeg_missing_title")}</span>
+                <span className="oc-alert__text">{t("ffmpeg_missing_text")}</span>
+                <span className="oc-alert__code">{t("code", { code: 502 })} · {noFfmpeg}</span>
+              </div>
+            </div>
+          )}
         </Section>
 
         <section id="about" ref={about} aria-labelledby="s-about" className="oc-stack">
@@ -255,7 +284,7 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
             <div className="oc-row" style={{ minHeight: 44 }}>
               <span className="oc-label">{t("licences")}</span>
             </div>
-            {notices().map(([name, licence, note]) => (
+            {notices(libraries).map(([name, licence, note]) => (
               <div key={name} className="oc-row" style={{ alignItems: "flex-start" }}>
                 <span className="oc-row__label">
                   {name}
@@ -317,10 +346,18 @@ function KnownPhoneRow({ phone, onError }: { phone: KnownPhone; onError: (e: str
   );
 }
 
-/** Notices the licences of the components ask for (see docs/research/video-decoding.typ). */
-const notices = (): [string, string, string?][] => [
-  ["FFmpeg (libavcodec)", "LGPL-2.1+ / GPL-2+", t("notice_ffmpeg")],
-  ["OpenH264", "BSD-2-Clause", "© Cisco Systems."],
+/**
+ * Notices the licences of the components ask for (see docs/research/video-decoding.typ). FFmpeg
+ * and OpenH264 are the computer's own libraries: what was found, with FFmpeg's licence as the
+ * distribution built it (LGPL, or GPL when GPL parts are enabled, as on Ubuntu).
+ */
+const notices = (libs: Decoders | null): [string, string, string?][] => [
+  libs?.ffmpeg_info
+    ? [`FFmpeg ${libs.ffmpeg_info.version}`, libs.ffmpeg_info.license, t("notice_ffmpeg", { libavcodec: libs.ffmpeg_info.libavcodec })]
+    : ["FFmpeg", "LGPL-2.1+ / GPL-2+", libs ? t("notice_not_installed") : undefined],
+  libs?.openh264_version
+    ? [`OpenH264 ${libs.openh264_version}`, "BSD-2-Clause", t("notice_openh264")]
+    : ["OpenH264", "BSD-2-Clause", libs ? t("notice_not_installed") : undefined],
   ["jpeg-encoder", "MIT / Apache-2.0, IJG", t("notice_jpeg")],
   ["Tauri", "MIT / Apache-2.0"],
   ["React", "MIT"],

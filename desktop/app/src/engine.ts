@@ -325,3 +325,49 @@ export function when(iso: string): string {
 export function phoneName(hello: Hello): string {
   return hello.name || hello.device?.model || t("phone");
 }
+
+// --- the virtual camera (Linux, #18): core vcam_setup.rs
+
+/** What the virtual camera looks like now. */
+export type VcamStatus =
+  | { kind: "Ready"; data: { device: string } }
+  | { kind: "Other"; data: { device: string } }
+  | { kind: "NotLoaded" }
+  | { kind: "NotInstalled" }
+  | { kind: "SecureBoot" };
+
+/** Why setting it up did not work ("Cancelled": the password window was closed). */
+export type FixError =
+  | { kind: "Cancelled" }
+  | { kind: "NotInstalled" }
+  | { kind: "SecureBoot" }
+  | { kind: "InUse" }
+  | { kind: "Failed"; data: string };
+
+export function vcamStatus(): Promise<VcamStatus> {
+  return inApp ? invoke<VcamStatus>("vcam_status") : Promise.resolve({ kind: "NotLoaded" });
+}
+
+/** Asks for the password (polkit), sets the camera up, restarts the receiver. */
+export function fixVcam(): Promise<void> {
+  return invoke<void>("fix_vcam");
+}
+
+/**
+ * Why each decoding library is missing (null: it is there, e.g. "libavcodec.so.62 is not
+ * installed"). Without FFmpeg OpenH264 decodes (problem 502); without either, nothing does (503).
+ */
+export interface Decoders {
+  ffmpeg: string | null;
+  openh264: string | null;
+  /** FFmpeg as found: version, libavcodec version, licence ("GPL version 2 or later"…). */
+  ffmpeg_info: { version: string; libavcodec: string; license: string } | null;
+  /** "2.6.0" */
+  openh264_version: string | null;
+}
+
+export function decoders(): Promise<Decoders> {
+  return inApp
+    ? invoke<Decoders>("decoders")
+    : Promise.resolve({ ffmpeg: null, openh264: null, ffmpeg_info: null, openh264_version: null });
+}

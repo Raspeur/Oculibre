@@ -145,6 +145,35 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
     }
 }
 
+/// Whether the desktop shows tray icons: someone owns the StatusNotifierWatcher name on the
+/// session bus (KDE, Ubuntu's GNOME with its AppIndicator extension, most other desktops). Plain
+/// GNOME, as on Debian, has none: a hidden window could then not be found again. Asked each time
+/// (the extension can be turned on while Oculibre runs); when D-Bus cannot tell, assume yes.
+#[cfg(target_os = "linux")]
+pub fn shown() -> bool {
+    let ask = || -> zbus::Result<bool> {
+        let bus = zbus::blocking::Connection::session()?;
+        let dbus = zbus::blocking::fdo::DBusProxy::new(&bus)?;
+        Ok(dbus.name_has_owner("org.kde.StatusNotifierWatcher".try_into()?)?)
+    };
+    ask().unwrap_or(true)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn shown() -> bool {
+    true
+}
+
+/// Out of the way but still running: hidden in the tray, or minimised when there is no tray
+/// (it stays in the dock and Alt+Tab).
+pub fn put_away(window: &tauri::WebviewWindow) {
+    let _ = if shown() {
+        window.hide()
+    } else {
+        window.minimize()
+    };
+}
+
 /// Brings the window back: shown, not minimised, in front.
 pub fn show_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {

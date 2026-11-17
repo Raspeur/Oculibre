@@ -106,16 +106,27 @@ FFmpeg breaks its binary interface at each major version (the number in `libavco
 
 = Proposals <proposals>
 
-+ *Start without FFmpeg (\#18)*: load `libavcodec` ourselves at start (`dlopen`, only the major
-  version we were built against) instead of linking it. Missing or another version: fall back to
-  OpenH264 and tell the user, with the problem code of the mockups (`502`, "decoding by the
-  processor"). The `.deb` then only *recommends* `libavcodec` instead of requiring it.
-+ *Linux packages (\#18)*: `.deb` per Ubuntu/Debian release, linked to the system FFmpeg; AppImage or
-  Flatpak with our minimal LGPL FFmpeg (or the Flatpak runtime's codecs extension, to check).
++ *Start without FFmpeg (\#18), done*: `libavcodec.so.<major>` (the major version we were built
+  against) is loaded at the first decoder with `dlopen`, its 17 functions found with `dlsym`
+  (`decoder.rs`, `ffmpeg::Lib`). `ffmpeg-sys-next` still gives the types, but none of its functions
+  is called directly, so the linker (`--as-needed`) leaves libavcodec out of the binary's needed
+  libraries (`readelf -d`); a test checks at compile time that each function type is the one of
+  `ffmpeg-sys-next`. Missing or another version: OpenH264, and Settings shows problem `502`. The
+  `.deb` only *recommends* `libavcodec`. Check on a computer:
+  `cargo run --release -p oculibre-core --example decoder_check`.
++ *Linux packages (\#18), done*: `.deb` per Ubuntu/Debian release (`scripts/build-deb.sh`), using the
+  system FFmpeg. No AppImage or Flatpak for now: see `docs/research/linux-packages.typ`.
 + *Windows (\#17)*: decode with the OS (Media Foundation, D3D11 hardware decoding) first; FFmpeg
   LGPL bundle only if that falls short. Same idea with VideoToolbox on macOS (\#19).
-+ *OpenH264*: keep compiling it in while developing; before publishing binaries, decide between
-  the compiled copy and Cisco's binary loaded at run time (`libloading`), Firefox style.
++ *OpenH264, decided (\#18, 2026-11-16)*: Oculibre ships no H.264 code. Its BSD-2 code is free, but
+  the H.264 *patents* (Via LA pool) cover any implementation, and Cisco's patent licence only covers
+  the binaries Cisco itself distributes: a copy we compile and publish is not covered. So the
+  system's `libopenh264.so.8` (OpenH264 2.6, the ABI of the `openh264` crate 0.9; Ubuntu's
+  `libopenh264-8`, built from source by the distribution) is loaded at run time, like FFmpeg. The
+  `.deb` recommends `libavcodec62 | libopenh264-8`; with neither, problem `503`. A copy compiled in
+  is kept for the tests (they encode their clips) and the opt-in feature `bundled-openh264`
+  (personal builds). Later, if a format needs it (AppImage, Fedora): download Cisco's own binary at
+  first use, with the user's consent and its hash checked (`from_blob_path`), Firefox style.
 + *About screen*: list FFmpeg (LGPL or GPL, as found or shipped) and OpenH264 (BSD-2) with their
   notices.
 

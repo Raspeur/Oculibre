@@ -1,6 +1,7 @@
 //! H.264 decoding (#11): hardware decoding through FFmpeg when the computer can (VA-API for AMD
 //! and Intel, NVDEC through CUDA for NVIDIA's own driver), FFmpeg's software decoder otherwise,
-//! OpenH264 as a last resort (built without FFmpeg, or FFmpeg failing).
+//! OpenH264 as a last resort (built without FFmpeg, or FFmpeg failing). Both libraries are the
+//! system's, loaded at run time (#18): Oculibre starts without them and ships no H.264 code.
 //!
 //! On a Ryzen 5 9600X, for a 4K frame: OpenH264 10.6 ms (26–34 ms on real camera streams), FFmpeg
 //! software 5.0 ms, VA-API on a Radeon RX 7800 XT 5.2 ms including the copy back to the CPU, and
@@ -128,7 +129,14 @@ impl VideoDecoder {
         if choice != Choice::OpenH264 && choice != Choice::Auto {
             return Err("this oculibre was built without FFmpeg: only openh264".into());
         }
-        let d = openh264::decoder::Decoder::new().map_err(|e| e.to_string())?;
+        let d = openh264_decoder().map_err(|why| {
+            if choice == Choice::Auto {
+                // Neither FFmpeg nor OpenH264: nothing can decode (problem 503).
+                format!("no H.264 decoder on this computer ({why}): install FFmpeg (libavcodec) or OpenH264 (libopenh264)")
+            } else {
+                why
+            }
+        })?;
         Ok(Self {
             backend: Backend::OpenH264(Box::new(d)),
         })
@@ -164,14 +172,216 @@ impl VideoDecoder {
     }
 }
 
+/// The system's OpenH264: the one version the `openh264` crate is written for (OpenH264 2.6,
+/// ABI 8; Ubuntu's package libopenh264-8, Cisco's binary libopenh264-2.6.0-linux64.8.so).
+#[cfg(any(not(feature = "bundled-openh264"), test))]
+const OPENH264_SONAME: &str = "libopenh264.so.8";
+
+/// OpenH264's decoder. Oculibre ships no H.264 code: the library is the system's, loaded at run
+/// time (#18). Only `bundled-openh264` builds, and the tests, use a copy compiled in.
+fn openh264_decoder() -> Result<openh264::decoder::Decoder, String> {
+    use openh264::decoder::{Decoder, DecoderConfig};
+    Decoder::with_api_config(openh264_api()?, DecoderConfig::new()).map_err(|e| e.to_string())
+}
+
+#[cfg(any(feature = "bundled-openh264", test))]
+fn openh264_api() -> Result<openh264::OpenH264API, String> {
+    Ok(openh264::OpenH264API::from_source())
+}
+
+#[cfg(not(any(feature = "bundled-openh264", test)))]
+fn openh264_api() -> Result<openh264::OpenH264API, String> {
+    system_openh264()
+}
+
+/// The system's libopenh264, by its soname (searched like any library: ld.so.conf paths).
+/// Not checked against Cisco's hashes: a distribution's own build is as good, as long as it is
+/// the same ABI, which the soname guarantees.
+#[cfg(any(not(feature = "bundled-openh264"), test))]
+fn system_openh264() -> Result<openh264::OpenH264API, String> {
+    // SAFETY: libopenh264.so.8 is OpenH264 2.6's ABI, the one openh264-sys2 0.9 is written for.
+    unsafe { openh264::OpenH264API::from_blob_path_unchecked(OPENH264_SONAME) }
+        .map_err(|_| format!("{OPENH264_SONAME} is not installed"))
+}
+
+/// Whether OpenH264 could be loaded (`Err`: why). With neither it nor FFmpeg, nothing decodes.
+pub fn openh264_available() -> Result<(), String> {
+    openh264_decoder().map(drop)
+}
+
+/// FFmpeg as found on this computer (About screen): its licence depends on how the distribution
+/// built it (LGPL, or GPL with GPL parts enabled).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FfmpegInfo {
+    /// "8.0.1-3ubuntu2": FFmpeg's own version string.
+    pub version: String,
+    /// "62.11.100"
+    pub libavcodec: String,
+    /// "LGPL version 2.1 or later", "GPL version 2 or later"…
+    pub license: String,
+}
+
+pub fn ffmpeg_info() -> Result<FfmpegInfo, String> {
+    #[cfg(feature = "ffmpeg")]
+    return ffmpeg::info();
+    #[cfg(not(feature = "ffmpeg"))]
+    Err("this Oculibre was built without FFmpeg".into())
+}
+
+/// "2.6.0": the OpenH264 library in use (About screen).
+pub fn openh264_version() -> Result<String, String> {
+    use openh264_sys2::API;
+    let api = openh264_api()?;
+    // SAFETY: a plain getter of the loaded library.
+    let v = unsafe { api.WelsGetCodecVersion() };
+    Ok(format!("{}.{}.{}", v.uMajor, v.uMinor, v.uRevision))
+}
+
+/// Whether FFmpeg's libavcodec could be loaded (`Err`: why, e.g. "libavcodec.so.62 is not
+/// installed"). Without it, decoding falls back to OpenH264 (problem 502).
+pub fn ffmpeg_available() -> Result<(), String> {
+    #[cfg(feature = "ffmpeg")]
+    return ffmpeg::lib().map(drop);
+    #[cfg(not(feature = "ffmpeg"))]
+    Err("this Oculibre was built without FFmpeg".into())
+}
+
 #[cfg(feature = "ffmpeg")]
 mod ffmpeg {
-    use std::ffi::CStr;
+    use std::ffi::{c_char, c_int, c_void, CStr};
     use std::ptr;
+    use std::sync::OnceLock;
 
+    use ff::{
+        AVBufferRef, AVCodec, AVCodecContext, AVCodecID, AVDictionary, AVFrame, AVHWDeviceType,
+        AVPacket,
+    };
     use ffmpeg_sys_next as ff;
 
     use crate::yuv::Picture;
+
+    /// FFmpeg's functions, found at run time in libavcodec (and the libavutil it depends on)
+    /// instead of being linked: Oculibre starts on a computer without FFmpeg, and uses OpenH264
+    /// there. `ffmpeg-sys-next` still gives the types: the structures' layout belongs to one major
+    /// version, so only the library of that version (`libavcodec.so.<major>`) is loaded.
+    ///
+    /// No function of `ffmpeg-sys-next` is called directly anywhere: the linker (`--as-needed`)
+    /// then leaves libavcodec out of the binary's needed libraries. The test `same_signatures`
+    /// checks that each type below is exactly the one of `ffmpeg-sys-next`.
+    macro_rules! functions {
+        ($( fn $name:ident($($arg:ty),*) $(-> $ret:ty)?; )*) => {
+            #[allow(non_snake_case)]
+            pub struct Lib {
+                $( pub $name: unsafe extern "C" fn($($arg),*) $(-> $ret)?, )*
+            }
+
+            impl Lib {
+                /// Every function from the library `handle` (dlsym also searches its
+                /// dependencies: libavutil).
+                unsafe fn find(handle: *mut c_void) -> Result<Self, String> {
+                    // SAFETY: the caller gives a live dlopen handle; each symbol is cast to the
+                    // type of its C declaration (checked by `same_signatures`).
+                    unsafe {
+                        Ok(Self {
+                            $( $name: {
+                                let symbol = libc::dlsym(handle, concat!(stringify!($name), "\0").as_ptr().cast());
+                                if symbol.is_null() {
+                                    return Err(format!("{} has no {}", soname(), stringify!($name)));
+                                }
+                                std::mem::transmute::<*mut c_void, unsafe extern "C" fn($($arg),*) $(-> $ret)?>(symbol)
+                            }, )*
+                        })
+                    }
+                }
+            }
+
+            /// Compiled only: each function type equals the declaration in ffmpeg-sys-next (a
+            /// test binary may link FFmpeg, the real one never does).
+            #[cfg(test)]
+            #[allow(dead_code)]
+            fn same_signatures() {
+                $( let _: unsafe extern "C" fn($($arg),*) $(-> $ret)? = ff::$name; )*
+            }
+        };
+    }
+
+    functions! {
+        fn av_strerror(c_int, *mut c_char, usize) -> c_int;
+        fn av_log_set_level(c_int);
+        fn avcodec_find_decoder(AVCodecID) -> *const AVCodec;
+        fn avcodec_alloc_context3(*const AVCodec) -> *mut AVCodecContext;
+        fn av_packet_alloc() -> *mut AVPacket;
+        fn av_frame_alloc() -> *mut AVFrame;
+        fn av_hwdevice_ctx_create(*mut *mut AVBufferRef, AVHWDeviceType, *const c_char, *mut AVDictionary, c_int) -> c_int;
+        fn av_buffer_ref(*const AVBufferRef) -> *mut AVBufferRef;
+        fn avcodec_open2(*mut AVCodecContext, *const AVCodec, *mut *mut AVDictionary) -> c_int;
+        fn avcodec_send_packet(*mut AVCodecContext, *const AVPacket) -> c_int;
+        fn avcodec_receive_frame(*mut AVCodecContext, *mut AVFrame) -> c_int;
+        fn av_frame_unref(*mut AVFrame);
+        fn av_hwframe_transfer_data(*mut AVFrame, *const AVFrame, c_int) -> c_int;
+        fn av_frame_free(*mut *mut AVFrame);
+        fn av_packet_free(*mut *mut AVPacket);
+        fn avcodec_free_context(*mut *mut AVCodecContext);
+        fn av_buffer_unref(*mut *mut AVBufferRef);
+        fn av_version_info() -> *const c_char;
+        fn avcodec_version() -> std::ffi::c_uint;
+        fn avcodec_license() -> *const c_char;
+    }
+
+    /// FFmpeg as found on this computer.
+    pub fn info() -> Result<super::FfmpegInfo, String> {
+        let lib = lib()?;
+        let text = |p: *const c_char| {
+            // SAFETY: FFmpeg returns static NUL-terminated strings (or null, checked).
+            if p.is_null() {
+                String::new()
+            } else {
+                unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+            }
+        };
+        // SAFETY: plain getters of the loaded library.
+        let (version, packed, license) = unsafe {
+            (
+                text((lib.av_version_info)()),
+                (lib.avcodec_version)(),
+                text((lib.avcodec_license)()),
+            )
+        };
+        Ok(super::FfmpegInfo {
+            version,
+            libavcodec: format!(
+                "{}.{}.{}",
+                packed >> 16,
+                (packed >> 8) & 0xff,
+                packed & 0xff
+            ),
+            license,
+        })
+    }
+
+    /// "libavcodec.so.62": the major version Oculibre was built against (FFmpeg 8).
+    pub fn soname() -> String {
+        format!("libavcodec.so.{}", ff::LIBAVCODEC_VERSION_MAJOR)
+    }
+
+    /// The library, loaded once (and never unloaded).
+    pub fn lib() -> Result<&'static Lib, String> {
+        static LIB: OnceLock<Result<Lib, String>> = OnceLock::new();
+        LIB.get_or_init(|| {
+            let name = format!("{}\0", soname());
+            // SAFETY: a NUL-terminated name; the handle stays open for the whole process, so the
+            // function pointers taken from it stay valid.
+            unsafe {
+                let handle = libc::dlopen(name.as_ptr().cast(), libc::RTLD_NOW | libc::RTLD_LOCAL);
+                if handle.is_null() {
+                    return Err(format!("{} is not installed", soname()));
+                }
+                Lib::find(handle)
+            }
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+    }
 
     /// Hardware decoders FFmpeg can use.
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -200,6 +410,7 @@ mod ffmpeg {
 
     /// libavcodec's H.264 decoder, with a hardware device when there is one.
     pub struct Ffmpeg {
+        lib: &'static Lib,
         ctx: *mut ff::AVCodecContext,
         packet: *mut ff::AVPacket,
         frame: *mut ff::AVFrame,
@@ -212,11 +423,11 @@ mod ffmpeg {
         hardware: bool,
     }
 
-    fn error_text(code: i32) -> String {
+    fn error_text(lib: &Lib, code: i32) -> String {
         let mut buf = [0 as libc::c_char; 128];
         // SAFETY: the buffer and its size are valid; av_strerror always NUL-terminates.
         unsafe {
-            ff::av_strerror(code, buf.as_mut_ptr(), buf.len());
+            (lib.av_strerror)(code, buf.as_mut_ptr(), buf.len());
             CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
         }
     }
@@ -249,19 +460,21 @@ mod ffmpeg {
     impl Ffmpeg {
         /// Tries the hardware `devices` in order; software decoding when none opens.
         pub fn new(devices: &[Hardware]) -> Result<Self, String> {
+            let lib = lib()?;
             // SAFETY: plain FFmpeg API calls; every pointer is checked and owned by `Self` (freed
             // in Drop, also on the error paths through `Self`'s Drop).
             unsafe {
-                ff::av_log_set_level(ff::AV_LOG_QUIET);
-                let codec = ff::avcodec_find_decoder(ff::AVCodecID::AV_CODEC_ID_H264);
+                (lib.av_log_set_level)(ff::AV_LOG_QUIET);
+                let codec = (lib.avcodec_find_decoder)(ff::AVCodecID::AV_CODEC_ID_H264);
                 if codec.is_null() {
                     return Err("FFmpeg has no H.264 decoder".into());
                 }
                 let mut me = Self {
-                    ctx: ff::avcodec_alloc_context3(codec),
-                    packet: ff::av_packet_alloc(),
-                    frame: ff::av_frame_alloc(),
-                    cpu_frame: ff::av_frame_alloc(),
+                    lib,
+                    ctx: (lib.avcodec_alloc_context3)(codec),
+                    packet: (lib.av_packet_alloc)(),
+                    frame: (lib.av_frame_alloc)(),
+                    cpu_frame: (lib.av_frame_alloc)(),
                     device: ptr::null_mut(),
                     device_kind: None,
                     hardware: false,
@@ -278,7 +491,7 @@ mod ffmpeg {
                 ctx.flags |= ff::AV_CODEC_FLAG_LOW_DELAY as i32;
                 ctx.thread_count = 1;
                 for &kind in devices {
-                    let rc = ff::av_hwdevice_ctx_create(
+                    let rc = (lib.av_hwdevice_ctx_create)(
                         &mut me.device,
                         kind.device_type(),
                         ptr::null(),
@@ -286,7 +499,7 @@ mod ffmpeg {
                         0,
                     );
                     if rc >= 0 {
-                        ctx.hw_device_ctx = ff::av_buffer_ref(me.device);
+                        ctx.hw_device_ctx = (lib.av_buffer_ref)(me.device);
                         ctx.opaque = kind.pixel_format() as i32 as usize as *mut libc::c_void;
                         ctx.get_format = Some(pick_format);
                         // Phones send Baseline, hardware decoders list Constrained Baseline: the
@@ -297,9 +510,12 @@ mod ffmpeg {
                         break;
                     }
                 }
-                let rc = ff::avcodec_open2(me.ctx, codec, ptr::null_mut());
+                let rc = (lib.avcodec_open2)(me.ctx, codec, ptr::null_mut());
                 if rc < 0 {
-                    return Err(format!("cannot open FFmpeg's decoder: {}", error_text(rc)));
+                    return Err(format!(
+                        "cannot open FFmpeg's decoder: {}",
+                        error_text(lib, rc)
+                    ));
                 }
                 Ok(me)
             }
@@ -314,24 +530,25 @@ mod ffmpeg {
             // SAFETY: the packet borrows `au` only for avcodec_send_packet, which copies data
             // that is not reference-counted (with the padding FFmpeg needs). Frames are owned by
             // `self`; plane slices are built from FFmpeg's own data/linesize/width/height.
+            let lib = self.lib;
             unsafe {
                 let packet = &mut *self.packet;
                 packet.data = au.as_ptr() as *mut u8;
                 packet.size = au.len() as i32;
-                let rc = ff::avcodec_send_packet(self.ctx, self.packet);
+                let rc = (lib.avcodec_send_packet)(self.ctx, self.packet);
                 packet.data = ptr::null_mut();
                 packet.size = 0;
                 if rc < 0 && rc != -ff::EAGAIN {
-                    return Err(error_text(rc));
+                    return Err(error_text(lib, rc));
                 }
                 let mut got = false;
                 loop {
-                    let rc = ff::avcodec_receive_frame(self.ctx, self.frame);
+                    let rc = (lib.avcodec_receive_frame)(self.ctx, self.frame);
                     if rc == -ff::EAGAIN || rc == ff::AVERROR_EOF {
                         break;
                     }
                     if rc < 0 {
-                        return Err(error_text(rc));
+                        return Err(error_text(lib, rc));
                     }
                     self.copy_out(out)?;
                     got = true;
@@ -343,14 +560,18 @@ mod ffmpeg {
         /// Copies the decoded frame into `out`, through the CPU for a hardware frame.
         unsafe fn copy_out(&mut self, out: &mut Picture) -> Result<(), String> {
             // SAFETY: see `decode`.
+            let lib = self.lib;
             unsafe {
                 let mut f = &*self.frame;
                 if !f.hw_frames_ctx.is_null() {
                     self.hardware = true;
-                    ff::av_frame_unref(self.cpu_frame);
-                    let rc = ff::av_hwframe_transfer_data(self.cpu_frame, self.frame, 0);
+                    (lib.av_frame_unref)(self.cpu_frame);
+                    let rc = (lib.av_hwframe_transfer_data)(self.cpu_frame, self.frame, 0);
                     if rc < 0 {
-                        return Err(format!("hardware frame copy failed: {}", error_text(rc)));
+                        return Err(format!(
+                            "hardware frame copy failed: {}",
+                            error_text(lib, rc)
+                        ));
                     }
                     f = &*self.cpu_frame;
                 } else {
@@ -374,7 +595,7 @@ mod ffmpeg {
                     }
                     other => return Err(format!("unexpected picture format {other}")),
                 }
-                ff::av_frame_unref(self.frame);
+                (lib.av_frame_unref)(self.frame);
                 Ok(())
             }
         }
@@ -383,12 +604,13 @@ mod ffmpeg {
     impl Drop for Ffmpeg {
         fn drop(&mut self) {
             // SAFETY: each pointer is null or owned by `self`; the free functions accept null.
+            let lib = self.lib;
             unsafe {
-                ff::av_frame_free(&mut self.cpu_frame);
-                ff::av_frame_free(&mut self.frame);
-                ff::av_packet_free(&mut self.packet);
-                ff::avcodec_free_context(&mut self.ctx);
-                ff::av_buffer_unref(&mut self.device);
+                (lib.av_frame_free)(&mut self.cpu_frame);
+                (lib.av_frame_free)(&mut self.frame);
+                (lib.av_packet_free)(&mut self.packet);
+                (lib.avcodec_free_context)(&mut self.ctx);
+                (lib.av_buffer_unref)(&mut self.device);
             }
         }
     }
@@ -447,6 +669,24 @@ mod tests {
     #[test]
     fn openh264() {
         decodes_every_frame_at_once(Choice::OpenH264);
+    }
+
+    /// The system's libopenh264 (what published builds use), when this computer has it.
+    #[test]
+    fn system_openh264() {
+        let Ok(api) = super::system_openh264() else {
+            eprintln!("{OPENH264_SONAME} not installed here");
+            return;
+        };
+        let mut d = openh264::decoder::Decoder::with_api_config(
+            api,
+            openh264::decoder::DecoderConfig::new(),
+        )
+        .unwrap();
+        for (i, au) in clip(8, 320, 240).iter().enumerate() {
+            let picture = d.decode(au).unwrap();
+            assert!(picture.is_some(), "frame {i}");
+        }
     }
 
     #[cfg(feature = "ffmpeg")]

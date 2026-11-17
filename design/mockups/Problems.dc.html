@@ -128,10 +128,14 @@ class Component extends DCLogic {
       H('4xx · Caméra virtuelle et ordinateur'),
       P('401', 'error', 'La caméra virtuelle n’est pas installée', 'Sans elle, Zoom, Teams ou OBS ne voient pas Oculibre. L’installation demande le mot de passe de l’ordinateur.', 'assistant de premier lancement, puis bandeau', 'Installer'),
       P('402', 'info', 'Une application impose un format', 'OBS utilise la caméra « Oculibre » en 1280 × 720 : l’image est ajustée avec des bandes noires. Fermez OBS pour changer de format.', 'ligne « Format envoyé » du panneau Sortie'),
+      P('403', 'error', 'Le démarrage sécurisé bloque la caméra virtuelle', 'Son module a été construit sur cet ordinateur et sa clé n’est pas encore acceptée : une commande, un redémarrage, puis « Enroll MOK » sur l’écran bleu.', 'à la place du bouton Installer'),
+      P('404', 'error', 'Il manque un paquet pour la caméra virtuelle', 'Le module v4l2loopback n’est pas installé pour ce noyau Linux (après une mise à jour du noyau, sans le paquet signé).', 'à la place de l’aperçu', 'Réessayer'),
+      P('405', 'warning', 'Une autre caméra virtuelle gêne', 'Une autre application a déjà créé une caméra virtuelle avec d’autres réglages. Au prochain redémarrage, la caméra Oculibre sera prête.', 'à la place de l’aperçu'),
 
       H('5xx · Performances'),
       P('501', 'warning', 'La connexion ne suit pas', 'Les images arrivent en retard (4K par câble USB). Passez en 1080p, ou en Wi-Fi 5 GHz.', 'bandeau, après 5 s de retard', 'Passer en 1080p', 'Ignorer'),
       P('502', 'info', 'Décodage par le processeur', 'La carte graphique n’a pas pu décoder la vidéo : le processeur prend le relais, l’ordinateur peut chauffer un peu plus.', 'réglages, ligne « Décodage de la vidéo »'),
+      P('503', 'error', 'Aucun décodeur vidéo sur cet ordinateur', 'Sans FFmpeg ni OpenH264, Oculibre ne peut pas afficher la vidéo du téléphone. Installez le paquet libavcodec (conseillé) ou libopenh264.', 'fenêtre principale, au lancement'),
     ];
     return { items };
   }
