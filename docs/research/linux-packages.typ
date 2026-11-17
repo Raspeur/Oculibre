@@ -90,8 +90,12 @@ who already get the `.deb`.
 = What it means for users <users>
 
 - *Ubuntu 26.04*: open the `.deb` (App Center, or `sudo apt install ./Oculibre_….deb`), nothing else. Tested on a clean VM.
-- *Ubuntu 24.04, Debian 13*: same, plus a key enrolment at the next boot when Secure Boot is on
-  (DKMS, problem 403).
+- *Ubuntu 24.04*: the same with the 7.0 kernel (HWE, installed by the desktop images): its signed
+  `linux-main-modules-v4l2loopback-<kernel>` package, pulled by the kernel itself, *provides*
+  `v4l2loopback-dkms`, so our dependency is met without DKMS. Tested on a clean VM with Secure Boot:
+  nothing to enrol. Only the older 6.8 kernel falls back to DKMS.
+- *Debian 13* (and Ubuntu 24.04 on the 6.8 kernel): DKMS builds the module on the computer; with
+  Secure Boot, a key is enrolled once at the next boot (problem 403 until then).
 - *Fedora, Arch, others*: build from source (`desktop/README.md`); an `.rpm` and an AUR package are
   easy additions later, the hard parts (module, helper, polkit) being the same files.
 - *Updates*: the `.deb` does not update itself. Later: an apt repository (signed), or a PPA for
