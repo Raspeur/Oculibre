@@ -457,7 +457,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             tray::show_window(app);
         }))
-        // Started with the computer: `--hidden`, straight to the tray.
+        // Started with the computer: `--hidden`, straight to the tray (minimised without one).
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
@@ -469,7 +469,7 @@ pub fn run() {
             *app.state::<Receiver>().tray.lock().unwrap() = Some(tray::build(&handle, lang)?);
             if std::env::args().any(|a| a == "--hidden") {
                 if let Some(window) = app.get_webview_window("main") {
-                    window.hide()?;
+                    tray::put_away(&window);
                 }
             }
             // The receiver starts now, without waiting for the page (the window may be hidden).
@@ -479,12 +479,15 @@ pub fn run() {
             });
             Ok(())
         })
-        // Closing the window keeps Oculibre in the tray (the setting), so the camera stays.
+        // Closing the window keeps Oculibre running (the setting), so the camera stays: in the
+        // tray, or minimised on a desktop without one.
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.state::<Receiver>().settings.lock().unwrap().tray {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if let Some(window) = window.app_handle().get_webview_window(window.label()) {
+                        tray::put_away(&window);
+                    }
                 }
             }
         })
