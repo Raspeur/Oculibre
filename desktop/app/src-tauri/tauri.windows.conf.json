@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "npm run build && cargo build --release -p oculibre-vcam-dshow && cargo build --release -p oculibre-vcam-dshow --target i686-pc-windows-msvc"
+  },
+  "bundle": {
+    "targets": ["nsis"],
+    "resources": {
+      "../../target/release/oculibre_vcam_dshow.dll": "oculibre_vcam_dshow.dll",
+      "../../target/i686-pc-windows-msvc/release/oculibre_vcam_dshow.dll": "x86/oculibre_vcam_dshow.dll"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["French", "English"],
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    }
+  }
+}
