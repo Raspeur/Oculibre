@@ -140,7 +140,7 @@ a:hover { color: #FFB39E; }
 .oc-switch[aria-pressed="true"] { background: var(--oc-accent); border-color: var(--oc-accent); }
 .oc-switch[aria-pressed="true"] .oc-switch__knob { left: 20px; }
 .oc-segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--oc-border-strong); border-radius: var(--oc-r-sm); background: var(--oc-surface-3); }
-.oc-segmented__item { min-height: var(--oc-control-h); padding: 0 6px; border: 0; background: transparent; color: var(--oc-text-2); font-size: var(--oc-text-md); white-space: nowrap; cursor: pointer; }
+.oc-segmented__item { min-height: var(--oc-control-h); padding: 4px 6px; border: 0; background: transparent; color: var(--oc-text-2); font-size: var(--oc-text-md); line-height: 1.2; text-align: center; cursor: pointer; } /* long names ("Arrière 0,6×") wrap */
 .oc-segmented__item + .oc-segmented__item { border-left: 1px solid var(--oc-border-strong); }
 .oc-segmented__item[aria-pressed="true"] { background: var(--oc-selected); color: #FFFFFF; font-weight: 600; box-shadow: inset 0 -2px 0 var(--oc-accent); }
 /* Small segmented control laid over a picture (preview rate). */
@@ -162,7 +162,7 @@ a:hover { color: #FFB39E; }
 .oc-row--panel .oc-row__label { font-size: var(--oc-text-md); color: var(--oc-text-2); }
 .oc-row__hint { font-size: var(--oc-text-sm); color: var(--oc-text-muted); line-height: 1.4; }
 .oc-phone .oc-row__hint { font-size: var(--oc-text-md); }
-.oc-row__value { flex: 0 0 auto; font-size: var(--oc-text-md); font-weight: 600; }
+.oc-row__value { flex: 0 1 auto; min-width: 0; text-align: right; font-size: var(--oc-text-md); font-weight: 600; } /* a long value wraps instead of running over its label */
 .oc-row__value--muted { font-weight: 400; color: var(--oc-text-muted); }
 .oc-row__value--todo { color: var(--oc-accent-text); }
 .oc-row__value--ok { color: var(--oc-live); }

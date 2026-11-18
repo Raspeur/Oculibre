@@ -14,7 +14,7 @@ use std::time::Instant;
 
 use oculibre_vcam_shm::Shared;
 
-use crate::events::Events;
+use crate::events::{Event, Events};
 use crate::preview::Previewer;
 use crate::session::Sink;
 use crate::yuv;
@@ -32,6 +32,9 @@ fn shared() -> Result<&'static (Shared, Instant), String> {
 
 pub struct VirtualCamera {
     portrait: bool,
+    events: Events,
+    /// The size last announced (the panel and Settings show the "format sent").
+    announced: Option<(usize, usize)>,
     preview: Option<Previewer>,
     frame: Vec<u8>,
 }
@@ -40,11 +43,13 @@ impl VirtualCamera {
     pub fn new(
         _path: PathBuf,
         portrait: bool,
-        _events: Events,
+        events: Events,
         preview: Option<Previewer>,
     ) -> Self {
         Self {
             portrait,
+            events,
+            announced: None,
             preview,
             frame: Vec::new(),
         }
@@ -63,6 +68,13 @@ impl Sink for VirtualCamera {
         } else {
             LANDSCAPE
         };
+        if self.announced != Some((w, h)) {
+            self.announced = Some((w, h));
+            (self.events)(Event::VirtualCameraSize {
+                wanted: (w, h),
+                size: (w, h),
+            });
+        }
         yuv::convert(picture, transform, w, h, &mut self.frame);
         shared
             .frames()
