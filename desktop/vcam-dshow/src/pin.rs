@@ -226,6 +226,7 @@ fn send(
     let mut frame = Vec::new();
     let mut own_clock = Instant::now();
     let mut first = true;
+    let started = Instant::now();
     while !stop.load(Ordering::Acquire) {
         if !run.running.load(Ordering::Acquire) {
             std::thread::sleep(Duration::from_millis(5));
@@ -288,7 +289,7 @@ fn send(
                 Some((w, h)) if size == format.bytes() => {
                     picture::fit(&frame, w, h, out, format.width, format.height)
                 }
-                _ if size == format.bytes() => picture::waiting(out, format.width, format.height),
+                _ if size == format.bytes() => picture::waiting(out, format.width, format.height, started.elapsed().as_millis() as u64),
                 _ => {}
             }
             let _ = sample.SetActualDataLength(size as i32);
