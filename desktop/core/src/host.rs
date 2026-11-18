@@ -162,7 +162,10 @@ impl Host {
             });
             device
         };
-        // No virtual camera on this system yet (#17): the preview only.
+        // Windows: the shared memory the camera DLLs read, ready before the first phone.
+        #[cfg(windows)]
+        crate::vcam::prepare()?;
+        // No virtual camera device path outside Linux.
         #[cfg(not(target_os = "linux"))]
         let device = config.device.clone().unwrap_or_default();
 

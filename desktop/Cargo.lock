@@ -2711,6 +2711,7 @@ dependencies = [
  "libc",
  "mdns-sd",
  "oculibre-protocol",
+ "oculibre-vcam-shm",
  "openh264",
  "openh264-sys2",
  "qrcode",
@@ -2729,6 +2730,22 @@ dependencies = [
  "base64 0.22.1",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "oculibre-vcam-dshow"
+version = "0.3.0"
+dependencies = [
+ "oculibre-vcam-shm",
+ "windows",
+ "windows-core",
+]
+
+[[package]]
+name = "oculibre-vcam-shm"
+version = "0.3.0"
+dependencies = [
+ "windows",
 ]
 
 [[package]]

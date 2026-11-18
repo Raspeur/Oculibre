@@ -1,0 +1,28 @@
+[package]
+name = "oculibre-vcam-dshow"
+description = "Oculibre's DirectShow virtual camera (Windows 10 and 11): a COM DLL loaded by the apps"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The DLL apps load (registered with regsvr32); rlib for the tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+oculibre-vcam-shm = { path = "../vcam-shm" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_DirectShow",
+    "Win32_Media_KernelStreaming",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_Registry",
+    "Win32_System_SystemServices",
+] }
+windows-core = "0.62"

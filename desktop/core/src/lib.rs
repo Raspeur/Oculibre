@@ -29,7 +29,10 @@ pub mod tls;
 pub mod v4l2;
 #[cfg(target_os = "linux")]
 pub mod vcam;
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
+#[path = "vcam_windows.rs"]
+pub mod vcam;
+#[cfg(not(any(target_os = "linux", windows)))]
 #[path = "vcam_none.rs"]
 pub mod vcam;
 #[cfg(target_os = "linux")]
