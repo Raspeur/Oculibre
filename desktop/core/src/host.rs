@@ -659,10 +659,16 @@ pub fn host_id() -> String {
 
 /// This computer's name, as phones show it.
 pub fn host_name() -> String {
-    fs::read_to_string("/proc/sys/kernel/hostname")
+    #[cfg(windows)]
+    let name = std::env::var("COMPUTERNAME").map_err(|_| ());
+    #[cfg(not(windows))]
+    let name = fs::read_to_string("/proc/sys/kernel/hostname")
         .or_else(|_| fs::read_to_string("/etc/hostname"))
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "computer".into())
+        .map_err(|_| ());
+    name.map(|s| s.trim().to_string())
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "computer".into())
 }
 
 /// The kernel version, sent in our `HELLO`.
