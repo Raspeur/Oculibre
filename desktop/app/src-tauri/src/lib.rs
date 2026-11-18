@@ -208,8 +208,14 @@ struct Decoders {
 
 #[tauri::command(async)]
 fn decoders() -> Decoders {
+    // Windows: the main decoder is Windows' own (Media Foundation), in FFmpeg's place: the page
+    // shows it with Windows' words (problems 502/503: the Media Feature Pack).
+    #[cfg(windows)]
+    let main = decoder::media_foundation_available().err();
+    #[cfg(not(windows))]
+    let main = decoder::ffmpeg_available().err();
     Decoders {
-        ffmpeg: decoder::ffmpeg_available().err(),
+        ffmpeg: main,
         openh264: decoder::openh264_available().err(),
         ffmpeg_info: decoder::ffmpeg_info().ok(),
         openh264_version: decoder::openh264_version().ok(),
@@ -226,8 +232,9 @@ fn vcam_status() -> VcamStatus {
 /// receiver again: it could not start without the camera.
 #[tauri::command(async)]
 fn fix_vcam(app: AppHandle) -> Result<(), FixError> {
-    // While developing (debug build, nothing installed): the script of the source tree.
-    let dev = cfg!(debug_assertions)
+    // While developing (debug build, nothing installed): the script of the source tree. Windows:
+    // the DLL next to the program, installed or not.
+    let dev = (cfg!(debug_assertions) && cfg!(target_os = "linux"))
         .then(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("linux/vcam-setup.sh"));
     let helper = vcam_setup::helper_path(dev).ok_or_else(|| {
         FixError::Failed(format!(

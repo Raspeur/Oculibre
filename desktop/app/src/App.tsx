@@ -9,7 +9,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Stage } from "./components/Stage";
 import { Tour, tourSeen } from "./components/Tour";
 import { VcamProblem } from "./components/VcamProblem";
-import { decoders, inApp, onNavigate, settings as loadSettings } from "./engine";
+import { decoders, inApp, onNavigate, onWindows, settings as loadSettings } from "./engine";
 import { setLanguage, t, useLang } from "./i18n";
 import { useEngine } from "./useEngine";
 
@@ -69,7 +69,7 @@ function App() {
         onTour={() => setTouring(true)}
       />
       <main className="oc-main">
-        <div className="oc-stack" style={{ flex: "999 1 520px", minWidth: 0 }}>
+        <div className="oc-stack" style={{ flex: "999 1 380px", minWidth: 0 }}>
           {!inApp && (
             <Notice level="info" title={t("browser_title")}>
               {t("browser_text")}
@@ -77,12 +77,12 @@ function App() {
           )}
           {noDecoder && (
             <Notice level="error" title={t("no_decoder_title")} code="503">
-              {t("no_decoder_text")} ({noDecoder})
+              {t(onWindows ? "no_decoder_text_windows" : "no_decoder_text")} ({noDecoder})
             </Notice>
           )}
           {noFfmpeg && (
             <Notice level="info" title={t("ffmpeg_missing_title")} code={`502 · ${noFfmpeg}`}>
-              {t("ffmpeg_missing_text")}
+              {t(onWindows ? "mf_missing_text" : "ffmpeg_missing_text")}
             </Notice>
           )}
           {engine.startError && vcamMissing(engine.startError) && (

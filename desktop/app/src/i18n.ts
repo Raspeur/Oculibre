@@ -209,6 +209,15 @@ const en = {
   ffmpeg_missing_title: "Decoding by the processor",
   ffmpeg_missing_text:
     "FFmpeg is not installed on this computer: Oculibre decodes the video with OpenH264, slower in high resolution. For decoding by the graphics card, install the package libavcodec.",
+  // Windows (#17)
+  decoder_windows: "Windows (Media Foundation)",
+  notice_media_foundation: "Windows' own decoder.",
+  no_decoder_text_windows:
+    "Windows has no H.264 decoder: on an \u201cN\u201d edition of Windows, install the Media Feature Pack (Settings \u203a Apps \u203a Optional features), then restart Oculibre.",
+  mf_missing_text:
+    "Windows' video decoder is missing (an \u201cN\u201d edition of Windows?): Oculibre decodes with OpenH264, slower in high resolution. Install the Media Feature Pack for decoding by the graphics card.",
+  vcam_missing_text_windows: "Without it, Zoom, Teams or OBS cannot see Oculibre. Setting it up asks Windows for permission.",
+  vcam_module_text_windows: "The camera's file is missing from Oculibre's folder. Install Oculibre again.",
 };
 
 export type Key = keyof typeof en;
@@ -413,6 +422,14 @@ const fr: Record<Key, string> = {
   ffmpeg_missing_title: "Décodage par le processeur",
   ffmpeg_missing_text:
     "FFmpeg n'est pas installé sur cet ordinateur : Oculibre décode la vidéo avec OpenH264, plus lent en haute résolution. Pour le décodage par la carte graphique, installez le paquet libavcodec.",
+  decoder_windows: "Windows (Media Foundation)",
+  notice_media_foundation: "Le décodeur de Windows.",
+  no_decoder_text_windows:
+    "Windows n'a pas de décodeur H.264 : sur une édition « N » de Windows, installez le Media Feature Pack (Paramètres › Applications › Fonctionnalités facultatives), puis relancez Oculibre.",
+  mf_missing_text:
+    "Le décodeur vidéo de Windows manque (une édition « N » de Windows ?) : Oculibre décode avec OpenH264, plus lent en haute résolution. Installez le Media Feature Pack pour le décodage par la carte graphique.",
+  vcam_missing_text_windows: "Sans elle, Zoom, Teams ou OBS ne voient pas Oculibre. L'installer demande l'autorisation de Windows.",
+  vcam_module_text_windows: "Le fichier de la caméra manque dans le dossier d'Oculibre. Réinstallez Oculibre.",
 };
 
 const texts: Record<Lang, Record<Key, string>> = { en, fr };

@@ -15,6 +15,7 @@ import {
   when,
   forgetPhone,
   inApp,
+  onWindows,
   setSettings,
   settings as loadSettings,
   vcamStatus,
@@ -249,9 +250,16 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
               onChange={(e) => values && change({ ...values, decoder: e.currentTarget.value as DecoderChoice })}
             >
               <option value="auto">{t("automatic")}</option>
-              <option value="vaapi">{t("decoder_gpu")}</option>
-              <option value="nvdec">{t("decoder_nvidia")}</option>
-              <option value="software">{t("decoder_cpu")}</option>
+              {onWindows ? (
+                // Windows: its own decoder ("software" in the engine), OpenH264 as a fallback.
+                <option value="software">{t("decoder_windows")}</option>
+              ) : (
+                <>
+                  <option value="vaapi">{t("decoder_gpu")}</option>
+                  <option value="nvdec">{t("decoder_nvidia")}</option>
+                  <option value="software">{t("decoder_cpu")}</option>
+                </>
+              )}
               <option value="openh264">{t("decoder_openh264")}</option>
             </select>
           </div>
@@ -260,7 +268,7 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
               <span className="oc-alert__icon" aria-hidden="true">i</span>
               <div className="oc-alert__body">
                 <span className="oc-alert__title">{t("ffmpeg_missing_title")}</span>
-                <span className="oc-alert__text">{t("ffmpeg_missing_text")}</span>
+                <span className="oc-alert__text">{t(onWindows ? "mf_missing_text" : "ffmpeg_missing_text")}</span>
                 <span className="oc-alert__code">{t("code", { code: 502 })} · {noFfmpeg}</span>
               </div>
             </div>
@@ -352,7 +360,9 @@ function KnownPhoneRow({ phone, onError }: { phone: KnownPhone; onError: (e: str
  * distribution built it (LGPL, or GPL when GPL parts are enabled, as on Ubuntu).
  */
 const notices = (libs: Decoders | null): [string, string, string?][] => [
-  libs?.ffmpeg_info
+  onWindows
+    ? ["Media Foundation", "Windows", t("notice_media_foundation")]
+    : libs?.ffmpeg_info
     ? [`FFmpeg ${libs.ffmpeg_info.version}`, libs.ffmpeg_info.license, t("notice_ffmpeg", { libavcodec: libs.ffmpeg_info.libavcodec })]
     : ["FFmpeg", "LGPL-2.1+ / GPL-2+", libs ? t("notice_not_installed") : undefined],
   libs?.openh264_version

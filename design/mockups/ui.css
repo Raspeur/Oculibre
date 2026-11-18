@@ -83,7 +83,7 @@ a:hover { color: #FFB39E; }
 .oc-phone { width: 390px; height: 844px; box-sizing: border-box; background: var(--oc-bg); color: var(--oc-text); font-family: var(--oc-font); display: flex; flex-direction: column; overflow: hidden; }
 .oc-sidebar { flex: 1 1 240px; max-width: 260px; min-width: 220px; box-sizing: border-box; padding: 20px 16px; background: var(--oc-surface-1); border-right: 1px solid var(--oc-border); display: flex; flex-direction: column; gap: 24px; }
 .oc-main { flex: 999 1 560px; min-width: 0; display: flex; flex-wrap: wrap; align-items: stretch; }
-.oc-panel { flex: 1 1 280px; max-width: 320px; min-width: 260px; box-sizing: border-box; background: var(--oc-surface-1); border-left: 1px solid var(--oc-border); display: flex; flex-direction: column; }
+.oc-panel { flex: 1 1 260px; max-width: 320px; min-width: 260px; box-sizing: border-box; background: var(--oc-surface-1); border-left: 1px solid var(--oc-border); display: flex; flex-direction: column; }
 .oc-panel__section { padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
 .oc-panel__section + .oc-panel__section { border-top: 1px solid var(--oc-border); }
 .oc-header { width: 100%; min-height: var(--oc-header-h); box-sizing: border-box; padding: 0 24px; background: var(--oc-surface-1); border-bottom: 1px solid var(--oc-border); display: flex; align-items: center; gap: 14px; }
@@ -192,7 +192,7 @@ button.oc-nav-link { width: 100%; border: 0; background: transparent; font-famil
 .oc-nav-add { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; box-sizing: border-box; border: 1px dashed var(--oc-border-control); border-radius: var(--oc-r-sm); color: var(--oc-text); font-size: var(--oc-text-base); font-weight: 500; text-decoration: none; }
 button.oc-nav-add { width: 100%; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
 .oc-nav-add:disabled { opacity: 0.45; cursor: not-allowed; }
-.oc-preview { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: var(--oc-preview); border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); display: flex; align-items: center; justify-content: center; }
+.oc-preview { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: clip; /* clip, not hidden: the frame still grows when its text needs it (narrow window) */ background: var(--oc-preview); border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); display: flex; align-items: center; justify-content: center; }
 .oc-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; background: var(--oc-border); border: 1px solid var(--oc-border); border-radius: var(--oc-r-md); }
 .oc-stat { background: var(--oc-surface-2); padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
 .oc-stat__label { font-size: var(--oc-text-sm); color: var(--oc-text-muted); }

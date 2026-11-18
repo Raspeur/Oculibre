@@ -3,7 +3,7 @@
 // Shown instead of the start error in the main window, and in Settings › Virtual camera.
 
 import { useEffect, useState } from "react";
-import { type FixError, type VcamStatus, fixVcam, vcamStatus } from "../engine";
+import { type FixError, type VcamStatus, fixVcam, onWindows, vcamStatus } from "../engine";
 import { type Key, t, useLang } from "../i18n";
 
 export function VcamProblem(props: { style?: React.CSSProperties; onFixed?: () => void }) {
@@ -38,10 +38,10 @@ export function VcamProblem(props: { style?: React.CSSProperties; onFixed?: () =
       : error?.kind === "InUse"
         ? [405, "vcam_inuse_title", "vcam_inuse_text"]
         : error?.kind === "NotInstalled" || status?.kind === "NotInstalled"
-          ? [404, "vcam_module_title", "vcam_module_text"]
+          ? [404, "vcam_module_title", onWindows ? "vcam_module_text_windows" : "vcam_module_text"]
           : error?.kind === "Failed"
             ? [401, "vcam_failed_title", null]
-            : [401, "vcam_missing_title", "vcam_missing_text"];
+            : [401, "vcam_missing_title", onWindows ? "vcam_missing_text_windows" : "vcam_missing_text"];
   const [code, title, text] = problem;
   // A restart is the only fix for 405; Secure Boot needs a terminal and a restart.
   const canTry = code === 401 || code === 404;

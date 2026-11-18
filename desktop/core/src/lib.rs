@@ -37,6 +37,9 @@ pub mod vcam;
 pub mod vcam;
 #[cfg(target_os = "linux")]
 pub mod vcam_setup;
+#[cfg(windows)]
+#[path = "vcam_setup_windows.rs"]
+pub mod vcam_setup;
 pub mod yuv;
 
 pub use events::{ignore_events, Event, Events};

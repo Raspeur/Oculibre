@@ -86,7 +86,7 @@ pub struct VideoDecoder {
 }
 
 enum Backend {
-    #[cfg(feature = "ffmpeg")]
+    #[cfg(ffmpeg)]
     Ffmpeg(ffmpeg::Ffmpeg),
     #[cfg(windows)]
     MediaFoundation(mf::MediaFoundation),
@@ -100,7 +100,7 @@ impl VideoDecoder {
     }
 
     pub fn with(choice: Choice) -> Result<Self, String> {
-        #[cfg(feature = "ffmpeg")]
+        #[cfg(ffmpeg)]
         {
             use ffmpeg::Hardware;
             let devices: &[Hardware] = match choice {
@@ -148,7 +148,7 @@ impl VideoDecoder {
         if matches!(choice, Choice::Vaapi | Choice::Nvdec) {
             return Err("VA-API and NVDEC are for Linux".into());
         }
-        #[cfg(all(not(feature = "ffmpeg"), not(windows)))]
+        #[cfg(all(not(ffmpeg), not(windows)))]
         if choice != Choice::OpenH264 && choice != Choice::Auto {
             return Err("this oculibre was built without FFmpeg: only openh264".into());
         }
@@ -172,7 +172,7 @@ impl VideoDecoder {
     /// "VA-API (hardware)", "NVDEC (hardware)", "FFmpeg (software)" or "OpenH264 (software)".
     pub fn name(&self) -> &'static str {
         match &self.backend {
-            #[cfg(feature = "ffmpeg")]
+            #[cfg(ffmpeg)]
             Backend::Ffmpeg(d) => match d.hardware() {
                 Some(ffmpeg::Hardware::Vaapi) => "VA-API (hardware)",
                 Some(ffmpeg::Hardware::Cuda) => "NVDEC (hardware)",
@@ -187,7 +187,7 @@ impl VideoDecoder {
     /// Decodes one access unit (or SPS/PPS) into `out`. `Ok(true)`: `out` holds a new picture.
     pub fn decode(&mut self, au: &[u8], out: &mut Picture) -> Result<bool, String> {
         match &mut self.backend {
-            #[cfg(feature = "ffmpeg")]
+            #[cfg(ffmpeg)]
             Backend::Ffmpeg(d) => d.decode(au, out),
             #[cfg(windows)]
             Backend::MediaFoundation(d) => d.decode(au, out),
@@ -262,9 +262,9 @@ pub struct FfmpegInfo {
 }
 
 pub fn ffmpeg_info() -> Result<FfmpegInfo, String> {
-    #[cfg(feature = "ffmpeg")]
+    #[cfg(ffmpeg)]
     return ffmpeg::info();
-    #[cfg(not(feature = "ffmpeg"))]
+    #[cfg(not(ffmpeg))]
     Err("this Oculibre was built without FFmpeg".into())
 }
 
@@ -280,13 +280,13 @@ pub fn openh264_version() -> Result<String, String> {
 /// Whether FFmpeg's libavcodec could be loaded (`Err`: why, e.g. "libavcodec.so.62 is not
 /// installed"). Without it, decoding falls back to OpenH264 (problem 502).
 pub fn ffmpeg_available() -> Result<(), String> {
-    #[cfg(feature = "ffmpeg")]
+    #[cfg(ffmpeg)]
     return ffmpeg::lib().map(drop);
-    #[cfg(not(feature = "ffmpeg"))]
+    #[cfg(not(ffmpeg))]
     Err("this Oculibre was built without FFmpeg".into())
 }
 
-#[cfg(feature = "ffmpeg")]
+#[cfg(ffmpeg)]
 mod ffmpeg {
     use std::ffi::{c_char, c_int, c_void, CStr};
     use std::ptr;
@@ -738,14 +738,14 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "ffmpeg")]
+    #[cfg(ffmpeg)]
     #[test]
     fn ffmpeg_software() {
         decodes_every_frame_at_once(Choice::Software);
     }
 
     /// Needs a VA-API device: `cargo test -- --ignored vaapi`.
-    #[cfg(feature = "ffmpeg")]
+    #[cfg(ffmpeg)]
     #[test]
     #[ignore]
     fn vaapi() {
@@ -761,7 +761,7 @@ mod tests {
     }
 
     /// Needs an NVIDIA card with the proprietary driver: `cargo test -- --ignored nvdec`.
-    #[cfg(feature = "ffmpeg")]
+    #[cfg(ffmpeg)]
     #[test]
     #[ignore]
     fn nvdec() {
