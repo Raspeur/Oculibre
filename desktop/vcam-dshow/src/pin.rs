@@ -35,7 +35,7 @@ use crate::com::{co_string, copy_name, guard, guard_hr, wide, Sendable};
 use crate::enums::TypeEnum;
 use crate::filter::FilterShared;
 use crate::media::{free_media_type_content, Format};
-use crate::picture;
+use oculibre_vcam_shm::picture;
 
 pub const PIN_NAME: &str = "Capture";
 

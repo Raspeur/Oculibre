@@ -2742,6 +2742,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "oculibre-vcam-mf"
+version = "0.3.0"
+dependencies = [
+ "oculibre-vcam-shm",
+ "windows",
+ "windows-core",
+]
+
+[[package]]
 name = "oculibre-vcam-shm"
 version = "0.3.0"
 dependencies = [

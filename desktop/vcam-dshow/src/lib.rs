@@ -11,8 +11,6 @@
 //! - `enums`, `media`, `com`: enumerators, DirectShow formats, helpers
 //! - `picture`: resizing and the waiting picture (plain Rust)
 
-pub mod picture;
-
 #[cfg(windows)]
 mod com;
 #[cfg(windows)]

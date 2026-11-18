@@ -78,6 +78,29 @@ cannot be dropped in v1.
   they do, on Windows 11 the MF camera alone could be enough. If they don't, register both, and
   check that no app shows "Oculibre" twice.
 
+== Measured in the VM (2026-11-18) <measured>
+
+- *The Media Foundation camera works*, in Rust (`vcam-mf`): an `IMFActivate` the Frame Server
+  creates, a live media source with one NV12 stream (1920×1080, 1280×720 at 30/60, 640×360), samples
+  from the Frame Server's allocator (memory, no Direct3D), the waiting picture without Oculibre.
+  30 pictures per second through the Frame Server.
+- *Windows names it "Oculibre (Caméra virtuelle Windows)"*: it adds that suffix (in the system's
+  language) to every virtual camera.
+- *DirectShow apps see it too* (FFmpeg's `dshow` input read it at 30 per second, as YUY2: Windows
+  converts). So on Windows 11 the Media Foundation camera alone would reach every app.
+- *But one app at a time*: with two apps on it, only one gets pictures. Windows 11 lets several apps
+  share a camera only if the user turns "Allow multiple apps to use the camera" on. The DirectShow
+  filter has no such limit (each app loads its own), which matters for streamers (OBS + Discord).
+- *Lifetime "system"* keeps the camera registered after the program that made it ends, and after
+  reboots: the installer registers it once for every user (`oculibre-camera register`, access "all
+  users", as administrator); Oculibre itself no longer registers anything.
+- *Decision*: Windows 11 gets both cameras: "Oculibre" (DirectShow: OBS, Discord, Zoom, Chrome,
+  several at once) and "Oculibre (Caméra virtuelle Windows)" (Media Foundation: the Camera app and
+  apps that see only it). Windows 10: DirectShow only.
+- The Media Foundation block is `Global\OculibreVirtualCameraMF`, made by the source (in the
+  service, which may create global objects) with a security descriptor that lets logged-in users
+  write; Oculibre opens it once it exists.
+
 == What Oculibre writes
 
 A shared memory block that we define ourselves, read by both DLLs:

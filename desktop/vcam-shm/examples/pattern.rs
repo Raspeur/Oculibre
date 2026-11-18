@@ -12,6 +12,7 @@ fn main() {
     let mut frame = vec![0u8; w * h * 2];
     let start = Instant::now();
     let mut n = 0u64;
+    let mut global: Option<oculibre_vcam_shm::Shared> = None;
     while start.elapsed() < Duration::from_secs(seconds) {
         // Colour bars, and a white bar moving down: one picture differs from the next.
         let bar = (n as usize * 8) % h;
@@ -36,6 +37,14 @@ fn main() {
         shared
             .frames()
             .write(w, h, &frame, start.elapsed().as_millis() as u64);
+        // The Media Foundation camera's block too, once its source made it.
+        if global.is_none() && n.is_multiple_of(30) {
+            global = oculibre_vcam_shm::Shared::open_global();
+        }
+        if let Some(g) = &global {
+            g.frames()
+                .write(w, h, &frame, start.elapsed().as_millis() as u64);
+        }
         n += 1;
         let next = Duration::from_micros(n * 1_000_000 / fps);
         if let Some(wait) = next.checked_sub(start.elapsed()) {

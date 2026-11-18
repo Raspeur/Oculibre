@@ -1,7 +1,10 @@
 ; Oculibre's Windows installer (#17): the steps Tauri's NSIS installer runs around its own.
 ;
-; - The virtual camera: the DirectShow DLL, 64-bit (64-bit apps) and 32-bit (old 32-bit apps),
-;   registered with regsvr32 after the files are copied, unregistered before they are removed.
+; - The virtual cameras: the DirectShow DLL, 64-bit (64-bit apps) and 32-bit (old 32-bit apps),
+;   and on Windows 11 the Media Foundation source (loaded by the Frame Server service), registered
+;   with regsvr32 after the files are copied, unregistered before they are removed. The Media
+;   Foundation camera is then made known to Windows for every user by oculibre-camera.exe (it
+;   does nothing on Windows 10). An update takes effect in the Frame Server at the next restart.
 ; - The firewall: phones connect to Oculibre (port 47100, Wi-Fi) and look for it (mDNS).
 ; - Updating while an app (OBS, Zoom…) has the camera open: Windows does not let a loaded DLL be
 ;   replaced, but lets it be renamed. The old one is moved aside and deleted at the next restart.
@@ -45,6 +48,7 @@
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro OCULIBRE_CLEAN_ASIDE
   !insertmacro OCULIBRE_STOP_ADB
+  !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\oculibre_vcam_mf.dll"
   !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\oculibre_vcam_dshow.dll"
   !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\x86\oculibre_vcam_dshow.dll"
 !macroend
@@ -52,6 +56,9 @@
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro OCULIBRE_REGSVR64 '/s "$INSTDIR\oculibre_vcam_dshow.dll"'
   !insertmacro OCULIBRE_REGSVR32 '/s "$INSTDIR\x86\oculibre_vcam_dshow.dll"'
+  !insertmacro OCULIBRE_REGSVR64 '/s "$INSTDIR\oculibre_vcam_mf.dll"'
+  nsExec::Exec '"$INSTDIR\oculibre-camera.exe" register'
+  Pop $0
   ; Phones reach Oculibre over the network only when Wi-Fi is on in its settings, encrypted and
   ; paired: the rule is for Oculibre's program only.
   nsExec::Exec 'netsh advfirewall firewall delete rule name="Oculibre"'
@@ -62,6 +69,9 @@
 
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro OCULIBRE_STOP_ADB
+  nsExec::Exec '"$INSTDIR\oculibre-camera.exe" remove'
+  Pop $0
+  !insertmacro OCULIBRE_REGSVR64 '/u /s "$INSTDIR\oculibre_vcam_mf.dll"'
   !insertmacro OCULIBRE_REGSVR64 '/u /s "$INSTDIR\oculibre_vcam_dshow.dll"'
   !insertmacro OCULIBRE_REGSVR32 '/u /s "$INSTDIR\x86\oculibre_vcam_dshow.dll"'
   nsExec::Exec 'netsh advfirewall firewall delete rule name="Oculibre"'
@@ -69,6 +79,7 @@
   ; Still loaded by an app: moved aside, deleted at the next restart.
   !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\oculibre_vcam_dshow.dll"
   !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\x86\oculibre_vcam_dshow.dll"
+  !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\oculibre_vcam_mf.dll"
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

@@ -22,9 +22,17 @@
 
 use std::sync::atomic::{fence, AtomicU64, Ordering};
 
+pub mod picture;
+
 /// The block's name. `Local\`: the user's session, where the apps that load the DirectShow
 /// filter run.
 pub const NAME: &str = "Local\\OculibreVirtualCamera";
+/// The Media Foundation camera's block. Its source runs in a Windows service (Frame Server, in
+/// session 0), which cannot see the user's `Local\` objects: so a `Global\` block, which the
+/// source creates (a normal user may not create `Global\` objects) and Oculibre opens to write.
+pub const GLOBAL_NAME: &str = "Global\\OculibreVirtualCameraMF";
+/// Who may use the global block: the system and services fully, logged-in users read and write.
+pub const GLOBAL_SDDL: &str = "D:(A;;GA;;;SY)(A;;GA;;;LS)(A;;GA;;;BA)(A;;GRGW;;;AU)";
 pub const MAGIC: u32 = u32::from_le_bytes(*b"OCVC");
 pub const VERSION: u32 = 1;
 /// Bytes before the picture.
@@ -169,10 +177,17 @@ impl Frames {
 mod windows_shm {
     use super::*;
     use windows::core::HSTRING;
-    use windows::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+    use windows::Win32::Foundation::{
+        CloseHandle, LocalFree, HANDLE, HLOCAL, INVALID_HANDLE_VALUE,
+    };
+    use windows::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
     use windows::Win32::System::Memory::{
-        CreateFileMappingW, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP_ALL_ACCESS,
-        FILE_MAP_READ, MEMORY_MAPPED_VIEW_ADDRESS, PAGE_READWRITE,
+        CreateFileMappingW, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP,
+        FILE_MAP_ALL_ACCESS, FILE_MAP_READ, FILE_MAP_WRITE, MEMORY_MAPPED_VIEW_ADDRESS,
+        PAGE_READWRITE,
     };
 
     /// The block mapped into this process.
@@ -190,15 +205,49 @@ mod windows_shm {
         /// Oculibre: creates the block (or opens it if a previous Oculibre left it, while an app
         /// still has the camera open).
         pub fn create() -> Result<Self, String> {
+            Self::create_named(NAME, None)
+        }
+
+        /// The Media Foundation source (in the Frame Server service): creates the global block
+        /// with [`GLOBAL_SDDL`], so that Oculibre, in the user's session, can write into it.
+        pub fn create_global() -> Result<Self, String> {
+            let mut descriptor = PSECURITY_DESCRIPTOR::default();
+            // SAFETY: a constant SDDL string; the descriptor is freed below.
+            unsafe {
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    &HSTRING::from(GLOBAL_SDDL),
+                    SDDL_REVISION_1,
+                    &mut descriptor,
+                    None,
+                )
+                .map_err(|e| format!("security descriptor: {e}"))?;
+            }
+            let attributes = SECURITY_ATTRIBUTES {
+                nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: descriptor.0,
+                bInheritHandle: false.into(),
+            };
+            let result = Self::create_named(GLOBAL_NAME, Some(&attributes));
+            // SAFETY: allocated by the conversion above, no longer used.
+            unsafe {
+                let _ = LocalFree(Some(HLOCAL(descriptor.0)));
+            }
+            result
+        }
+
+        fn create_named(
+            name: &str,
+            attributes: Option<&SECURITY_ATTRIBUTES>,
+        ) -> Result<Self, String> {
             // SAFETY: a named, page-file backed mapping of SIZE bytes, mapped whole.
             unsafe {
                 let mapping = CreateFileMappingW(
                     INVALID_HANDLE_VALUE,
-                    None,
+                    attributes.map(|a| a as *const _),
                     PAGE_READWRITE,
                     0,
                     SIZE as u32,
-                    &HSTRING::from(NAME),
+                    &HSTRING::from(name),
                 )
                 .map_err(|e| format!("cannot create the virtual camera's memory: {e}"))?;
                 let view = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, SIZE);
@@ -218,13 +267,23 @@ mod windows_shm {
             }
         }
 
-        /// The camera (in an app): opens the block if Oculibre runs. `None`: it does not.
+        /// The DirectShow camera (in an app): opens the block if Oculibre runs. `None`: it does
+        /// not.
         pub fn open() -> Option<Self> {
-            // SAFETY: as above, read-only.
+            Self::open_named(NAME, FILE_MAP_READ)
+        }
+
+        /// Oculibre: opens the global block to write, if the Media Foundation camera is in use
+        /// (its source made it). `None`: no app uses that camera now.
+        pub fn open_global() -> Option<Self> {
+            Self::open_named(GLOBAL_NAME, FILE_MAP_READ | FILE_MAP_WRITE)
+        }
+
+        fn open_named(name: &str, access: FILE_MAP) -> Option<Self> {
+            // SAFETY: as above.
             unsafe {
-                let mapping =
-                    OpenFileMappingW(FILE_MAP_READ.0, false, &HSTRING::from(NAME)).ok()?;
-                let view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, SIZE);
+                let mapping = OpenFileMappingW(access.0, false, &HSTRING::from(name)).ok()?;
+                let view = MapViewOfFile(mapping, access, 0, 0, SIZE);
                 if view.Value.is_null() {
                     let _ = CloseHandle(mapping);
                     return None;

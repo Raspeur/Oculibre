@@ -1,5 +1,6 @@
-//! Pictures for the app, YUY2: the phone's picture resized to the size the app chose, or the
-//! "waiting" picture. Plain Rust, tested on every system.
+//! Pictures for the apps, YUY2: the phone's picture resized to the size the app chose, or the
+//! "waiting" picture; and NV12 for Media Foundation. Shared by both Windows cameras (DirectShow,
+//! Media Foundation). Plain Rust, tested on every system.
 
 /// Black in YUY2 (Y 16, U and V 128): bars around a picture of another shape.
 const BLACK: [u8; 4] = [16, 128, 16, 128];
@@ -77,8 +78,16 @@ pub fn waiting(dst: &mut [u8], w: usize, h: usize, ms: u64) {
             let alpha = (u16::from(a[3]) + u16::from(b[3])) / 2;
             out[0] = blend(out[0], a[0], a[3].into());
             out[2] = blend(out[2], b[0], b[3].into());
-            out[1] = blend(out[1], ((u16::from(a[1]) + u16::from(b[1])) / 2) as u8, alpha);
-            out[3] = blend(out[3], ((u16::from(a[2]) + u16::from(b[2])) / 2) as u8, alpha);
+            out[1] = blend(
+                out[1],
+                ((u16::from(a[1]) + u16::from(b[1])) / 2) as u8,
+                alpha,
+            );
+            out[3] = blend(
+                out[3],
+                ((u16::from(a[2]) + u16::from(b[2])) / 2) as u8,
+                alpha,
+            );
         }
     }
     // Three dots under it; the lit one moves every 400 ms.
@@ -106,6 +115,29 @@ fn dot(dst: &mut [u8], w: usize, h: usize, cx: usize, cy: usize, r: usize, yuv: 
                 dst[(i & !3) + 1] = yuv[1];
                 dst[(i & !3) + 3] = yuv[2];
             }
+        }
+    }
+}
+
+/// YUY2 → NV12, same size (Media Foundation's format): full luma plane, then chroma averaged over
+/// each pair of rows, interleaved U V. `pitch`: bytes per row of the destination's planes.
+pub fn yuy2_to_nv12(src: &[u8], w: usize, h: usize, dst: &mut [u8], pitch: usize) {
+    let (luma, chroma) = dst.split_at_mut(pitch * h);
+    for y in 0..h {
+        let row = &src[y * w * 2..][..w * 2];
+        for (x, px) in luma[y * pitch..][..w].iter_mut().enumerate() {
+            *px = row[x * 2];
+        }
+    }
+    for y in 0..h / 2 {
+        let (a, b) = (
+            &src[2 * y * w * 2..][..w * 2],
+            &src[(2 * y + 1) * w * 2..][..w * 2],
+        );
+        let out = &mut chroma[y * pitch..][..w];
+        for m in 0..w / 2 {
+            out[2 * m] = (u16::from(a[4 * m + 1]) + u16::from(b[4 * m + 1])).div_ceil(2) as u8;
+            out[2 * m + 1] = (u16::from(a[4 * m + 3]) + u16::from(b[4 * m + 3])).div_ceil(2) as u8;
         }
     }
 }
@@ -148,6 +180,21 @@ mod tests {
         assert_eq!(at(w / 2, 0), 200); // full height
     }
 
+    #[test]
+    fn nv12_from_yuy2() {
+        let (w, h) = (4, 2);
+        // Row 0: U 100 V 150; row 1: U 110 V 160; luma 1..8.
+        let src = [
+            1, 100, 2, 150, 3, 100, 4, 150, 5, 110, 6, 160, 7, 110, 8, 160,
+        ];
+        let pitch = 6; // wider than the picture, like a 2D buffer
+        let mut dst = vec![0; pitch * h * 3 / 2];
+        yuy2_to_nv12(&src, w, h, &mut dst, pitch);
+        assert_eq!(&dst[..4], &[1, 2, 3, 4]);
+        assert_eq!(&dst[pitch..pitch + 4], &[5, 6, 7, 8]);
+        assert_eq!(&dst[2 * pitch..2 * pitch + 4], &[105, 155, 105, 155]);
+    }
+
     /// Background in the corners, the logo in the middle, a dot that moves; every size we offer.
     #[test]
     fn waiting_picture() {
@@ -157,7 +204,7 @@ mod tests {
             waiting(&mut a, w, h, 0);
             waiting(&mut b, w, h, 400);
             assert_eq!(&a[..4], &[31, 135, 31, 124]); // corner: background
-            // The logo's row through its middle is mostly not background.
+                                                      // The logo's row through its middle is mostly not background.
             let row = &a[(h * 42 / 100) * w * 2..][..w * 2];
             let lit = row.iter().step_by(2).filter(|&&y| y != 31).count();
             assert!(lit > h * 27 / 100 / 4, "no logo at {w}x{h} ({lit} pixels)");
