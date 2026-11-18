@@ -134,7 +134,11 @@ impl VideoDecoder {
         // Windows: its own decoder first (licensed with Windows), OpenH264 after.
         #[cfg(windows)]
         if matches!(choice, Choice::Auto | Choice::Software) {
-            match mf::MediaFoundation::new() {
+            // Auto: the graphics card first, quietly software when it cannot.
+            let hardware = (choice == Choice::Auto)
+                .then(|| mf::MediaFoundation::new(true).ok())
+                .flatten();
+            match hardware.map_or_else(|| mf::MediaFoundation::new(false), Ok) {
                 Ok(d) => {
                     return Ok(Self {
                         backend: Backend::MediaFoundation(d),
@@ -144,9 +148,12 @@ impl VideoDecoder {
                 Err(_) => {} // OpenH264 below
             }
         }
+        // Windows: "graphics card" (vaapi/nvdec on Linux) = Media Foundation on Direct3D 11.
         #[cfg(windows)]
         if matches!(choice, Choice::Vaapi | Choice::Nvdec) {
-            return Err("VA-API and NVDEC are for Linux".into());
+            return mf::MediaFoundation::new(true).map(|d| Self {
+                backend: Backend::MediaFoundation(d),
+            });
         }
         #[cfg(all(not(ffmpeg), not(windows)))]
         if choice != Choice::OpenH264 && choice != Choice::Auto {
@@ -178,6 +185,8 @@ impl VideoDecoder {
                 Some(ffmpeg::Hardware::Cuda) => "NVDEC (hardware)",
                 None => "FFmpeg (software)",
             },
+            #[cfg(windows)]
+            Backend::MediaFoundation(d) if d.hardware() => "Media Foundation (hardware)",
             #[cfg(windows)]
             Backend::MediaFoundation(_) => "Media Foundation (software)",
             Backend::OpenH264(_) => "OpenH264 (software)",
@@ -688,9 +697,12 @@ mod tests {
         w: usize,
         h: usize,
     ) -> Option<&'static str> {
-        let Ok(mut d) = VideoDecoder::with(choice) else {
-            eprintln!("{choice:?} not available here");
-            return None;
+        let mut d = match VideoDecoder::with(choice) {
+            Ok(d) => d,
+            Err(why) => {
+                eprintln!("{choice:?} not available here: {why}");
+                return None;
+            }
         };
         let mut p = Picture::default();
         for (i, au) in clip(8, w, h).iter().enumerate() {
@@ -782,10 +794,25 @@ mod tests {
                 Some("Media Foundation (software)")
             );
         }
-        assert_eq!(
-            VideoDecoder::new().unwrap().name(),
-            "Media Foundation (software)"
-        );
+        // Auto: the graphics card when there is one (not in a virtual machine), else software.
+        assert!(VideoDecoder::new()
+            .unwrap()
+            .name()
+            .starts_with("Media Foundation"));
+    }
+
+    /// On a real graphics card (not in a VM): `cargo test -- --ignored media_foundation_hardware`.
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn media_foundation_hardware() {
+        for (w, h) in [(320, 240), (640, 360), (1920, 1080)] {
+            assert_eq!(
+                decodes_every_frame_at_once_sized(Choice::Vaapi, w, h),
+                Some("Media Foundation (hardware)"),
+                "no hardware decoding here"
+            );
+        }
     }
 
     /// Time per 1080p picture: `cargo test --release -- --ignored --nocapture decode_speed`.
@@ -806,7 +833,11 @@ mod tests {
                 .skip(1)
                 .collect();
             times.sort();
-            eprintln!("{}: median {:?} per 1080p picture", d.name(), times[times.len() / 2]);
+            eprintln!(
+                "{}: median {:?} per 1080p picture",
+                d.name(),
+                times[times.len() / 2]
+            );
         }
     }
 

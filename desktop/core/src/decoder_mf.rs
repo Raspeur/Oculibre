@@ -1,5 +1,6 @@
 //! Windows' own H.264 decoder (Media Foundation, #17): licensed with Windows, so Oculibre ships
-//! no decoder there (`docs/research/windows.typ`). Software for now; D3D11 hardware decoding next.
+//! no decoder there (`docs/research/windows.typ`). On the graphics card when there is one
+//! (Direct3D 11: AMD, Intel, NVIDIA through the same decoder), in software otherwise.
 //!
 //! The decoder is an MFT (Media Foundation Transform): one H.264 access unit in (Annex B, as the
 //! phone sends it), pictures out in NV12. `MF_LOW_LATENCY` makes it give each picture back at
@@ -20,6 +21,8 @@ use crate::yuv::Picture;
 /// One stream's decoder.
 pub struct MediaFoundation {
     mft: IMFTransform,
+    /// The graphics card's device manager while decoding on it (kept alive with the decoder).
+    gpu: Option<IMFDXGIDeviceManager>,
     /// Coded size of the output pictures (height rounded up to 16: 1088 for 1080p), the stride
     /// of their rows, and the visible size (what the phone filmed).
     coded: (usize, usize),
@@ -50,7 +53,13 @@ fn start() -> Result<(), String> {
 }
 
 impl MediaFoundation {
-    pub fn new() -> Result<Self, String> {
+    pub fn hardware(&self) -> bool {
+        self.gpu.is_some()
+    }
+
+    /// `hardware`: decode on the graphics card (Direct3D 11), or fail (the caller then tries
+    /// software). The pictures come back from video memory through the same `copy`.
+    pub fn new(hardware: bool) -> Result<Self, String> {
         start()?;
         // SAFETY: COM calls on interfaces we own; arguments are valid for each call.
         unsafe {
@@ -61,9 +70,27 @@ impl MediaFoundation {
                         e.message()
                     )
                 })?;
-            if let Ok(attributes) = mft.GetAttributes() {
-                let _ = attributes.SetUINT32(&MF_LOW_LATENCY, 1);
+            let attributes = mft.GetAttributes().ok();
+            if let Some(a) = &attributes {
+                let _ = a.SetUINT32(&MF_LOW_LATENCY, 1);
             }
+            let gpu = if hardware {
+                if attributes
+                    .as_ref()
+                    .and_then(|a| a.GetUINT32(&MF_SA_D3D11_AWARE).ok())
+                    != Some(1)
+                {
+                    return Err(
+                        "Media Foundation: this H.264 decoder cannot use Direct3D 11".into(),
+                    );
+                }
+                let manager = gpu_manager()?;
+                mft.ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, manager.as_raw() as usize)
+                    .map_err(|e| mf_error("graphics card", e))?;
+                Some(manager)
+            } else {
+                None
+            };
             let input = MFCreateMediaType().map_err(|e| mf_error("media type", e))?;
             input
                 .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
@@ -72,6 +99,7 @@ impl MediaFoundation {
                 .map_err(|e| mf_error("H.264 input", e))?;
             let mut decoder = Self {
                 mft,
+                gpu,
                 coded: (0, 0),
                 stride: 0,
                 visible: (0, 0),
@@ -225,6 +253,60 @@ impl MediaFoundation {
     }
 }
 
+/// A Direct3D 11 device on the graphics card, for the decoder. Not on Microsoft's "Basic Render
+/// Driver" (a virtual machine, or no graphics driver): it has no video decoder, software is as
+/// good there.
+fn gpu_manager() -> Result<IMFDXGIDeviceManager, String> {
+    use windows::Win32::Foundation::HMODULE;
+    use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
+    use windows::Win32::Graphics::Direct3D11::{
+        D3D11CreateDevice, ID3D11Device, ID3D11Multithread, D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+        D3D11_SDK_VERSION,
+    };
+    use windows::Win32::Graphics::Dxgi::IDXGIDevice;
+    const MICROSOFT: u32 = 0x1414;
+    // SAFETY: device creation and plain COM calls on what it returns.
+    unsafe {
+        let mut device: Option<ID3D11Device> = None;
+        D3D11CreateDevice(
+            None,
+            D3D_DRIVER_TYPE_HARDWARE,
+            HMODULE::default(),
+            D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+            None,
+            D3D11_SDK_VERSION,
+            Some(&mut device),
+            None,
+            None,
+        )
+        .map_err(|e| mf_error("Direct3D 11", e))?;
+        let device = device.ok_or("Direct3D 11: no device")?;
+        let adapter = device
+            .cast::<IDXGIDevice>()
+            .and_then(|d| d.GetAdapter())
+            .and_then(|a| a.GetDesc())
+            .map_err(|e| mf_error("graphics card", e))?;
+        if adapter.VendorId == MICROSOFT {
+            return Err(
+                "no graphics card with a video decoder (Microsoft Basic Render Driver)".into(),
+            );
+        }
+        // The decoder uses the device from its own threads.
+        if let Ok(m) = device.cast::<ID3D11Multithread>() {
+            let _ = m.SetMultithreadProtected(true);
+        }
+        let mut token = 0u32;
+        let mut manager = None;
+        MFCreateDXGIDeviceManager(&mut token, &mut manager)
+            .map_err(|e| mf_error("device manager", e))?;
+        let manager = manager.ok_or("Media Foundation: no device manager")?;
+        manager
+            .ResetDevice(&device, token)
+            .map_err(|e| mf_error("device manager", e))?;
+        Ok(manager)
+    }
+}
+
 /// The visible part of the picture (1920×1080 inside 1920×1088).
 fn aperture(t: &IMFMediaType) -> Option<(usize, usize)> {
     let mut area = MFVideoArea::default();
@@ -287,5 +369,5 @@ fn memory_sample(bytes: &[u8], time: i64) -> Result<IMFSample, String> {
 
 /// Whether Windows can decode H.264 (`Err`: why; an "N" edition without the Media Feature Pack).
 pub fn available() -> Result<(), String> {
-    MediaFoundation::new().map(drop)
+    MediaFoundation::new(false).map(drop)
 }
