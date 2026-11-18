@@ -2719,6 +2719,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "windows",
 ]
 
 [[package]]

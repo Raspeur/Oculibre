@@ -39,6 +39,14 @@ if-addrs = "0.15"
 jpeg-encoder = "0.7"
 ffmpeg-sys-next = { version = "8", optional = true, default-features = false, features = ["avcodec"] }
 
+[target.'cfg(windows)'.dependencies]
+# Microsoft's bindings (MIT/Apache-2.0): Media Foundation, Windows' own H.264 decoder (#17).
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+] }
+
 [target.'cfg(unix)'.dependencies]
 # dlopen of FFmpeg, adb's parent-death signal (Linux).
 libc = "0.2"

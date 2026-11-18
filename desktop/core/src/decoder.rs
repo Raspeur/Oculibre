@@ -14,6 +14,10 @@ use std::sync::Mutex;
 
 use crate::yuv::Picture;
 
+#[cfg(windows)]
+#[path = "decoder_mf.rs"]
+mod mf;
+
 /// `--decoder`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Choice {
@@ -84,6 +88,8 @@ pub struct VideoDecoder {
 enum Backend {
     #[cfg(feature = "ffmpeg")]
     Ffmpeg(ffmpeg::Ffmpeg),
+    #[cfg(windows)]
+    MediaFoundation(mf::MediaFoundation),
     OpenH264(Box<openh264::decoder::Decoder>),
 }
 
@@ -125,14 +131,35 @@ impl VideoDecoder {
                 }
             }
         }
-        #[cfg(not(feature = "ffmpeg"))]
+        // Windows: its own decoder first (licensed with Windows), OpenH264 after.
+        #[cfg(windows)]
+        if matches!(choice, Choice::Auto | Choice::Software) {
+            match mf::MediaFoundation::new() {
+                Ok(d) => {
+                    return Ok(Self {
+                        backend: Backend::MediaFoundation(d),
+                    })
+                }
+                Err(e) if choice != Choice::Auto => return Err(e),
+                Err(_) => {} // OpenH264 below
+            }
+        }
+        #[cfg(windows)]
+        if matches!(choice, Choice::Vaapi | Choice::Nvdec) {
+            return Err("VA-API and NVDEC are for Linux".into());
+        }
+        #[cfg(all(not(feature = "ffmpeg"), not(windows)))]
         if choice != Choice::OpenH264 && choice != Choice::Auto {
             return Err("this oculibre was built without FFmpeg: only openh264".into());
         }
         let d = openh264_decoder().map_err(|why| {
             if choice == Choice::Auto {
-                // Neither FFmpeg nor OpenH264: nothing can decode (problem 503).
-                format!("no H.264 decoder on this computer ({why}): install FFmpeg (libavcodec) or OpenH264 (libopenh264)")
+                // Neither FFmpeg (Windows: its own decoder) nor OpenH264: nothing can decode (503).
+                if cfg!(windows) {
+                    format!("no H.264 decoder on this computer ({why}): on an \"N\" edition of Windows, install the Media Feature Pack")
+                } else {
+                    format!("no H.264 decoder on this computer ({why}): install FFmpeg (libavcodec) or OpenH264 (libopenh264)")
+                }
             } else {
                 why
             }
@@ -151,6 +178,8 @@ impl VideoDecoder {
                 Some(ffmpeg::Hardware::Cuda) => "NVDEC (hardware)",
                 None => "FFmpeg (software)",
             },
+            #[cfg(windows)]
+            Backend::MediaFoundation(_) => "Media Foundation (software)",
             Backend::OpenH264(_) => "OpenH264 (software)",
         }
     }
@@ -160,6 +189,8 @@ impl VideoDecoder {
         match &mut self.backend {
             #[cfg(feature = "ffmpeg")]
             Backend::Ffmpeg(d) => d.decode(au, out),
+            #[cfg(windows)]
+            Backend::MediaFoundation(d) => d.decode(au, out),
             Backend::OpenH264(d) => match d.decode(au) {
                 Ok(Some(picture)) => {
                     out.copy_from(&picture);
@@ -174,8 +205,11 @@ impl VideoDecoder {
 
 /// The system's OpenH264: the one version the `openh264` crate is written for (OpenH264 2.6,
 /// ABI 8; Ubuntu's package libopenh264-8, Cisco's binary libopenh264-2.6.0-linux64.8.so).
-#[cfg(any(not(feature = "bundled-openh264"), test))]
+#[cfg(all(any(not(feature = "bundled-openh264"), test), not(windows)))]
 const OPENH264_SONAME: &str = "libopenh264.so.8";
+/// Cisco's own binary for Windows (the one its patent licence covers), next to Oculibre.
+#[cfg(all(any(not(feature = "bundled-openh264"), test), windows))]
+const OPENH264_SONAME: &str = "openh264-2.6.0-win64.dll";
 
 /// OpenH264's decoder. Oculibre ships no H.264 code: the library is the system's, loaded at run
 /// time (#18). Only `bundled-openh264` builds, and the tests, use a copy compiled in.
@@ -202,6 +236,12 @@ fn system_openh264() -> Result<openh264::OpenH264API, String> {
     // SAFETY: libopenh264.so.8 is OpenH264 2.6's ABI, the one openh264-sys2 0.9 is written for.
     unsafe { openh264::OpenH264API::from_blob_path_unchecked(OPENH264_SONAME) }
         .map_err(|_| format!("{OPENH264_SONAME} is not installed"))
+}
+
+/// Whether Windows' own H.264 decoder (Media Foundation) can be created (`Err`: why).
+#[cfg(windows)]
+pub fn media_foundation_available() -> Result<(), String> {
+    mf::available()
 }
 
 /// Whether OpenH264 could be loaded (`Err`: why). With neither it nor FFmpeg, nothing decodes.
@@ -639,20 +679,29 @@ mod tests {
 
     /// Returns the decoder that really decoded (VA-API may fall back to software).
     fn decodes_every_frame_at_once(choice: Choice) -> Option<&'static str> {
+        decodes_every_frame_at_once_sized(choice, 320, 240)
+    }
+
+    /// `h` not a multiple of 16 checks the crop (coded 368 rows, 360 shown).
+    fn decodes_every_frame_at_once_sized(
+        choice: Choice,
+        w: usize,
+        h: usize,
+    ) -> Option<&'static str> {
         let Ok(mut d) = VideoDecoder::with(choice) else {
             eprintln!("{choice:?} not available here");
             return None;
         };
         let mut p = Picture::default();
-        for (i, au) in clip(8, 320, 240).iter().enumerate() {
+        for (i, au) in clip(8, w, h).iter().enumerate() {
             // No delay: every access unit gives its picture right away.
             assert!(d.decode(au, &mut p).unwrap(), "{} frame {i}", d.name());
-            assert_eq!(p.dimensions(), (320, 240));
+            assert_eq!(p.dimensions(), (w, h));
         }
         // All decoders agree on the pixels (same stream): compare the last luma row to OpenH264.
         let mut reference = VideoDecoder::with(Choice::OpenH264).unwrap();
         let mut q = Picture::default();
-        for au in clip(8, 320, 240) {
+        for au in clip(8, w, h) {
             reference.decode(&au, &mut q).unwrap();
         }
         let diff = p
@@ -721,6 +770,44 @@ mod tests {
             Some("NVDEC (hardware)"),
             "NVDEC fell back to software"
         );
+    }
+
+    /// Windows' own decoder (software): no delay, cropped right, same pixels as OpenH264.
+    #[cfg(windows)]
+    #[test]
+    fn media_foundation() {
+        for (w, h) in [(320, 240), (640, 360)] {
+            assert_eq!(
+                decodes_every_frame_at_once_sized(Choice::Software, w, h),
+                Some("Media Foundation (software)")
+            );
+        }
+        assert_eq!(
+            VideoDecoder::new().unwrap().name(),
+            "Media Foundation (software)"
+        );
+    }
+
+    /// Time per 1080p picture: `cargo test --release -- --ignored --nocapture decode_speed`.
+    #[test]
+    #[ignore]
+    fn decode_speed() {
+        let clip = clip(60, 1920, 1080);
+        for choice in [Choice::Auto, Choice::OpenH264] {
+            let mut d = VideoDecoder::with(choice).unwrap();
+            let mut p = Picture::default();
+            let mut times: Vec<_> = clip
+                .iter()
+                .map(|au| {
+                    let t = std::time::Instant::now();
+                    d.decode(au, &mut p).unwrap();
+                    t.elapsed()
+                })
+                .skip(1)
+                .collect();
+            times.sort();
+            eprintln!("{}: median {:?} per 1080p picture", d.name(), times[times.len() / 2]);
+        }
     }
 
     #[test]
