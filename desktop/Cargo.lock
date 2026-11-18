@@ -2706,6 +2706,7 @@ name = "oculibre-core"
 version = "0.3.0"
 dependencies = [
  "ffmpeg-sys-next",
+ "if-addrs",
  "jpeg-encoder",
  "libc",
  "mdns-sd",

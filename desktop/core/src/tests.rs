@@ -765,6 +765,7 @@ fn host_serves_phones_one_after_the_other_until_stopped() {
         .filter(|e| matches!(e, crate::Event::SessionEnded(Ok(End::Bye { .. }))))
         .count();
     assert_eq!((connected, ended), (2, 2), "{seen:?}");
+    #[cfg(target_os = "linux")] // no virtual camera on other systems yet (#17)
     assert!(
         matches!(seen[0], crate::Event::VirtualCamera { .. }),
         "{seen:?}"

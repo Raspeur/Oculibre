@@ -25,8 +25,14 @@ pub mod profiles;
 pub mod session;
 pub mod store;
 pub mod tls;
+#[cfg(target_os = "linux")]
 pub mod v4l2;
+#[cfg(target_os = "linux")]
 pub mod vcam;
+#[cfg(not(target_os = "linux"))]
+#[path = "vcam_none.rs"]
+pub mod vcam;
+#[cfg(target_os = "linux")]
 pub mod vcam_setup;
 pub mod yuv;
 

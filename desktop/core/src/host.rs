@@ -9,7 +9,7 @@
 use std::error::Error;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -24,8 +24,10 @@ use crate::pairing::{self, Pairings};
 use crate::preview::{Previewer, ViewerSlot, Watch};
 use crate::profiles::Profiles;
 use crate::session::{self, Driver, End, Link, ModeError, Remote, Setup, Sink, View};
+#[cfg(target_os = "linux")]
+use crate::v4l2;
 use crate::vcam::VirtualCamera;
-use crate::{adb, tls, v4l2};
+use crate::{adb, tls};
 
 /// What the user chose (the options of `oculibre`, the settings of the app).
 #[derive(Debug, Clone)]
@@ -148,14 +150,21 @@ impl Host {
     /// identity and the paired phones and announces the computer (mDNS). Nothing is accepted
     /// before [`Host::run`] or [`Host::accept`].
     pub fn start(config: Config, events: Events) -> Result<Host, String> {
-        let device = match config.device.clone() {
-            Some(d) => d,
-            None => v4l2::find_loopback().map_err(|e| e.to_string())?,
+        #[cfg(target_os = "linux")]
+        let device = {
+            let device = match config.device.clone() {
+                Some(d) => d,
+                None => v4l2::find_loopback().map_err(|e| e.to_string())?,
+            };
+            v4l2::check_access(&device).map_err(|e| e.to_string())?;
+            events(Event::VirtualCamera {
+                path: device.clone(),
+            });
+            device
         };
-        v4l2::check_access(&device).map_err(|e| e.to_string())?;
-        events(Event::VirtualCamera {
-            path: device.clone(),
-        });
+        // No virtual camera on this system yet (#17): the preview only.
+        #[cfg(not(target_os = "linux"))]
+        let device = config.device.clone().unwrap_or_default();
 
         // §13: plaintext only on loopback (USB through adb reverse); the network needs Wi-Fi (TLS).
         let bind_ip = if config.wifi {
@@ -594,11 +603,22 @@ fn restore_mode(remote: &Remote, mode: &SetMode) {
     }
 }
 
+/// `~/.config/oculibre` (or `$XDG_CONFIG_HOME/oculibre`; Windows: `%APPDATA%\Oculibre`): TLS
+/// identity, paired phones, host id.
+#[cfg(windows)]
+pub fn config_dir() -> PathBuf {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("Oculibre")
+}
+
 /// `~/.config/oculibre` (or `$XDG_CONFIG_HOME/oculibre`): TLS identity, paired phones, host id.
+#[cfg(not(windows))]
 pub fn config_dir() -> PathBuf {
     std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".config")))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."))
         .join("oculibre")
 }
