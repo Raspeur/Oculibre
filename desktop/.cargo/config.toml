@@ -1,0 +1,8 @@
+# Windows: the C runtime goes inside every binary (+crt-static), so that Oculibre's DLLs and tools
+# need nothing installed: a fresh Windows 10 has no VCRUNTIME140.dll (the camera DLLs and
+# oculibre-camera.exe failed to load there). Tauri already does it for the app itself.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
