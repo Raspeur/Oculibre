@@ -44,7 +44,7 @@
     <string name="welcome_later">Later</string>
     <string name="welcome_next">Next</string>
     <string name="welcome_connect_title">Connect to your computer</string>
-    <string name="welcome_connect_text">With a USB cable: plug the phone in, nothing else to do. For Wi-Fi: open Oculibre on the computer, click \"Add a phone\", then scan the QR code it shows.</string>
+    <string name="welcome_connect_text">Over Wi-Fi: open Oculibre on the computer, click \"Add a phone\", then scan the QR code it shows. Over the USB cable: turn on USB debugging (Settings › Developer options), plug the phone in and allow the computer. USB debugging gives the computer wide access to the phone: only allow your own computer, never a public one, and turn it off when you do not use it. This is temporary: a future version will connect over USB without it.</string>
     <string name="welcome_connect_action">Scan the QR code</string>
     <string name="welcome_ready_title">All set</string>
     <string name="welcome_ready_text">Next time, just open Oculibre and press Start.</string>
@@ -67,12 +67,12 @@
     <string name="check_battery_ok">The webcam won\'t be cut in the middle of a call.</string>
     <string name="check_battery_todo">Android may cut the webcam with the screen off.</string>
     <string name="check_paired">Connected to the computer over Wi-Fi</string>
-    <string name="check_paired_todo">Scan the QR code shown by the computer. Over USB, nothing is needed.</string>
+    <string name="check_paired_todo">Scan the QR code shown by the computer. Over USB, USB debugging is needed instead.</string>
     <string name="section_computer">Computer</string>
     <string name="computer_code">Code %1$s</string>
     <string name="computer_paired_on">paired on %1$s</string>
     <string name="computer_none">Not paired for Wi-Fi</string>
-    <string name="computer_none_text">Over the USB cable, nothing is needed.</string>
+    <string name="computer_none_text">Over the USB cable, turn on USB debugging (Developer options) and allow the computer: only your own computer, never a public one.</string>
     <string name="forget_computer">Forget this computer</string>
     <string name="forget_computer_confirm">Forget %1$s? Wi-Fi will need a new pairing. The USB cable keeps working.</string>
     <string name="forget">Forget</string>

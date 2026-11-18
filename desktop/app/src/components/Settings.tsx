@@ -368,6 +368,8 @@ const notices = (libs: Decoders | null): [string, string, string?][] => [
   libs?.openh264_version
     ? [`OpenH264 ${libs.openh264_version}`, "BSD-2-Clause", t("notice_openh264")]
     : ["OpenH264", "BSD-2-Clause", libs ? t("notice_not_installed") : undefined],
+  // Windows: the adb shipped for USB phones (desktop/app/src-tauri/windows/adb-licences.txt).
+  ...(onWindows ? [["adb (Android Debug Bridge) 37.0.1", "Apache-2.0 · libusb LGPL-2.1", t("notice_adb")] as [string, string, string]] : []),
   ["jpeg-encoder", "MIT / Apache-2.0, IJG", t("notice_jpeg")],
   ["Tauri", "MIT / Apache-2.0"],
   ["React", "MIT"],

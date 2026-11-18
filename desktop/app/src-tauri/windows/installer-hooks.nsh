@@ -36,8 +36,15 @@
   Delete "$INSTDIR\ns*.tmp"
 !macroend
 
+; adb's server keeps running after Oculibre closes, and holds adb.exe: stop it first.
+!macro OCULIBRE_STOP_ADB
+  IfFileExists "$INSTDIR\adb\adb.exe" 0 +2
+    nsExec::Exec '"$INSTDIR\adb\adb.exe" kill-server'
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro OCULIBRE_CLEAN_ASIDE
+  !insertmacro OCULIBRE_STOP_ADB
   !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\oculibre_vcam_dshow.dll"
   !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\x86\oculibre_vcam_dshow.dll"
 !macroend
@@ -54,6 +61,7 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro OCULIBRE_STOP_ADB
   !insertmacro OCULIBRE_REGSVR64 '/u /s "$INSTDIR\oculibre_vcam_dshow.dll"'
   !insertmacro OCULIBRE_REGSVR32 '/u /s "$INSTDIR\x86\oculibre_vcam_dshow.dll"'
   nsExec::Exec 'netsh advfirewall firewall delete rule name="Oculibre"'
@@ -66,5 +74,6 @@
 !macro NSIS_HOOK_POSTUNINSTALL
   !insertmacro OCULIBRE_CLEAN_ASIDE
   RMDir "$INSTDIR\x86"
+  RMDir "$INSTDIR\adb"
   RMDir /REBOOTOK "$INSTDIR"
 !macroend

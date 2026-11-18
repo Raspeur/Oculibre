@@ -34,7 +34,7 @@ const en = {
   waiting: "Waiting",
   waiting_title: "Waiting for a phone",
   waiting_text:
-    "Open Oculibre on the phone and press “Start”. With a USB cable, just plug it in; over Wi-Fi, it must be paired with this computer and on the same network.",
+    "Open Oculibre on the phone and press “Start”. Over Wi-Fi, it must be paired with this computer and on the same network; over the USB cable, USB debugging must be on.",
   computer_code: "This computer's code: {key}",
   preview: "Preview",
   changing_mode: "Changing mode…",
@@ -87,8 +87,9 @@ const en = {
   pair_ready: "{name} is ready",
   pair_ready_text: "Press “Start” on the phone. Next time, opening the app is enough.",
   done: "Done",
-  usb_nothing: "USB cable: nothing to do",
-  usb_nothing_text: "Plug the phone in and press “Start” in the Oculibre app on the phone.",
+  usb_nothing: "USB cable: USB debugging needed",
+  usb_nothing_text:
+    "Turn on USB debugging on the phone (Settings › Developer options), plug it in, allow this computer on the phone, then press “Start”. USB debugging gives the computer wide access to the phone: only allow your own computer, never a public one, and turn it off when you do not use it. This is temporary: a future version of Oculibre will connect over USB without it. Wi-Fi does not need it.",
   wifi_once: "To use it over Wi-Fi too, pair it once. Then it reconnects by itself.",
   sent_usb: "Also sent to the phone plugged in by USB: confirm on its screen.",
   usb_hint: "Phone plugged in by USB? The invitation is sent to it directly.",
@@ -119,7 +120,7 @@ const en = {
   // Tour
   tour1_title: "Connect your phone",
   tour1_text:
-    "With a USB cable there is nothing to do: plug it in and press “Start” in the phone's app. For Wi-Fi, pair it here once, with a QR code.",
+    "Over Wi-Fi, pair it here once, with a QR code. Over the USB cable, turn on USB debugging on the phone, plug it in and press “Start” in the phone's app.",
   tour2_title: "Your phones",
   tour2_text: "Green dot: live. Grey circle: stopped or too far. Oculibre remembers each one's settings.",
   tour3_title: "Start from the phone",
@@ -212,6 +213,7 @@ const en = {
   // Windows (#17)
   decoder_windows: "Windows (Media Foundation)",
   notice_media_foundation: "Windows' own decoder.",
+  notice_adb: "© The Android Open Source Project, Google's build. Licences and sources: the adb folder of Oculibre.",
   no_decoder_text_windows:
     "Windows has no H.264 decoder: on an \u201cN\u201d edition of Windows, install the Media Feature Pack (Settings \u203a Apps \u203a Optional features), then restart Oculibre.",
   mf_missing_text:
@@ -245,7 +247,7 @@ const fr: Record<Key, string> = {
   waiting: "En attente",
   waiting_title: "En attente d'un téléphone",
   waiting_text:
-    "Ouvrez Oculibre sur le téléphone et appuyez sur « Démarrer ». Par câble USB, il suffit de le brancher ; en Wi-Fi, il doit être relié à cet ordinateur et sur le même réseau.",
+    "Ouvrez Oculibre sur le téléphone et appuyez sur « Démarrer ». En Wi-Fi, il doit être relié à cet ordinateur et sur le même réseau ; par câble USB, le débogage USB doit être activé.",
   computer_code: "Code de cet ordinateur : {key}",
   preview: "Aperçu",
   changing_mode: "Changement de mode…",
@@ -296,8 +298,9 @@ const fr: Record<Key, string> = {
   pair_ready: "{name} est prêt",
   pair_ready_text: "Appuyez sur « Démarrer » sur le téléphone. La prochaine fois, il suffira d'ouvrir l'app.",
   done: "Terminer",
-  usb_nothing: "Par câble USB : rien à faire",
-  usb_nothing_text: "Branchez le téléphone et appuyez sur « Démarrer » dans l'app Oculibre du téléphone.",
+  usb_nothing: "Par câble USB : débogage USB nécessaire",
+  usb_nothing_text:
+    "Activez le débogage USB sur le téléphone (Paramètres › Options pour les développeurs), branchez-le, autorisez cet ordinateur sur le téléphone, puis appuyez sur « Démarrer ». Le débogage USB donne à l'ordinateur un large accès au téléphone : n'autorisez que votre propre ordinateur, jamais un ordinateur public, et désactivez-le quand vous ne l'utilisez pas. C'est temporaire : une prochaine version d'Oculibre se connectera par USB sans lui. Le Wi-Fi n'en a pas besoin.",
   wifi_once: "Pour l'utiliser aussi en Wi-Fi, reliez-le une seule fois. Ensuite, il se reconnecte tout seul.",
   sent_usb: "Envoyé aussi au téléphone branché en USB : confirmez sur son écran.",
   usb_hint: "Téléphone branché en USB ? L'invitation lui est envoyée directement.",
@@ -328,7 +331,7 @@ const fr: Record<Key, string> = {
 
   tour1_title: "Reliez votre téléphone",
   tour1_text:
-    "Par câble USB, rien à faire : branchez-le et appuyez sur « Démarrer » dans l'app du téléphone. Pour le Wi-Fi, reliez-le une seule fois ici, avec un QR code.",
+    "En Wi-Fi, reliez-le une seule fois ici, avec un QR code. Par câble USB, activez le débogage USB sur le téléphone, branchez-le et appuyez sur « Démarrer » dans l'app du téléphone.",
   tour2_title: "Vos téléphones",
   tour2_text: "Point vert : en direct. Cercle gris : arrêté ou trop loin. Oculibre se souvient des réglages de chacun.",
   tour3_title: "Démarrer depuis le téléphone",
@@ -424,6 +427,7 @@ const fr: Record<Key, string> = {
     "FFmpeg n'est pas installé sur cet ordinateur : Oculibre décode la vidéo avec OpenH264, plus lent en haute résolution. Pour le décodage par la carte graphique, installez le paquet libavcodec.",
   decoder_windows: "Windows (Media Foundation)",
   notice_media_foundation: "Le décodeur de Windows.",
+  notice_adb: "© The Android Open Source Project, compilé par Google. Licences et sources : le dossier adb d'Oculibre.",
   no_decoder_text_windows:
     "Windows n'a pas de décodeur H.264 : sur une édition « N » de Windows, installez le Media Feature Pack (Paramètres › Applications › Fonctionnalités facultatives), puis relancez Oculibre.",
   mf_missing_text:

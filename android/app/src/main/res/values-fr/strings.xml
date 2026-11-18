@@ -39,7 +39,7 @@
     <string name="welcome_later">Plus tard</string>
     <string name="welcome_next">Suivant</string>
     <string name="welcome_connect_title">Relier à votre ordinateur</string>
-    <string name="welcome_connect_text">Par câble USB : branchez le téléphone, rien d\'autre à faire. En Wi-Fi : ouvrez Oculibre sur l\'ordinateur, cliquez sur « Ajouter un téléphone », puis scannez le QR code qu\'il affiche.</string>
+    <string name="welcome_connect_text">En Wi-Fi : ouvrez Oculibre sur l\'ordinateur, cliquez sur « Ajouter un téléphone », puis scannez le QR code qu\'il affiche. Par câble USB : activez le débogage USB (Paramètres › Options pour les développeurs), branchez le téléphone et autorisez l\'ordinateur. Le débogage USB donne à l\'ordinateur un large accès au téléphone : n\'autorisez que votre propre ordinateur, jamais un ordinateur public, et désactivez-le quand vous ne l\'utilisez pas. C\'est temporaire : une prochaine version se connectera par USB sans lui.</string>
     <string name="welcome_connect_action">Scanner le QR code</string>
     <string name="welcome_ready_title">Tout est prêt</string>
     <string name="welcome_ready_text">La prochaine fois, ouvrez simplement Oculibre et appuyez sur Démarrer.</string>
@@ -61,12 +61,12 @@
     <string name="check_battery_ok">La webcam ne sera pas coupée en plein appel.</string>
     <string name="check_battery_todo">Android peut couper la webcam écran éteint.</string>
     <string name="check_paired">Relié à l\'ordinateur en Wi-Fi</string>
-    <string name="check_paired_todo">Scannez le QR code affiché sur l\'ordinateur. Par câble USB, rien n\'est nécessaire.</string>
+    <string name="check_paired_todo">Scannez le QR code affiché sur l\'ordinateur. Par câble USB, il faut plutôt le débogage USB.</string>
     <string name="section_computer">Ordinateur</string>
     <string name="computer_code">Code %1$s</string>
     <string name="computer_paired_on">relié le %1$s</string>
     <string name="computer_none">Pas encore relié en Wi-Fi</string>
-    <string name="computer_none_text">Par câble USB, rien n\'est nécessaire.</string>
+    <string name="computer_none_text">Par câble USB, activez le débogage USB (Options pour les développeurs) et autorisez l\'ordinateur : seulement le vôtre, jamais un ordinateur public.</string>
     <string name="forget_computer">Oublier cet ordinateur</string>
     <string name="forget_computer_confirm">Oublier %1$s ? Le Wi-Fi demandera de le relier à nouveau. Le câble USB continue de fonctionner.</string>
     <string name="forget">Oublier</string>
