@@ -97,8 +97,8 @@ All behind one Rust trait.
   columns: (auto, 1fr, auto, 1fr),
   table.header([OS], [Technique], [Language], [Notes]),
   [Linux], [v4l2loopback], [Rust (in `desktop/`)], [Working. PipeWire camera later (no kernel module)],
-  [Windows 10], [DirectShow source filter (based on Softcam, MIT)], [C++ (COM DLL)], [Only seen by DirectShow apps],
-  [Windows 11], [Media Foundation virtual camera (`MFCreateVirtualCamera`)], [C++ (COM DLL)], [Seen by every app, including the Camera app and new Teams],
+  [Windows 10], [DirectShow source filter (following Softcam)], [Rust (COM DLL, `windows` crate)], [Only seen by DirectShow apps],
+  [Windows 11], [Media Foundation virtual camera (`MFCreateVirtualCamera`)], [Rust (COM DLL, `windows` crate)], [Seen by every app, including the Camera app and new Teams],
   [macOS], [CoreMediaIO Camera Extension], [Swift], [Needs a paid Apple Developer account + notarisation],
 )
 

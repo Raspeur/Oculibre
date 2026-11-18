@@ -21,8 +21,8 @@ November 2026; points marked _to test_ need a real Windows computer.]
   + a *Media Foundation virtual camera* (`MFCreateVirtualCamera`, Windows 11 only): a real
     camera for the system, seen by the Camera app and Media Foundation apps.
 
-  Both are COM DLLs that receive the pictures from Oculibre through *shared memory*. No kernel
-  driver, so no driver signing.
+  Both are COM DLLs, *written in Rust*, that receive the pictures from Oculibre through *shared
+  memory*. No kernel driver, so no driver signing.
 - *Decoding*: Windows' own H.264 decoder (Media Foundation, D3D11 hardware decoding). It is
   licensed with Windows, so we ship no FFmpeg and avoid the patent question (`video-decoding.typ`).
 - *Installer*: Tauri's NSIS or MSI installer, per machine (the cameras are registered in the
@@ -95,18 +95,23 @@ of `yuv.rs` and writes NV12.
 
 == Which language for the DLLs <language>
 
-#table(
-  columns: (auto, 1fr, 1fr),
-  table.header([], [C++ from the samples], [Rust (`windows` crate, `#[implement]`)]),
-  [Start], [Softcam and VCamSample work today], [rewrite both from the samples],
-  [Toolchain], [MSVC + CMake next to Cargo], [Cargo only, one language],
-  [Risk], [COM in C++ is the documented path], [COM servers in Rust are possible but less trodden; a crash takes the app (DirectShow) or the service down],
-  [Licence], [MIT, vendored like ZXing on Android], [ours],
-)
+*Decided (2026-11-18): Rust*, with the `windows` crate (Microsoft's own bindings), whose
+`#[implement]` macro writes the COM plumbing (reference counting, `QueryInterface`). One language
+and one toolchain (Cargo) for the whole receiver, and the shared memory format is defined once.
 
-Proposal: *C++, vendored from Softcam and VCamSample* (own folders `vcam/windows-dshow`,
-`vcam/windows-mf`, with LICENSE and README, as the Android rule asks). Only the shared memory format
-is ours, written in Rust and read in C++. We can move them to Rust later if they become a burden.
+- The DLLs are crates of the workspace with `crate-type = ["cdylib"]` exporting `DllGetClassObject`,
+  `DllCanUnloadNow`, `DllRegisterServer`, `DllUnregisterServer`.
+- Softcam (DirectShow) and VCamSample (Media Foundation) are the *references* we read, not code we
+  vendor. If we port parts of them, their MIT notices go with those parts.
+- Care points:
+  - a panic must never unwind across a COM call. Every exported method catches it and returns an
+    `HRESULT`, because a crash takes down the app that loaded us (DirectShow) or the Frame Server
+    service (Media Foundation);
+  - no Rust runtime cost: no async, no threads that outlive the object, no allocation in the hot
+    path (frames are copied from the shared memory into the app's buffer);
+  - the 32-bit DirectShow DLL: target `i686-pc-windows-msvc`;
+  - DirectShow has no Rust "base classes": the filter, its output pin and the `IAMStreamConfig`
+    format negotiation are written by hand, following Softcam.
 
 = Decoding <decoding>
 
@@ -151,9 +156,10 @@ is ours, written in Rust and read in C++. We can move them to Rust later if they
 
 = How we develop and test it <dev>
 
-- *Build*: the Rust workspace on Windows (MSVC toolchain). From Linux, `cargo xwin` can cross-build
-  the Rust parts. The C++ DLLs build with MSVC (or clang-cl) on Windows and in CI
-  (GitHub Actions `windows-latest`).
+- *Build*: everything is Rust. On Windows: the MSVC toolchain (Visual Studio Build Tools); in CI:
+  GitHub Actions `windows-latest`. From Linux, `cargo xwin` can cross-build too.
+- *Development VM*: `win11-dev` (libvirt user session: UEFI + Secure Boot, TPM 2.0, 8 GB, 6 CPUs,
+  SATA disk, network through passt with host port 2222 → guest SSH 22), driven from Linux over SSH.
 - *Test*: a Windows 11 VM (virt-manager: UEFI, Secure Boot, TPM through `swtpm`) for the cameras,
   the installer and Wi-Fi/Tailscale. There is no GPU in the VM, so decoding is software there.
   Plus a real PC (the one with the RTX 2060) for hardware decoding, NVDEC/D3D11, and USB phones.
@@ -166,9 +172,9 @@ is ours, written in Rust and read in C++. We can move them to Rust later if they
 + *Engine on Windows*: `oculibre-core` and the CLI build and run on Windows (TLS, mDNS, sessions,
   `adb` path). New `Sink` trait implementations: a file/preview sink first. Decoder: Media
   Foundation (software, then D3D11).
-+ *DirectShow camera*: Softcam vendored, shared memory format, Rust writer. Seen by OBS, Discord,
++ *DirectShow camera*: Rust COM DLL (following Softcam), shared memory format and its writer. Seen by OBS, Discord,
   Chrome on Windows 10 and 11.
-+ *Media Foundation camera* (Windows 11): VCamSample vendored, `MFCreateVirtualCamera` from the app,
++ *Media Foundation camera* (Windows 11): Rust media source (following VCamSample), `MFCreateVirtualCamera` from the app,
   the Camera app and the new Teams.
 + *Desktop app*: Windows-specific problems (camera not registered, N edition, firewall, USB
   driver), tray, autostart.
