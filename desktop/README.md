@@ -1,20 +1,34 @@
 # Desktop (receiver)
 
-Rust workspace.
+The computer side of Oculibre: a Rust workspace that receives the phone's video, decodes it and
+feeds a virtual camera. Linux and Windows.
 
-| Crate | State |
+| Crate | What it is |
 |---|---|
-| `core` | The engine (library): sessions, decoding, virtual camera, pairing, preview, bench |
-| `app/src-tauri` → `oculibre-app` | **The desktop app** (Tauri + React, [`app`](app)): `cd app && npm run tauri dev` |
-| `cli` → binary `oculibre` | **Works on Linux**: the engine in a terminal; `oculibre bench` |
-| `protocol` | **Protocol v0.3** ([`docs/protocol.typ`](../docs/protocol.typ)): preamble, header, messages, reader with the §14 limits, clock sync, `auto` rotation. Shared test vectors in [`tests/protocol/vectors`](../tests/protocol/vectors), fuzz target in `protocol/fuzz` |
+| `core` → `oculibre-core` | The engine (library): sessions, TLS and pairing, discovery, decoding, virtual camera, preview, per-phone settings, bench. It never prints: front-ends get `Event`s |
+| `app/src-tauri` → `oculibre-app` | **The desktop app** (Tauri 2 + React, see [`app`](app)): what users install |
+| `cli` → binary `oculibre` | The engine in a terminal, for development and `oculibre bench` |
+| `protocol` → `oculibre-protocol` | **Protocol 0.3** ([`docs/protocol.typ`](../docs/protocol.typ)): preamble, header, messages, reader with the §14 limits, clock sync, `auto` rotation. Shared test vectors in [`tests/protocol/vectors`](../tests/protocol/vectors), fuzz target in `protocol/fuzz` |
+| `vcam-shm` | Windows: the shared memory the engine writes each picture into, read by both cameras below |
+| `vcam-dshow` | Windows: the DirectShow camera "Oculibre", a COM DLL (64 and 32-bit) seen by OBS, Zoom, Discord, browsers… |
+| `vcam-mf` | Windows 11: the Media Foundation camera, a media source DLL run by Windows' Frame Server, plus `oculibre-camera.exe` that registers it. Seen by every app, the Windows Camera app included |
 
-Decoding: FFmpeg (libavcodec, LGPL) with **hardware decoding** when the computer can (VA-API: AMD,
+On Linux the virtual camera is v4l2loopback (`core/src/vcam.rs`, `/dev/video10`). Why two cameras on
+Windows, and how they work: [`docs/research/windows.typ`](../docs/research/windows.typ).
+
+## Decoding
+
+**Linux**: FFmpeg (libavcodec, LGPL) with **hardware decoding** when the computer can (VA-API: AMD,
 Intel; NVDEC: NVIDIA with its proprietary driver, not tested yet), FFmpeg's software decoder
 otherwise, OpenH264 (BSD-2-Clause) as a last resort. Both are the system's libraries, loaded at run
 time (`dlopen`), not linked: without FFmpeg Oculibre uses OpenH264, without either it still starts
 and says what to install. Oculibre ships no H.264 code of its own (patents: see
 [`docs/research/video-decoding.typ`](../docs/research/video-decoding.typ)).
+
+**Windows**: Windows' own H.264 decoder (Media Foundation, `core/src/decoder_mf.rs`), on the
+graphics card through Direct3D 11, in software in a virtual machine; OpenH264 if its DLL is
+installed.
+
 `--decoder auto|vaapi|nvdec|software|openh264`; the decoder in use is printed when the stream starts.
 
 **Which decoder will this computer use, and why?**
@@ -26,8 +40,8 @@ cd desktop && cargo run --release -p oculibre-core --example decoder_check
 To build: `sudo apt install build-essential pkg-config libavcodec-dev libavutil-dev libclang-dev`
 (or `bash ../scripts/setup-dev.sh`); without FFmpeg at all: `cargo build --no-default-features`
 (OpenH264 only). `--features oculibre-core/bundled-openh264` compiles OpenH264 in, for personal
-builds only (not covered by Cisco's patent licence). AMD's own driver stack (`/opt/amdgpu`) is found automatically; check VA-API with
-`vainfo`.
+builds only (not covered by Cisco's patent licence). AMD's own driver stack (`/opt/amdgpu`) is found
+automatically; check VA-API with `vainfo`.
 
 ### Fedora (no package yet)
 
@@ -47,7 +61,7 @@ sudo dnf install gcc pkgconf-pkg-config clang-devel ffmpeg-devel  # to build
 Then `cargo run --release -p oculibre-core --example decoder_check` should say
 `Decoder: VA-API (hardware)` (or `FFmpeg (software)` without a graphics card).
 
-## Use it
+## Use it (Linux, command line)
 
 ```sh
 bash ../scripts/vcam-load.sh     # once per boot (or --persist)
@@ -57,13 +71,13 @@ cargo run --release              # in this folder
 Then press **Start** in the phone app. The phone appears as a webcam named **Oculibre**
 in Firefox, Chrome, Discord, Zoom, OBS… (it shows up once the first frame has arrived).
 
-- USB: `adb reverse` is done automatically; use `127.0.0.1` in the app.
+- USB (USB debugging on): `adb reverse` is done automatically, nothing to type on the phone.
 - Wi-Fi, encrypted (TLS with pinned keys, see [`docs/research/secure-channel.typ`](../docs/research/secure-channel.typ)):
-  - once per phone: `cargo run --release -- --pair` shows a QR code. Scan it with the phone's camera
-    app (or, phone plugged in over USB, it is sent to the phone directly), check that the key shown on
-    the phone is the one printed here, tap **Pair**, then **Start**;
-  - then: `cargo run --release -- --wifi`, and **Start** in the app (the address is filled in). The
-    computer announces itself on the network (mDNS): if its address changes, the phone finds it again.
+  - once per phone: `cargo run --release -- --pair` shows a QR code. Scan it from the Oculibre app or
+    the phone's camera app (or, phone plugged in over USB, it is sent to the phone directly), check that
+    the code shown on the phone is the one printed here, tap **Pair**, then **Start**;
+  - then: `cargo run --release -- --wifi`, and **Start** in the app. The computer announces itself on
+    the network (mDNS): if its address changes, the phone finds it again.
   - `oculibre pairings` lists the paired phones, `oculibre unpair <name>` forgets one. Without `--wifi`
     only USB (loopback) connections are accepted; plaintext is never accepted from the network.
 - The phone can Stop/Start: the program keeps waiting for it.
@@ -71,8 +85,8 @@ in Firefox, Chrome, Discord, Zoom, OBS… (it shows up once the first frame has 
   The virtual camera stays landscape, like every webcam: a portrait picture gets black bars on the
   sides. `--portrait` makes it portrait instead. `--rotate 0|90|180|270` fixes the rotation;
   `--mirror` flips left ↔ right.
-- An app that has the virtual camera open (OBS, ffplay, a browser tab) locks its size: close it
-  before changing the quality on the phone.
+- An app that has the virtual camera open (OBS, ffplay, a browser tab) locks its size: Oculibre then
+  fits every picture into that size (black bars, never stretched).
 - `cargo run --release -- --help` for all options.
 
 ## Measure a phone (`oculibre bench`)
@@ -87,6 +101,29 @@ and writes it into `devices/<brand>/<model>/report.md` (found through its "Model
 `python3 scripts/device-report.py` first for a new phone). USB and Wi-Fi (`--wifi`) results get
 their own section, replaced at each run. `--seconds`, `--warmup`, `--report <path>`, `--no-report`.
 Needs app 0.2 or newer.
+
+## Windows
+
+Build on Windows itself (the DLLs and the installer are Windows-only):
+
+1. Install [Rust](https://rustup.rs) with the MSVC toolchain (it offers the Visual Studio Build
+   Tools), [Node.js](https://nodejs.org) LTS, and Git.
+2. `rustup target add i686-pc-windows-msvc` (the 32-bit DirectShow DLL, for 32-bit apps).
+3. From `desktop/app`: `npm install`, then `npm run tauri dev` to run the app, or
+   `npm run tauri build` for the installer (`target/release/bundle/nsis/Oculibre_<version>_x64-setup.exe`).
+   The build downloads Google's `adb` (pinned version and checksum, `app/src-tauri/windows/fetch-adb.ps1`).
+
+The installer (NSIS, `app/src-tauri/windows/installer-hooks.nsh`) registers both cameras, adds a
+firewall rule for the app (phones connect on port 47100 and find it by mDNS) and ships `adb` for USB.
+In development, register the cameras by hand from an administrator terminal:
+- `regsvr32 target\release\oculibre_vcam_dshow.dll`, `regsvr32 target\release\oculibre_vcam_mf.dll`,
+then `target\release\oculibre-camera.exe register` (`remove` undoes it).
+- `cargo run -p oculibre-vcam-shm --example pattern` feeds them a moving test pattern without a phone;
+- `cargo run -p oculibre-vcam-mf --example mf_check` reads the Media Foundation camera like an app
+would (rate, size, one picture).
+
+Binaries are linked statically to the C runtime (`.cargo/config.toml`): a fresh Windows needs no
+Visual C++ redistributable.
 
 ## Packages (`.deb`)
 

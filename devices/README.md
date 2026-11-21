@@ -10,7 +10,15 @@ devices/<brand>/<model>/
     report.md                             summary table + test results
 ```
 
-## Add your phone (5 minutes, no coding)
+## Tell us how it works on your phone (2 minutes)
+
+Open a [device report](https://github.com/Raspeur/Oculibre/issues/new?template=device_report.yml):
+the phone, its Android version, what works and what doesn't. No terminal needed.
+
+## Add your phone's full report (5 minutes, no coding)
+
+With a computer that can run the development tools, the camera capabilities and measured results go
+into this folder:
 
 1. Enable **Developer options → USB debugging** on the phone, plug it in, accept the prompt.
 2. From the repository root:
@@ -24,7 +32,7 @@ devices/<brand>/<model>/
    every camera and quality (a few minutes; keep the phone still, facing something lit) and writes the
    results into `report.md`. Nothing to copy by hand.
 4. Open a pull request (or attach both files to a
-   [device report issue](../.github/ISSUE_TEMPLATE/device_report.md)).
+   [device report issue](https://github.com/Raspeur/Oculibre/issues/new?template=device_report.yml)).
 
 Several phones plugged in? `ANDROID_SERIAL=<serial from 'adb devices'> python3 scripts/device-report.py`.
 

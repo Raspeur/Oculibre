@@ -1,19 +1,27 @@
 # Oculibre desktop app
 
 The window of Oculibre (#15): [Tauri 2](https://tauri.app) with a React + TypeScript page, over
-the same engine as the `oculibre` command (`desktop/core`).
+the same engine as the `oculibre` command (`desktop/core`). Linux and Windows.
 
 ```
 app/
   src/                 the page (React + TypeScript, built by Vite)
-    main.tsx           entry point; imports the shared look (design/mockups/ui.css)
-    App.tsx            the window
-    engine.ts          the engine seen from the page: event types, commands
+    main.tsx           entry point; imports the fonts and the shared look (design/mockups/ui.css)
+    App.tsx            the window: sidebar, stage, panel, or a full screen (pairing, settings)
+    engine.ts          the engine seen from the page: event types, command wrappers
+    useEngine.ts       the window's state, rebuilt from the engine events
+    i18n.ts            English and French texts
+    components/        Sidebar, Stage (preview), Panel (camera settings), Pairing, Settings,
+                       Tour (guided tour), VcamProblem (virtual camera not ready)
   src-tauri/           the program (Rust)
     src/lib.rs         the bridge: #[tauri::command] functions, engine events → page
-    tauri.conf.json    window, build, packaging
+    src/settings.rs    this computer's settings (Wi-Fi, portrait, decoder, tray, language)
+    src/tray.rs        the tray icon and its menu
+    tauri.conf.json    window, build, Linux package; tauri.windows.conf.json: Windows installer
     capabilities/      what the page is allowed to ask
     icons/             generated from the logo: npm run tauri icon ../../oculibre_logo.svg
+    linux/             .deb files: module config, post-install script, the vcam-setup root helper
+    windows/           NSIS hooks, installer pictures, adb download script and licences
 ```
 
 ## How the page and Rust talk
@@ -26,7 +34,8 @@ app/
 
 ## Develop
 
-Linux needs the WebKitGTK stack once:
+Windows: see [Windows](../README.md#windows) in the desktop README. Linux needs the WebKitGTK
+stack once:
 
 ```sh
 sudo apt install libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
@@ -43,7 +52,13 @@ npm run build        # type-checks and builds the page alone (dist/)
 
 The virtual camera must be loaded as for the command line (`bash scripts/vcam-load.sh`).
 
-## Package (Linux, .deb)
+## Package
+
+Windows: `npm run tauri build` → `../target/release/bundle/nsis/Oculibre_<version>_x64-setup.exe`
+(details in [the desktop README](../README.md#windows)). Linux, for every supported release at once:
+`bash scripts/build-deb.sh` from the repository root ([details](../README.md#packages-deb)).
+
+### Linux `.deb` for this computer only
 
 ```sh
 npm run tauri build -- --bundles deb

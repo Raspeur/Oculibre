@@ -8,7 +8,7 @@
 <h3 align="center">Your Android phone becomes your webcam.<br>Free, private, even on an old phone.</h3>
 
 <p align="center">
-  <a href="https://github.com/Raspeur/Oculibre/actions/workflows/ci.yml"><img src="https://github.com/Raspeur/Oculibre/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Raspeur/Oculibre/actions/workflows/ci.yml"><img src="https://github.com/Raspeur/Oculibre/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-FE633C" alt="MIT licence"></a>
   <img src="https://img.shields.io/badge/computer-Windows%20%7C%20Linux-1C3051" alt="Windows and Linux">
   <img src="https://img.shields.io/badge/phone-Android%205%2B-3DDC97" alt="Android 5 and up">
