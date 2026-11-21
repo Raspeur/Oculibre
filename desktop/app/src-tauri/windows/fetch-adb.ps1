@@ -8,6 +8,9 @@
 # libusb, LGPL-2.1, which allows it as a separate program, with its licence and a pointer to its
 # source. A temporary way (USB debugging): Android Open Accessory (#21) will replace it.
 $ErrorActionPreference = "Stop"
+# Started from PowerShell 7 (GitHub's Windows runners), Windows PowerShell inherits its module path
+# and cannot load its own Utility module (Get-FileHash, Write-Host): use the machine's path.
+$env:PSModulePath = [Environment]::GetEnvironmentVariable("PSModulePath", "Machine")
 $Version = "37.0.1"
 $Sha256 = "45f4d63113e895ebde0c90f194099a4676b6ac653bd28d54314a9e022bbc1a99"
 $Url = "https://dl.google.com/android/repository/platform-tools_r$Version-win.zip"
@@ -22,7 +25,10 @@ New-Item -ItemType Directory $Work | Out-Null
 $Zip = Join-Path $Work "platform-tools.zip"
 & curl.exe --fail --silent --show-error --location --output $Zip $Url
 if ($LASTEXITCODE -ne 0) { throw "cannot download $Url" }
-$Got = (Get-FileHash -Algorithm SHA256 $Zip).Hash.ToLower()
+$Sha = [Security.Cryptography.SHA256]::Create()
+$Stream = [IO.File]::OpenRead($Zip)
+$Got = -join ($Sha.ComputeHash($Stream) | ForEach-Object { $_.ToString("x2") })
+$Stream.Close()
 if ($Got -ne $Sha256) { throw "platform-tools ${Version}: SHA-256 $Got, expected $Sha256" }
 & tar.exe -xf $Zip -C $Work
 if ($LASTEXITCODE -ne 0) { throw "cannot extract $Zip" }
@@ -35,4 +41,4 @@ foreach ($f in "adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll", "NOTICE.txt") {
 Copy-Item (Join-Path $PSScriptRoot "adb-licences.txt") $Target
 Set-Content $Stamp $Version
 Remove-Item -Recurse -Force $Work
-Write-Host "adb $Version ready in $Target"
+[Console]::WriteLine("adb $Version ready in $Target")
