@@ -42,10 +42,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     // Vendored sources (no Gradle dependency): ZXing's QR decoder, unchanged, with its licence.
     // See third_party/zxing/README.md.
     sourceSets["main"].java.srcDir("../third_party/zxing/src")
@@ -72,4 +68,10 @@ tasks.named("preBuild") { dependsOn(copyLicences) }
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
 }
