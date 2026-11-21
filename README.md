@@ -81,6 +81,8 @@ real webcam, your call app decides how to show your self-view.
 | **Android 5.0 and up** | [App (`.apk`)](https://github.com/Raspeur/Oculibre/releases/latest) | Allow installing apps from your browser or file manager when Android asks. |
 | macOS | Not yet | Planned ([#19](https://github.com/Raspeur/Oculibre/issues/19)). |
 
+How the packages are built and signed: [code signing policy](#code-signing-policy).
+
 ## Get started
 
 **Over Wi-Fi** (recommended: nothing to turn on)
@@ -129,6 +131,25 @@ delays, are in [`devices/`](devices/). Yours would be welcome, old ones most of 
 - Without Wi-Fi turned on in the app, the computer only listens to the USB cable.
 
 Found a vulnerability? Please report it privately, as explained in [`SECURITY.md`](SECURITY.md).
+
+## Code signing policy
+
+Free code signing on Windows will be provided by [SignPath.io](https://about.signpath.io/), certificate
+by [SignPath Foundation](https://signpath.org/) (application in progress: until then the Windows
+installer is unsigned).
+
+- Every package is built from this repository by the
+  [release workflow](.github/workflows/release.yml) on GitHub's own machines, from a version tag.
+  Only Oculibre's own programs are signed; third-party programs shipped with it (adb on Windows)
+  keep their publisher's signature or none.
+- Team roles: [Raspeur](https://github.com/Raspeur) is the committer and approver (each signed
+  release is approved by hand); every pull request from someone else is reviewed by them before it
+  is merged ([CODEOWNERS](.github/CODEOWNERS)).
+- The Android app is signed with the project's own release key.
+
+Privacy: this program will not transfer any information to other networked systems unless
+specifically requested by the user or the person installing or operating it. The phone sends its
+picture only to the computer you paired or plugged in (see [Privacy and security](#privacy-and-security)).
 
 ## Contributing
 
