@@ -1,24 +1,35 @@
-# Dependabot: security alerts and weekly updates of the dependencies (grouped, to keep the noise low).
+# Dependabot: security alerts at any time, and once a month one pull request per ecosystem with the
+# updates that should not break anything (see CONTRIBUTING.md, "Dependency updates").
+#
+# Cargo and npm: `lockfile-only` moves only the lock files, within the ranges the manifests allow
+# ("2" for tauri, "0.62" for windows): the updates Cargo and npm themselves consider compatible
+# (for a 0.x crate, 0.62.1 → 0.62.2 but never 0.62 → 0.100). Bigger updates are done by hand, in
+# their own branch: some must move together (windows and windows-core), ffmpeg-sys-next follows
+# the FFmpeg version of the distributions.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /desktop
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    versioning-strategy: lockfile-only
     groups:
       rust: { patterns: ["*"] }
-    open-pull-requests-limit: 5
   - package-ecosystem: npm
     directory: /desktop/app
-    schedule: { interval: weekly }
+    schedule: { interval: monthly }
+    versioning-strategy: lockfile-only
     groups:
       npm: { patterns: ["*"] }
-    open-pull-requests-limit: 5
-  # The Android app has no runtime dependency (only the Gradle plugin and JUnit for tests).
+  # The Android app has no runtime dependency (only the Gradle plugins and JUnit for tests).
+  # Major versions of the Android Gradle plugin, Kotlin or Gradle are migrations, done by hand.
   - package-ecosystem: gradle
     directory: /android
     schedule: { interval: monthly }
     groups:
       gradle: { patterns: ["*"] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }

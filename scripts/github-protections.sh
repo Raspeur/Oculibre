@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Turns on the repository's protections (#27): rulesets (.github/rulesets), Dependabot, and the two
-# that need a public repository on a free plan (secret scanning, private vulnerability reporting).
+# Turns on the repository's protections (#27): rulesets (.github/rulesets), Dependabot, merged
+# branches deleted, and the two that need a public repository on a free plan (secret scanning,
+# private vulnerability reporting).
 # Run it now, then again right after making the repository public:
 #   gh repo edit Raspeur/Oculibre --visibility public --accept-visibility-change-consequences
 #   bash scripts/github-protections.sh
@@ -29,6 +30,9 @@ try "Secret scanning and push protection" gh api -X PATCH "repos/$REPO" \
     -F 'security_and_analysis[secret_scanning_push_protection][status]=enabled'
 try "Dependabot alerts" gh api -X PUT "repos/$REPO/vulnerability-alerts"
 try "Dependabot security updates" gh api -X PUT "repos/$REPO/automated-security-fixes"
+
+# A pull request's branch is deleted once it is merged (it can be restored from the pull request).
+try "Delete merged branches" gh repo edit "$REPO" --delete-branch-on-merge
 
 echo "== Rulesets"
 existing=$(gh api "repos/$REPO/rulesets" --jq '.[].name')
