@@ -167,8 +167,11 @@ pub fn open_uri(uri: &str) -> bool {
 
 /// `adb …`. Windows: without a console window flashing up (Oculibre is a windowed app).
 fn command(adb: &Path) -> Command {
-    #[allow(unused_mut)]
     let mut command = Command::new(adb);
+    // No mDNS: Oculibre finds USB phones only; adb's own network discovery is not used, and on
+    // Windows it made the firewall ask "allow adb on public networks?". The adb server started
+    // by this command keeps the setting.
+    command.env("ADB_MDNS", "0");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

@@ -52,7 +52,9 @@ export function Stage({ engine }: { engine: EngineState }) {
           <img
             src={preview}
             alt={t("preview_alt")}
-            style={{ width: "100%", height: "100%", objectFit: "contain", opacity: live ? 1 : 0.4 }}
+            // Absolute: the picture never sizes the frame (a portrait picture made it as tall as
+            // the picture, pushing the figures out of the window); it fits inside instead.
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", opacity: live ? 1 : 0.4 }}
           />
         ) : (
           <div className="oc-stack" style={{ alignItems: "center", gap: 12, color: "var(--oc-text-faint)", textAlign: "center", padding: 24 }}>

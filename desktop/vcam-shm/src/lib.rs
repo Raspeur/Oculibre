@@ -141,7 +141,11 @@ impl Frames {
     /// the writer kept changing it (try again at the next frame).
     pub fn read(&self, out: &mut Vec<u8>) -> Option<(usize, usize)> {
         let h = self.header();
-        for _ in 0..4 {
+        // Writing a 1080p picture takes about a millisecond: retry for up to 10 ms (4 quick
+        // tries were not enough at 60 pictures a second: the camera then showed the waiting
+        // picture for one frame, a visible flash).
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(10);
+        while std::time::Instant::now() < deadline {
             let before = h.sequence.load(Ordering::Acquire);
             if before & 1 == 1 {
                 std::thread::yield_now();
@@ -170,6 +174,31 @@ impl Frames {
             }
         }
         None
+    }
+}
+
+/// The latest whole picture a camera got: a failed read (the writer kept changing it) keeps the
+/// previous one instead of showing nothing.
+#[derive(Default)]
+pub struct LastPicture {
+    frame: Vec<u8>,
+    scratch: Vec<u8>,
+    size: Option<(usize, usize)>,
+}
+
+impl LastPicture {
+    /// Reads a new picture if it can; returns the latest whole one (`None`: never had one).
+    pub fn update(&mut self, frames: &Frames) -> Option<(&[u8], usize, usize)> {
+        if let Some(size) = frames.read(&mut self.scratch) {
+            std::mem::swap(&mut self.frame, &mut self.scratch);
+            self.size = Some(size);
+        }
+        self.size.map(|(w, h)| (&self.frame[..w * h * 2], w, h))
+    }
+
+    /// Forgets the picture (Oculibre stopped sending: the next one starts fresh).
+    pub fn clear(&mut self) {
+        self.size = None;
     }
 }
 
@@ -347,6 +376,26 @@ mod tests {
         assert_eq!(frames.read(&mut out), Some((64, 32)));
         assert_eq!(out, picture);
         assert_eq!((frames.frames(), frames.alive()), (1, 1234));
+    }
+
+    /// A read that fails (writer in the middle of a picture) keeps the last whole picture.
+    #[test]
+    fn last_picture_survives_a_failed_read() {
+        let (_memory, frames) = block();
+        frames.init();
+        let mut last = LastPicture::default();
+        assert!(last.update(&frames).is_none());
+        frames.write(4, 2, &[7; 16], 1);
+        assert_eq!(
+            last.update(&frames).map(|(p, w, h)| (p.to_vec(), w, h)),
+            Some((vec![7; 16], 4, 2))
+        );
+        // The writer is halfway through the next picture (odd sequence) for longer than the read
+        // waits: the previous picture stays.
+        frames.header().sequence.fetch_add(1, Ordering::Release);
+        assert_eq!(last.update(&frames).map(|(p, ..)| p[0]), Some(7));
+        last.clear();
+        assert!(last.update(&frames).is_none());
     }
 
     /// A reader never sees half of one picture and half of the next.

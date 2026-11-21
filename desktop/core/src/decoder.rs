@@ -94,9 +94,18 @@ enum Backend {
 }
 
 impl VideoDecoder {
-    /// A new decoder for a new stream, following `--decoder`.
+    /// A new decoder for a new stream, following `--decoder`. When the chosen one is not there
+    /// (OpenH264 not installed…), the automatic choice instead of no video at all: the name of
+    /// the decoder really used is shown anyway.
     pub fn new() -> Result<Self, String> {
-        Self::with(choice())
+        let choice = choice();
+        Self::with(choice).or_else(|e| {
+            if choice == Choice::Auto {
+                Err(e)
+            } else {
+                Self::with(Choice::Auto)
+            }
+        })
     }
 
     pub fn with(choice: Choice) -> Result<Self, String> {

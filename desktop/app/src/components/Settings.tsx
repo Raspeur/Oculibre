@@ -251,8 +251,12 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
             >
               <option value="auto">{t("automatic")}</option>
               {onWindows ? (
-                // Windows: its own decoder ("software" in the engine), OpenH264 as a fallback.
-                <option value="software">{t("decoder_windows")}</option>
+                // Windows: its own decoder, on the graphics card ("vaapi" in the engine: the
+                // graphics card whatever the system) or the processor ("software").
+                <>
+                  <option value="vaapi">{t("decoder_gpu_windows")}</option>
+                  <option value="software">{t("decoder_windows")}</option>
+                </>
               ) : (
                 <>
                   <option value="vaapi">{t("decoder_gpu")}</option>
@@ -260,7 +264,11 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
                   <option value="software">{t("decoder_cpu")}</option>
                 </>
               )}
-              <option value="openh264">{t("decoder_openh264")}</option>
+              {/* Not installed: greyed (the engine would fall back to the automatic choice). */}
+              <option value="openh264" disabled={libraries !== null && libraries.openh264 !== null}>
+                {t("decoder_openh264")}
+                {libraries?.openh264 ? ` ${t("decoder_missing")}` : ""}
+              </option>
             </select>
           </div>
           {noFfmpeg && (

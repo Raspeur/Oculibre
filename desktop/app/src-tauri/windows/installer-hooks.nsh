@@ -39,10 +39,14 @@
   Delete "$INSTDIR\ns*.tmp"
 !macroend
 
-; adb's server keeps running after Oculibre closes, and holds adb.exe: stop it first.
+; adb's server keeps running after Oculibre closes, and holds adb.exe and its DLLs: stop it, and
+; since it takes a moment to exit, also move its files aside (renaming works even while loaded).
 !macro OCULIBRE_STOP_ADB
   IfFileExists "$INSTDIR\adb\adb.exe" 0 +2
     nsExec::Exec '"$INSTDIR\adb\adb.exe" kill-server'
+  !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\adb\adb.exe"
+  !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\adb\AdbWinApi.dll"
+  !insertmacro OCULIBRE_SET_ASIDE "$INSTDIR\adb\AdbWinUsbApi.dll"
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL

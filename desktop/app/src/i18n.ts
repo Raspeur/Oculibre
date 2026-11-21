@@ -173,6 +173,7 @@ const en = {
   decoder_nvidia: "Graphics card (NVIDIA)",
   decoder_cpu: "Processor",
   decoder_openh264: "Processor (OpenH264)",
+  decoder_missing: "(not installed)",
   about_text: "Free and open source, MIT licence. No data leaves your network.",
   licences: "Component licences",
   paired_wifi: "Paired over Wi-Fi",
@@ -211,7 +212,8 @@ const en = {
   ffmpeg_missing_text:
     "FFmpeg is not installed on this computer: Oculibre decodes the video with OpenH264, slower in high resolution. For decoding by the graphics card, install the package libavcodec.",
   // Windows (#17)
-  decoder_windows: "Windows (Media Foundation)",
+  decoder_windows: "Processor (Windows)",
+  decoder_gpu_windows: "Graphics card",
   notice_media_foundation: "Windows' own decoder.",
   notice_adb: "© The Android Open Source Project, Google's build. Licences and sources: the adb folder of Oculibre.",
   no_decoder_text_windows:
@@ -387,6 +389,7 @@ const fr: Record<Key, string> = {
   decoder_nvidia: "Carte graphique (NVIDIA)",
   decoder_cpu: "Processeur",
   decoder_openh264: "Processeur (OpenH264)",
+  decoder_missing: "(pas installé)",
   about_text: "Libre et gratuit, licence MIT. Aucune donnée ne quitte votre réseau.",
   licences: "Licences des composants",
   paired_wifi: "Relié en Wi-Fi",
@@ -425,7 +428,8 @@ const fr: Record<Key, string> = {
   ffmpeg_missing_title: "Décodage par le processeur",
   ffmpeg_missing_text:
     "FFmpeg n'est pas installé sur cet ordinateur : Oculibre décode la vidéo avec OpenH264, plus lent en haute résolution. Pour le décodage par la carte graphique, installez le paquet libavcodec.",
-  decoder_windows: "Windows (Media Foundation)",
+  decoder_windows: "Processeur (Windows)",
+  decoder_gpu_windows: "Carte graphique",
   notice_media_foundation: "Le décodeur de Windows.",
   notice_adb: "© The Android Open Source Project, compilé par Google. Licences et sources : le dossier adb d'Oculibre.",
   no_decoder_text_windows:

@@ -223,7 +223,7 @@ fn send(
     let mut seen_frames = u64::MAX;
     let mut last_new = Instant::now() - STALE * 2;
     let mut last_sent = Instant::now() - interval;
-    let mut frame = Vec::new();
+    let mut last = oculibre_vcam_shm::LastPicture::default();
     let mut own_clock = Instant::now();
     let mut first = true;
     let started = Instant::now();
@@ -281,15 +281,23 @@ fn send(
             };
             let size = (sample.GetSize() as usize).min(format.bytes());
             let out = std::slice::from_raw_parts_mut(data, size);
-            let fresh = last_new.elapsed() < STALE;
-            let got = fresh
-                .then(|| shared.as_ref().and_then(|s| s.frames().read(&mut frame)))
-                .flatten();
+            if last_new.elapsed() >= STALE {
+                last.clear();
+            }
+            let got = shared
+                .as_ref()
+                .filter(|_| last_new.elapsed() < STALE)
+                .and_then(|s| last.update(s.frames()));
             match got {
-                Some((w, h)) if size == format.bytes() => {
-                    picture::fit(&frame, w, h, out, format.width, format.height)
+                Some((frame, w, h)) if size == format.bytes() => {
+                    picture::fit(frame, w, h, out, format.width, format.height)
                 }
-                _ if size == format.bytes() => picture::waiting(out, format.width, format.height, started.elapsed().as_millis() as u64),
+                _ if size == format.bytes() => picture::waiting(
+                    out,
+                    format.width,
+                    format.height,
+                    started.elapsed().as_millis() as u64,
+                ),
                 _ => {}
             }
             let _ = sample.SetActualDataLength(size as i32);

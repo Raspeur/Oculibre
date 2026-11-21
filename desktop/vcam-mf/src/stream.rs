@@ -294,7 +294,7 @@ fn work(
     let mut seen_frames = u64::MAX;
     let mut last_new = Instant::now() - STALE * 2;
     let mut last_sent = Instant::now() - interval;
-    let mut frame = Vec::new();
+    let mut last = oculibre_vcam_shm::LastPicture::default();
     let mut fitted = vec![0u8; format.width * format.height * 2];
     while !stop.load(Ordering::Acquire) {
         let token = match requests.recv_timeout(Duration::from_millis(100)) {
@@ -329,11 +329,17 @@ fn work(
         };
 
         // The picture, YUY2 at the stream's size, then NV12 into the sample.
-        let got = (last_new.elapsed() < STALE)
-            .then(|| shared.as_ref().and_then(|s| s.frames().read(&mut frame)))
-            .flatten();
+        if last_new.elapsed() >= STALE {
+            last.clear();
+        }
+        let got = shared
+            .as_ref()
+            .filter(|_| last_new.elapsed() < STALE)
+            .and_then(|s| last.update(s.frames()));
         match got {
-            Some((w, h)) => picture::fit(&frame, w, h, &mut fitted, format.width, format.height),
+            Some((frame, w, h)) => {
+                picture::fit(frame, w, h, &mut fitted, format.width, format.height)
+            }
             None => picture::waiting(
                 &mut fitted,
                 format.width,
