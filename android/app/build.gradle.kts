@@ -11,13 +11,29 @@ android {
         applicationId = "org.oculibre"
         minSdk = 21 // Android 5.0 — the whole point of the project
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.3.5" // speaks protocol 0.3 (+ cameras' equivalent focal length)
+        versionCode = 10
+        versionName = "0.4.0" // speaks protocol 0.3; first public beta
+    }
+
+    // Release signing: the key is never in the repository. The release workflow (or a maintainer)
+    // gives it through the environment; without it, `assembleRelease` makes an unsigned APK.
+    // See .github/RELEASING.md.
+    val keystore = System.getenv("OCULIBRE_KEYSTORE_FILE")
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("OCULIBRE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("OCULIBRE_KEY_ALIAS")
+                keyPassword = System.getenv("OCULIBRE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 

@@ -104,6 +104,21 @@ the apps ship is generated from the lock files at build time (see
 [`desktop/README.md`](desktop/README.md#licences-of-the-components)); a new npm package bundled into the
 page is added to the list at the top of `desktop/app/scripts/licences.mjs`.
 
+## Dependency updates
+
+Dependabot opens at most one pull request per ecosystem (Rust, npm, Gradle, Actions) on the first of
+each month, plus one at any time for a security advisory. Its commit messages (`chore(deps): …`)
+have no issue number: the one exception to the commit format.
+
+- **Monthly updates** only move versions the manifests already allow (Cargo and npm lock files,
+  minor and patch versions of the Gradle plugins and the actions). CI green: approve and merge.
+  CI red: close it with a comment, then open an issue if the update matters.
+- **Bigger updates** (a new major version, a 0.x crate jumping to its next minor) are done by hand,
+  in their own branch and pull request, with the code changes they need. Some must move together:
+  `windows` and `windows-core`; `ffmpeg-sys-next` follows the FFmpeg version of the distributions.
+- **Security updates** may be bigger: read the advisory first. If the vulnerable code is not used by
+  Oculibre and the fix cannot be taken yet, dismiss the alert with the reason.
+
 ## Rules for any change touching the network
 
 - Never trust a length or a field coming from the network.
