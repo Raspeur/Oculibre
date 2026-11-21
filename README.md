@@ -136,6 +136,8 @@ You can help without writing code: **trying Oculibre on your phone and opening a
 [device report](https://github.com/Raspeur/Oculibre/issues/new?template=device_report.yml)** is the
 most useful contribution right now, especially with old phones.
 
+A question, or an idea to discuss? Use [Discussions](https://github.com/Raspeur/Oculibre/discussions).
+
 Code is welcome too: the Android app (Kotlin), the engine and the virtual cameras (Rust), the
 desktop window (TypeScript and React). Open an issue first, then read
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow, the commit format and how AI tools may be

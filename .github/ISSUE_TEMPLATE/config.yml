@@ -3,3 +3,6 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/Raspeur/Oculibre/security/advisories/new
     about: Report vulnerabilities privately here, never in a public issue.
+  - name: Question or idea
+    url: https://github.com/Raspeur/Oculibre/discussions
+    about: Ask how to do something, share a setup or discuss an idea. Issues are for bugs and planned work.

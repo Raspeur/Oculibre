@@ -8,6 +8,8 @@ Thanks for your interest! English and French are both welcome in issues and pull
   This is the most valuable contribution right now.
 - **Report bugs** with the *Bug report* form: it asks for what we need (phone, computer, versions,
   problem code). Never paste a pairing QR code or `oculibre://pair` link: it lets someone pair.
+- **Ask or share in [Discussions](https://github.com/Raspeur/Oculibre/discussions)**: questions, setups,
+  ideas not ready for an issue. Issues are for bugs and planned work.
 - **Review the protocol** ([`docs/protocol.typ`](docs/protocol.typ)), especially the security part.
 - **Code**: Android (Kotlin), desktop and virtual cameras (Rust), desktop window (TypeScript + React).
 
