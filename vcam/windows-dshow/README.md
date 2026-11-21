@@ -1,5 +1,9 @@
 # Windows — DirectShow virtual camera
 
-C++ COM DLL, based on [Softcam](https://github.com/tshino/softcam) (MIT). Target: Phase 3.
+Moved into the Rust workspace: [`desktop/vcam-dshow`](../../desktop/vcam-dshow) (the COM DLL,
+written in Rust with Microsoft's `windows` crate) and
+[`desktop/vcam-shm`](../../desktop/vcam-shm) (the shared memory Oculibre writes the picture into).
+See [`docs/research/windows.typ`](../../docs/research/windows.typ).
 
-Visible to DirectShow apps only (OBS, Zoom, Chrome…), not to the Windows Camera app or new Teams — see `../windows-mf`.
+Visible to DirectShow apps (OBS, Zoom, Discord, Chrome…), on Windows 10 and 11; not to the Windows
+Camera app — see `../windows-mf`.

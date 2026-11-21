@@ -24,7 +24,6 @@ serde_json = "1"
 openh264 = { version = "0.9", default-features = false, features = ["libloading"] }
 # Its raw API, for the version of the library found (About screen).
 openh264-sys2 = { version = "0.9", default-features = false, features = ["libloading"] }
-libc = "0.2"
 # Wi-Fi secure channel (docs/research/secure-channel.typ): TLS 1.2/1.3 with pinned self-signed keys.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rcgen = { version = "0.14", default-features = false, features = ["ring"] }
@@ -33,10 +32,34 @@ ring = "0.17"
 qrcode = { version = "0.14", default-features = false }
 # mDNS: the computer announces itself on the network (no async runtime).
 mdns-sd = { version = "0.21", default-features = false }
+# This computer's network addresses, on every system (already used by mdns-sd).
+if-addrs = "0.15"
 # Preview pictures for the desktop app (pure Rust; licence MIT/Apache-2.0 and IJG: credit the
 # Independent JPEG Group in the app's notices).
 jpeg-encoder = "0.7"
+
+[target.'cfg(windows)'.dependencies]
+# The picture for Oculibre's Windows virtual cameras (shared memory).
+oculibre-vcam-shm = { path = "../vcam-shm" }
+# Microsoft's bindings (MIT/Apache-2.0): Media Foundation, Windows' own H.264 decoder (#17).
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(unix)'.dependencies]
+# FFmpeg's types (its library is loaded at run time, #18). Not on Windows: Media Foundation there.
 ffmpeg-sys-next = { version = "8", optional = true, default-features = false, features = ["avcodec"] }
+# dlopen of FFmpeg, adb's parent-death signal (Linux).
+libc = "0.2"
 
 [dev-dependencies]
 # Tests encode their clips with OpenH264 compiled from source (test binaries are never published).

@@ -1,0 +1,7 @@
+; The COM entry points, exported PRIVATE: called by name through GetProcAddress (regsvr32, COM),
+; never linked against.
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
+    DllRegisterServer PRIVATE
+    DllUnregisterServer PRIVATE

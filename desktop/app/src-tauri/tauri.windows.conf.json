@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File src-tauri/windows/fetch-adb.ps1 && npm run build && cargo build --release -p oculibre-vcam-dshow -p oculibre-vcam-mf && cargo build --release -p oculibre-vcam-dshow --target i686-pc-windows-msvc"
+  },
+  "bundle": {
+    "targets": [
+      "nsis"
+    ],
+    "resources": {
+      "../../target/release/oculibre_vcam_dshow.dll": "oculibre_vcam_dshow.dll",
+      "../../target/i686-pc-windows-msvc/release/oculibre_vcam_dshow.dll": "x86/oculibre_vcam_dshow.dll",
+      "../../target/release/oculibre_vcam_mf.dll": "oculibre_vcam_mf.dll",
+      "../../target/release/oculibre-camera.exe": "oculibre-camera.exe",
+      "../../target/adb/adb.exe": "adb/adb.exe",
+      "../../target/adb/AdbWinApi.dll": "adb/AdbWinApi.dll",
+      "../../target/adb/AdbWinUsbApi.dll": "adb/AdbWinUsbApi.dll",
+      "../../target/adb/NOTICE.txt": "adb/NOTICE.txt",
+      "../../target/adb/adb-licences.txt": "adb/adb-licences.txt"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": [
+          "French",
+          "English"
+        ],
+        "installerHooks": "windows/installer-hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "windows/installer-header.bmp",
+        "sidebarImage": "windows/installer-sidebar.bmp"
+      }
+    },
+    "publisher": "Oculibre"
+  }
+}

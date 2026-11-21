@@ -7,7 +7,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -142,17 +142,11 @@ fn same(a: &[u8], b: &[u8]) -> bool {
 }
 
 fn save(path: &Path, phones: &[Phone]) -> Result<(), String> {
-    use std::os::unix::fs::OpenOptionsExt;
     if let Some(dir) = path.parent() {
         let _ = fs::create_dir_all(dir);
     }
     let json = serde_json::to_vec_pretty(phones).expect("serialisable");
-    fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
+    crate::store::create_private(path)
         .and_then(|mut f| f.write_all(&json))
         .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
@@ -215,33 +209,31 @@ pub fn qr(text: &str) -> Result<String, String> {
 /// container bridges).
 pub fn lan_addresses() -> Vec<IpAddr> {
     let mut out = Vec::new();
-    let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
-    // SAFETY: getifaddrs fills `list`, freed below with freeifaddrs; entries are only read.
-    unsafe {
-        if libc::getifaddrs(&mut list) != 0 {
-            return out;
+    for iface in if_addrs::get_if_addrs().unwrap_or_default() {
+        let IpAddr::V4(ip) = iface.ip() else { continue };
+        if [
+            "lo",
+            "docker",
+            "br-",
+            "veth",
+            "virbr",
+            "lxc",
+            "podman",
+            "vEthernet",
+        ]
+        .iter()
+        .any(|p| iface.name.starts_with(p))
+        {
+            continue;
         }
-        let mut cur = list;
-        while !cur.is_null() {
-            let ifa = &*cur;
-            cur = ifa.ifa_next;
-            if ifa.ifa_addr.is_null() || i32::from((*ifa.ifa_addr).sa_family) != libc::AF_INET {
-                continue;
-            }
-            let name = std::ffi::CStr::from_ptr(ifa.ifa_name).to_string_lossy();
-            if ["lo", "docker", "br-", "veth", "virbr", "lxc", "podman"]
-                .iter()
-                .any(|p| name.starts_with(p))
-            {
-                continue;
-            }
-            let sin = &*(ifa.ifa_addr as *const libc::sockaddr_in);
-            let ip = Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
-            if !ip.is_loopback() && !ip.is_unspecified() && !out.contains(&IpAddr::V4(ip)) {
-                out.push(IpAddr::V4(ip));
-            }
+        // No loopback, and no 169.254 (an interface that got no address from the network).
+        if !ip.is_loopback()
+            && !ip.is_unspecified()
+            && !ip.is_link_local()
+            && !out.contains(&IpAddr::V4(ip))
+        {
+            out.push(IpAddr::V4(ip));
         }
-        libc::freeifaddrs(list);
     }
     // Home and office networks first, VPNs and the rest after.
     out.sort_by_key(|ip| match ip {
@@ -308,11 +300,14 @@ mod tests {
         let again = Pairings::load(path.clone());
         assert_eq!(again.phones().len(), 1);
         assert_eq!(again.phones()[0].fingerprint, "fp1");
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(
-            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
 
         assert_eq!(again.forget("red").unwrap().len(), 1);
         assert!(Pairings::load(path.clone()).phones().is_empty());

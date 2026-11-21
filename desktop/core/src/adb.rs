@@ -17,7 +17,7 @@ use std::time::Duration;
 pub fn reverse_device(serial: &str, port: u16) -> Result<(), String> {
     let adb = find_adb();
     let spec = format!("tcp:{port}");
-    match Command::new(&adb)
+    match command(&adb)
         .args(["-s", serial, "reverse", &spec, &spec])
         .output()
     {
@@ -59,7 +59,7 @@ pub fn watch(port: u16, report: impl Fn(Result<(), String>) + Send + 'static) ->
             let adb = find_adb();
             let mut ready: HashSet<String> = HashSet::new();
             while !stopped.load(Ordering::Relaxed) {
-                let mut command = Command::new(&adb);
+                let mut command = command(&adb);
                 command
                     .arg("track-devices")
                     .stdout(Stdio::piped())
@@ -143,14 +143,14 @@ fn ready_devices(list: &str) -> HashSet<String> {
 /// phone plugged in, or adb failed.
 pub fn open_uri(uri: &str) -> bool {
     let adb = find_adb();
-    let plugged = Command::new(&adb)
+    let plugged = command(&adb)
         .arg("get-state")
         .output()
         .is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "device");
     // `adb shell` joins its arguments into one shell command: quote the URI (it has `&`).
     plugged
         && !uri.contains('\'')
-        && Command::new(&adb)
+        && command(&adb)
             .args([
                 "shell",
                 "am",
@@ -165,19 +165,63 @@ pub fn open_uri(uri: &str) -> bool {
             .is_ok_and(|o| o.status.success())
 }
 
-/// The Android SDK's adb if there is one, else `adb` from the PATH.
+/// `adb …`. Windows: without a console window flashing up (Oculibre is a windowed app).
+fn command(adb: &Path) -> Command {
+    let mut command = Command::new(adb);
+    // No mDNS: Oculibre finds USB phones only; adb's own network discovery is not used, and on
+    // Windows it made the firewall ask "allow adb on public networks?". The adb server started
+    // by this command keeps the setting.
+    command.env("ADB_MDNS", "0");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
+/// adb's file name on this system.
+const ADB: &str = if cfg!(windows) { "adb.exe" } else { "adb" };
+
+/// The adb shipped with Oculibre (Windows installer, #17): `adb\` next to the program. Google's
+/// own build of AOSP's adb (Apache-2.0; libusb inside, LGPL-2.1), with its NOTICE. A temporary
+/// way: USB through adb needs USB debugging on the phone; Android Open Accessory (#21) will not.
+fn bundled() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.join("adb").join(ADB))
+}
+
+/// The Android SDK's adb if the user has one (two adb versions on one computer fight over the
+/// adb server: use theirs), else the one shipped with Oculibre, else `adb` from the PATH.
 fn find_adb() -> PathBuf {
-    let sdk_dirs = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
+    let mut sdk_dirs: Vec<PathBuf> = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
         .iter()
         .filter_map(|v| std::env::var_os(v).map(PathBuf::from))
-        .chain(std::env::var_os("HOME").map(|h| Path::new(&h).join("Android/Sdk")));
-    for sdk in sdk_dirs {
-        let adb = sdk.join("platform-tools/adb");
-        if adb.is_file() {
-            return adb;
-        }
+        .map(|sdk| sdk.join("platform-tools"))
+        .collect();
+    if let Some(home) = std::env::var_os("HOME") {
+        sdk_dirs.push(Path::new(&home).join("Android/Sdk/platform-tools"));
     }
-    PathBuf::from("adb") // rely on PATH
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        sdk_dirs.push(Path::new(&local).join("Android\\Sdk\\platform-tools"));
+    }
+    sdk_dirs
+        .into_iter()
+        .map(|dir| dir.join(ADB))
+        .chain(bundled())
+        .find(|adb| adb.is_file())
+        .unwrap_or_else(|| PathBuf::from(ADB)) // rely on PATH
+}
+
+/// Whether adb runs (`Err`: why). Without it, USB does not work; Wi-Fi does.
+pub fn found() -> Result<(), String> {
+    let adb = find_adb();
+    match command(&adb).arg("version").output() {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(_) => Err(format!("{} does not work", adb.display())),
+        Err(e) => Err(format!("cannot run {} ({e})", adb.display())),
+    }
 }
 
 #[cfg(test)]

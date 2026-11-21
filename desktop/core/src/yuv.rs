@@ -71,7 +71,7 @@ impl Picture {
 
     /// Copies an NV12 picture (luma plane + interleaved UV plane, what hardware decoders output),
     /// splitting U and V.
-    #[cfg_attr(not(feature = "ffmpeg"), allow(dead_code))]
+    #[cfg_attr(not(ffmpeg), allow(dead_code))]
     pub fn copy_nv12(&mut self, w: usize, h: usize, y: (&[u8], usize), uv: (&[u8], usize)) {
         let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
         self.w = w;

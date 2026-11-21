@@ -16,7 +16,6 @@ use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::io::{self, Write};
 use std::net::{Shutdown, TcpStream};
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -55,11 +54,33 @@ impl Link for TcpStream {
         self.set_read_timeout(timeout)
     }
     fn shutdown_link(&self) -> io::Result<()> {
-        self.shutdown(Shutdown::Both)
+        let result = self.shutdown(Shutdown::Both);
+        wake_readers(self);
+        result
     }
 }
 
-impl Link for UnixStream {
+/// Makes a read blocked on this socket in another thread return now. Linux: `shutdown` already
+/// does. Windows: it does not (the read waits for its timeout, 5 s), `CancelIoEx` does, even
+/// through a clone of the socket.
+#[cfg(windows)]
+pub(crate) fn wake_readers(socket: &TcpStream) {
+    use std::os::windows::io::AsRawSocket;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CancelIoEx(handle: isize, overlapped: *mut std::ffi::c_void) -> i32;
+    }
+    // SAFETY: a valid socket handle, borrowed for the call; a null OVERLAPPED cancels all of its
+    // pending I/O.
+    unsafe {
+        CancelIoEx(socket.as_raw_socket() as isize, std::ptr::null_mut());
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn wake_readers(_socket: &TcpStream) {}
+
+impl Link for crate::tls::TlsLink {
     fn try_clone_link(&self) -> io::Result<Box<dyn Link>> {
         Ok(Box::new(self.try_clone()?))
     }
@@ -67,7 +88,7 @@ impl Link for UnixStream {
         self.set_read_timeout(timeout)
     }
     fn shutdown_link(&self) -> io::Result<()> {
-        self.shutdown(Shutdown::Both)
+        self.shutdown()
     }
 }
 

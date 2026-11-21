@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["app/src-tauri", "cli", "core", "protocol"]
+members = ["app/src-tauri", "cli", "core", "protocol", "vcam-shm", "vcam-dshow", "vcam-mf"]
 # cargo-fuzz crate, needs a nightly toolchain: cd protocol && cargo +nightly fuzz run decode
 exclude = ["protocol/fuzz"]
 

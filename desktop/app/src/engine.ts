@@ -170,6 +170,9 @@ export type EngineEvent =
  */
 export const inApp: boolean = isTauri();
 
+/** Windows (#17): its own decoder (Media Foundation), its own virtual camera (a DLL). */
+export const onWindows: boolean = typeof navigator !== "undefined" && /Windows/.test(navigator.userAgent);
+
 // --- Rust → page
 
 /** Calls `handler` for every engine event; returns the function that stops listening. */

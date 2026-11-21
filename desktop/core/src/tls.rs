@@ -6,17 +6,16 @@
 //! the handshake, from the phone's `HELLO` (see `pairing.rs`).
 //!
 //! The session code reads and writes from two threads, but a `rustls` connection is one object:
-//! [`accept`] hands the session one end of a local socket pair and a *pump* thread moves bytes
-//! between the other end and the TLS connection.
+//! [`accept`] hands the session a [`TlsLink`], which shares the connection behind a lock. The
+//! reading thread waits for the network *without* the lock (`peek`), then takes it to decrypt; a
+//! write takes it to encrypt and send. No extra thread, no socket pair, nothing specific to an
+//! operating system.
 
 use std::fs;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpStream};
-use std::os::fd::AsRawFd;
-use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::sync::Arc;
-use std::thread;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rustls::client::danger::HandshakeSignatureValid;
@@ -29,9 +28,6 @@ use rustls::{
 
 /// Time allowed for the TLS handshake.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
-/// Decrypted bytes waiting for the session before the pump stops reading the network
-/// (the phone then drops frames: latency never piles up).
-const BACKLOG: usize = 1024 * 1024;
 
 /// The computer's certificate and private key (DER), created once.
 pub struct Identity {
@@ -81,13 +77,7 @@ impl Identity {
 
 /// Writes a private key readable by the owner only.
 fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    use std::os::unix::fs::OpenOptionsExt;
-    fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
+    crate::store::create_private(path)
         .and_then(|mut f| f.write_all(bytes))
         .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
@@ -191,15 +181,15 @@ impl ClientCertVerifier for AnyClientCert {
 
 /// A phone after a successful TLS handshake.
 pub struct Accepted {
-    /// Plaintext side for the session (the pump thread does the TLS).
-    pub link: UnixStream,
+    /// The session's byte stream: plaintext in and out, TLS on the network.
+    pub link: TlsLink,
     /// SHA-256 of the phone's certificate.
     pub fingerprint: String,
     /// `TLSv1_3` or `TLSv1_2`.
     pub version: String,
 }
 
-/// Runs the TLS handshake on a new connection and starts the pump.
+/// Runs the TLS handshake on a new connection.
 pub fn accept(tcp: TcpStream, config: Arc<ServerConfig>) -> Result<Accepted, String> {
     let mut conn = ServerConnection::new(config).map_err(|e| e.to_string())?;
     let mut tcp = tcp;
@@ -224,134 +214,173 @@ pub fn accept(tcp: TcpStream, config: Arc<ServerConfig>) -> Result<Accepted, Str
         .protocol_version()
         .map(|v| format!("{v:?}"))
         .unwrap_or_default();
-
-    let (session_end, pump_end) = UnixStream::pair().map_err(|e| e.to_string())?;
-    thread::Builder::new()
-        .name("oculibre-tls".into())
-        .spawn(move || pump(conn, tcp, pump_end))
+    // From now on the session decides (its own read timeout; writes wait for the phone).
+    tcp.set_read_timeout(None)
+        .and_then(|_| tcp.set_write_timeout(None))
         .map_err(|e| e.to_string())?;
     Ok(Accepted {
-        link: session_end,
+        link: TlsLink::new(conn, tcp),
         fingerprint,
         version,
     })
 }
 
-/// Moves bytes both ways between the TLS connection and the session, until either side closes.
-fn pump(mut conn: ServerConnection, mut tcp: TcpStream, mut local: UnixStream) {
-    let closed = |tcp: &TcpStream, local: &UnixStream| {
-        let _ = tcp.shutdown(Shutdown::Both);
-        let _ = local.shutdown(Shutdown::Both);
-    };
-    if tcp.set_read_timeout(None).is_err()
-        || tcp.set_write_timeout(None).is_err()
-        || tcp.set_nonblocking(true).is_err()
-        || local.set_nonblocking(true).is_err()
-    {
-        return closed(&tcp, &local);
+/// A TLS connection as the session's [`Link`](crate::session::Link): reading decrypts, writing
+/// encrypts. Clones share the connection (one reading thread, any number of writers).
+///
+/// Two locks, so that nobody waits for the network while holding the connection: encrypting and
+/// decrypting happen under `shared` (quick), and encrypted bytes wait in `outbox` until whoever
+/// holds `sending` writes them to the socket. Otherwise a writer blocked on a full socket would
+/// keep the reader from reading, while the phone waits for us to read before it reads: deadlock.
+pub struct TlsLink {
+    shared: Arc<Mutex<Shared>>,
+    sending: Arc<Mutex<()>>,
+    tcp: TcpStream,
+}
+
+struct Shared {
+    conn: ServerConnection,
+    /// Encrypted bytes not sent yet, in order.
+    outbox: Vec<u8>,
+}
+
+impl Shared {
+    /// Moves what rustls has to send (records, alerts, session tickets) to the outbox.
+    fn encrypt_pending(&mut self) {
+        while self.conn.wants_write() {
+            if self.conn.write_tls(&mut self.outbox).is_err() {
+                break; // a Vec never fails
+            }
+        }
     }
-    let mut to_local: Vec<u8> = Vec::new();
-    let mut buf = vec![0u8; 64 * 1024];
-    let mut peer_gone = false;
-    loop {
-        // Decrypted bytes → session.
-        while to_local.len() < BACKLOG {
-            match conn.reader().read(&mut buf) {
-                Ok(0) => {
-                    peer_gone = true; // close_notify
+}
+
+impl TlsLink {
+    fn new(conn: ServerConnection, tcp: TcpStream) -> Self {
+        Self {
+            shared: Arc::new(Mutex::new(Shared {
+                conn,
+                outbox: Vec::new(),
+            })),
+            sending: Arc::new(Mutex::new(())),
+            tcp,
+        }
+    }
+
+    fn lock(&self) -> io::Result<std::sync::MutexGuard<'_, Shared>> {
+        self.shared
+            .lock()
+            .map_err(|_| io::Error::other("TLS connection poisoned"))
+    }
+
+    pub fn try_clone(&self) -> io::Result<Self> {
+        Ok(Self {
+            shared: self.shared.clone(),
+            sending: self.sending.clone(),
+            tcp: self.tcp.try_clone()?,
+        })
+    }
+
+    pub fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.tcp.set_read_timeout(timeout)
+    }
+
+    /// Writes the outbox to the socket. `wait`: take the turn to send even if someone else is
+    /// sending (writers); otherwise leave it to them (the reader must never block here).
+    fn send(&self, wait: bool) -> io::Result<()> {
+        loop {
+            let turn = if wait {
+                self.sending
+                    .lock()
+                    .map_err(|_| io::Error::other("TLS sending poisoned"))?
+            } else {
+                match self.sending.try_lock() {
+                    Ok(turn) => turn,
+                    Err(_) => return Ok(()), // the one sending will take our bytes too
+                }
+            };
+            loop {
+                let bytes = std::mem::take(&mut self.lock()?.outbox);
+                if bytes.is_empty() {
                     break;
                 }
-                Ok(n) => to_local.extend_from_slice(&buf[..n]),
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                Err(_) => {
-                    peer_gone = true; // closed without close_notify
-                    break;
-                }
+                (&self.tcp).write_all(&bytes)?;
+            }
+            drop(turn);
+            // Bytes added between our last look and the end of our turn: send them too.
+            if self.lock()?.outbox.is_empty() {
+                return Ok(());
             }
         }
-        while !to_local.is_empty() {
-            match local.write(&to_local) {
-                Ok(n) => {
-                    to_local.drain(..n);
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                Err(_) => return closed(&tcp, &local), // the session is gone
-            }
-        }
-        if peer_gone && to_local.is_empty() {
-            return closed(&tcp, &local);
-        }
-        // Encrypted bytes → network.
-        while conn.wants_write() {
-            match conn.write_tls(&mut tcp) {
-                Ok(_) => {}
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                Err(_) => return closed(&tcp, &local),
-            }
-        }
+    }
 
-        let mut fds = [
-            libc::pollfd {
-                fd: tcp.as_raw_fd(),
-                events: (if !peer_gone && to_local.len() < BACKLOG {
-                    libc::POLLIN
-                } else {
-                    0
-                }) | (if conn.wants_write() { libc::POLLOUT } else { 0 }),
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: local.as_raw_fd(),
-                events: libc::POLLIN
-                    | (if to_local.is_empty() {
-                        0
-                    } else {
-                        libc::POLLOUT
-                    }),
-                revents: 0,
-            },
-        ];
-        // SAFETY: two valid pollfd entries owned by this frame.
-        let n = unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, -1) };
-        if n < 0 {
-            if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            return closed(&tcp, &local);
+    /// Closes properly (TLS `close_notify`), then the socket: the other side's reads end.
+    pub fn shutdown(&self) -> io::Result<()> {
+        if let Ok(mut shared) = self.lock() {
+            shared.conn.send_close_notify();
+            shared.encrypt_pending();
         }
-        let ready = |r: i16| r & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0;
+        let _ = self.tcp.set_write_timeout(Some(Duration::from_secs(1)));
+        let _ = self.send(true);
+        let result = self.tcp.shutdown(Shutdown::Both);
+        crate::session::wake_readers(&self.tcp);
+        result
+    }
+}
 
-        if ready(fds[0].revents) {
-            match conn.read_tls(&mut tcp) {
-                Ok(0) => peer_gone = true,
-                Ok(_) => {
-                    if conn.process_new_packets().is_err() {
-                        // Tell the phone why (TLS alert), then give up.
-                        while conn.wants_write() && conn.write_tls(&mut tcp).is_ok() {}
-                        return closed(&tcp, &local);
-                    }
-                }
+impl Read for TlsLink {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        loop {
+            match self.lock()?.conn.reader().read(buf) {
+                Ok(n) => return Ok(n), // 0: the phone closed properly (close_notify)
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                Err(_) => peer_gone = true,
+                Err(e) => return Err(e), // closed without close_notify
+            }
+            // Wait for the network without any lock (writers go on meanwhile). Honours the read
+            // timeout the session set.
+            self.tcp.peek(&mut [0u8; 1])?;
+            let failed = {
+                let mut shared = self.lock()?;
+                let mut tcp = &self.tcp;
+                if shared.conn.read_tls(&mut tcp)? == 0 {
+                    return Ok(0); // the socket closed
+                }
+                let result = shared.conn.process_new_packets().err();
+                shared.encrypt_pending(); // answers, or the alert telling the phone why
+                result
+            };
+            self.send(false)?;
+            if let Some(e) = failed {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
             }
         }
-        if ready(fds[1].revents) {
-            match local.read(&mut buf) {
-                Ok(0) | Err(_) => {
-                    // The session ended: close the TLS connection properly.
-                    conn.send_close_notify();
-                    let _ = tcp.set_nonblocking(false);
-                    let _ = tcp.set_write_timeout(Some(Duration::from_secs(1)));
-                    while conn.wants_write() && conn.write_tls(&mut tcp).is_ok() {}
-                    return closed(&tcp, &local);
+    }
+}
+
+impl Write for TlsLink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        {
+            let mut shared = self.lock()?;
+            let mut rest = buf;
+            while !rest.is_empty() {
+                // rustls takes what fits in its buffer; encrypting empties it.
+                let n = shared.conn.writer().write(rest)?;
+                shared.encrypt_pending();
+                if n == 0 {
+                    return Err(io::ErrorKind::WriteZero.into());
                 }
-                Ok(n) => {
-                    if conn.writer().write_all(&buf[..n]).is_err() {
-                        return closed(&tcp, &local);
-                    }
-                }
+                rest = &rest[n..];
             }
         }
+        self.send(true)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.send(true)
     }
 }
 
@@ -362,6 +391,7 @@ pub(crate) mod tests {
     use rustls::pki_types::ServerName;
     use rustls::{ClientConfig, ClientConnection, StreamOwned};
     use std::net::TcpListener;
+    use std::thread;
 
     /// Pins the server's certificate fingerprint, like the phone does.
     #[derive(Debug)]
@@ -448,7 +478,7 @@ pub(crate) mod tests {
 
     /// Both TLS versions: 2 MB each way at the same time, then a clean close from the session.
     #[test]
-    fn pump_carries_both_ways_and_closes() {
+    fn link_carries_both_ways_and_closes() {
         for version in [&rustls::version::TLS13, &rustls::version::TLS12] {
             let host = Identity::generate().unwrap();
             let phone = Identity::generate().unwrap();
@@ -485,7 +515,7 @@ pub(crate) mod tests {
             link.read_exact(&mut up).unwrap();
             assert!(up.iter().enumerate().all(|(i, &b)| b == (i % 251) as u8));
             writer.join().unwrap();
-            link.shutdown(Shutdown::Both).unwrap();
+            link.shutdown().unwrap();
             let (down, phone_fp) = phone_side.join().unwrap();
             assert_eq!(down.len(), 2_000_000);
             assert!(down.iter().enumerate().all(|(i, &b)| b == (i % 241) as u8));
@@ -546,12 +576,15 @@ pub(crate) mod tests {
         let b = Identity::load_or_create(&dir).unwrap();
         assert_eq!(a.fingerprint(), b.fingerprint());
         assert_eq!(a.fingerprint().len(), 64);
-        use std::os::unix::fs::PermissionsExt;
-        let mode = fs::metadata(dir.join("tls-key.der"))
-            .unwrap()
-            .permissions()
-            .mode();
-        assert_eq!(mode & 0o777, 0o600);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(dir.join("tls-key.der"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
         fs::remove_dir_all(&dir).unwrap();
         assert_eq!(short_fingerprint(&a.fingerprint()).len(), 19);
     }
