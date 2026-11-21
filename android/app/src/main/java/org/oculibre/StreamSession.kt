@@ -1317,7 +1317,7 @@ class StreamSession(
                     // After a warm-up, warn if the camera ignores the requested rate.
                     val warm = seconds >= 3 && SystemClock.elapsedRealtime() - pipelineStartMs >= 3000
                     val warning = if (warm && cameraFps < captureFps * 0.85) {
-                        "\n⚠ camera delivers $cameraFps fps, not $captureFps: this phone refuses it"
+                        "\nWarning: camera delivers $cameraFps fps, not $captureFps: this phone refuses it"
                     } else {
                         ""
                     }

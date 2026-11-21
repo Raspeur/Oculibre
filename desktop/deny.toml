@@ -1,0 +1,37 @@
+# cargo-deny (CI: `cargo deny check licenses`): only these licences may enter the desktop programs.
+# A new crate under anything else (GPL, no licence…) fails the check before it is merged.
+# Keep in sync with about.toml (the licences file of the About screen).
+
+[graph]
+# The platforms Oculibre is built for.
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "i686-pc-windows-msvc"]
+# Build tools and tests are not shipped.
+exclude-dev = true
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CC0-1.0",
+    "Unlicense",
+]
+exceptions = [
+    # FFmpeg's Rust bindings (types only; FFmpeg itself is the system's library).
+    { allow = ["WTFPL"], crate = "ffmpeg-sys-next" },
+    # Encodes the preview pictures; part of it derives from the Independent JPEG Group's code.
+    { allow = ["IJG"], crate = "jpeg-encoder" },
+]
+
+[licenses.private]
+# Oculibre's own crates (not published).
+ignore = true

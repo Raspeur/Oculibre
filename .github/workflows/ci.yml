@@ -1,0 +1,127 @@
+# Checks every pull request and every push to main: tests and lints on Linux, Windows and Android.
+# Least privilege: the token can only read the repository; actions are pinned by commit (a tag can
+# be moved, a commit cannot); pull requests from forks run without any secret.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Desktop (Linux)
+    runs-on: ubuntu-latest
+    # Ubuntu 26.04: FFmpeg 8, whose headers the decoder is built against.
+    container: ubuntu:26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: Build tools and libraries
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config curl ca-certificates git \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
+            libavcodec-dev libavutil-dev libclang-dev clang nodejs npm
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --component clippy
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: linux-cargo-${{ hashFiles('desktop/Cargo.lock') }}
+          restore-keys: linux-cargo-
+      - name: Window (TypeScript)
+        working-directory: desktop/app
+        run: npm ci --no-audit --no-fund && npm run build
+      - name: Tests
+        working-directory: desktop
+        run: cargo test --workspace
+      - name: Clippy
+        working-directory: desktop
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  licences:
+    name: Licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-about
+          key: licence-tools-deny-0.22.0-about-0.9.3
+      - name: Tools
+        run: |
+          command -v cargo-deny || cargo install --locked cargo-deny@0.22.0
+          command -v cargo-about || cargo install --locked cargo-about@0.9.3 --features cli
+      # Only the licences of desktop/deny.toml may enter the programs.
+      - name: Allowed licences
+        working-directory: desktop
+        run: cargo deny check licenses
+      # The file the About screen opens can be generated (every crate's licence found).
+      - name: Licences file
+        working-directory: desktop/app
+        run: npm ci --no-audit --no-fund && npm run licences
+
+  windows:
+    name: Desktop (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: 22 }
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/target
+          key: windows-cargo-${{ hashFiles('desktop/Cargo.lock') }}
+          restore-keys: windows-cargo-
+      - name: Rust targets
+        run: rustup target add i686-pc-windows-msvc
+      - name: Window (TypeScript)
+        working-directory: desktop/app
+        run: npm ci --no-audit --no-fund && npm run build
+      # The app checks that the files it installs exist: the camera DLLs and adb.
+      - name: Files the installer ships
+        working-directory: desktop
+        run: |
+          cargo build --release -p oculibre-vcam-dshow -p oculibre-vcam-mf
+          cargo build --release -p oculibre-vcam-dshow --target i686-pc-windows-msvc
+          powershell -NoProfile -ExecutionPolicy Bypass -File app/src-tauri/windows/fetch-adb.ps1
+      - name: Tests
+        working-directory: desktop
+        run: cargo test -p oculibre-protocol -p oculibre-core -p oculibre-vcam-shm -p oculibre-vcam-dshow -p oculibre-vcam-mf
+      - name: Clippy
+        working-directory: desktop
+        run: cargo clippy -p oculibre-protocol -p oculibre-core -p oculibre-cli -p oculibre-vcam-shm -p oculibre-vcam-dshow -p oculibre-vcam-mf -p oculibre-app --all-targets -- -D warnings
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with: { distribution: temurin, java-version: 17, cache: gradle }
+      - name: Unit tests and debug build
+        working-directory: android
+        run: ./gradlew --no-daemon testDebugUnitTest assembleDebug

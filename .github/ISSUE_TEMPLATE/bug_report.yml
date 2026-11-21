@@ -1,0 +1,65 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! English or French. **Never paste a pairing QR code, a link starting
+        with `oculibre://pair`, or a key file**: they let someone pair with your computer.
+        A security problem? Report it privately (link on the previous page), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+    validations: { required: true }
+  - type: input
+    id: problem
+    attributes:
+      label: Problem code shown, if any
+      placeholder: "e.g. 401, 503 (in the alert, on the computer or the phone)"
+  - type: input
+    id: phone
+    attributes:
+      label: Phone
+      placeholder: "e.g. Samsung Galaxy S23 Ultra, Android 17"
+    validations: { required: true }
+  - type: dropdown
+    id: os
+    attributes:
+      label: Computer
+      options: [Windows 11, Windows 10, Ubuntu 26.04, Ubuntu 24.04, Debian 13, Other Linux, macOS]
+    validations: { required: true }
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options: [Wi-Fi, USB cable (USB debugging), Both]
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Oculibre versions
+      description: Settings › About on the computer, Settings on the phone.
+      placeholder: "computer 0.4.0, phone 0.4.0"
+    validations: { required: true }
+  - type: input
+    id: app
+    attributes:
+      label: App using the camera, if it matters
+      placeholder: "e.g. OBS 33, Discord, Teams, Chrome (Meet)"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Optional. Remove anything personal first.
+      render: text

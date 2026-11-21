@@ -1,0 +1,31 @@
+# cargo-about: the licences of the crates shipped in the desktop app, listed in the file its About
+# screen opens (generated at build time by app/scripts/licences.mjs). Keep in sync with deny.toml.
+# The order is the preference when a crate offers a choice ("A OR B"): its own licence file when
+# possible (dunce ships the CC0 text, so CC0-1.0 comes before MIT-0).
+accepted = [
+    "MIT",
+    "CC0-1.0",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "Unlicense",
+]
+workarounds = ["ring", "rustls"]
+# Only what ends up in the binaries.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# FFmpeg's Rust bindings (types only; FFmpeg itself is the system's library, loaded at run time).
+[ffmpeg-sys-next]
+accepted = ["WTFPL"]
+
+# Encodes the preview pictures; part of it derives from the Independent JPEG Group's code.
+[jpeg-encoder]
+accepted = ["IJG"]

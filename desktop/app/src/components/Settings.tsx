@@ -15,6 +15,7 @@ import {
   when,
   forgetPhone,
   inApp,
+  openLicences,
   onWindows,
   setSettings,
   settings as loadSettings,
@@ -309,6 +310,20 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
                 <span className="oc-row__value oc-row__value--muted">{licence}</span>
               </div>
             ))}
+            <div className="oc-row">
+              <span className="oc-row__label">
+                {t("licences_all")}
+                <span className="oc-row__hint">{t("licences_all_hint")}</span>
+              </span>
+              <button
+                type="button"
+                className="oc-btn oc-btn--secondary"
+                disabled={!inApp}
+                onClick={() => openLicences().catch((e) => setError(String(e)))}
+              >
+                {t("licences_open")}
+              </button>
+            </div>
           </div>
         </section>
       </div>

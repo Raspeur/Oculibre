@@ -55,9 +55,9 @@
 }
 
 // Status marks for roadmaps and result tables.
-#let done = text(fill: rgb("#2e7d32"), weight: "bold")[✔]
+#let done = text(fill: rgb("#2e7d32"), weight: "bold")[✓]
 #let open = text(fill: luma(140))[○]
-#let fail = text(fill: rgb("#c62828"), weight: "bold")[✘]
+#let fail = text(fill: rgb("#c62828"), weight: "bold")[✗]
 
 // Highlighted remark.
 #let remark(title: [Note], body) = block(

@@ -12,7 +12,7 @@ SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
 WITH_VCAM=0
 [ "${1:-}" = "--vcam" ] && WITH_VCAM=1
 
-ok()   { printf '  \033[32m✔\033[0m %s\n' "$*"; }
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 APT=()

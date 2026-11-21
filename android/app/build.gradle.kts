@@ -33,6 +33,8 @@ android {
     // Vendored sources (no Gradle dependency): ZXing's QR decoder, unchanged, with its licence.
     // See third_party/zxing/README.md.
     sourceSets["main"].java.srcDir("../third_party/zxing/src")
+    // Its licence goes into the APK too (About › Open source licences), copied at build time.
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/licences"))
 
     testOptions {
         unitTests.all {
@@ -45,6 +47,13 @@ android {
 // Intentionally no runtime dependencies: platform APIs only (small APK, F-Droid friendly, works on
 // old devices). JUnit is only used by the unit tests on the build machine. Small vendored sources
 // under a licence compatible with MIT are allowed, in third_party/ (#16).
+// Licences of vendored code, read by the About screen (assets/licences/).
+val copyLicences by tasks.registering(Copy::class) {
+    from("../third_party/zxing/LICENSE") { rename { "zxing-LICENSE.txt" } }
+    into(layout.buildDirectory.dir("generated/licences/licences"))
+}
+tasks.named("preBuild") { dependsOn(copyLicences) }
+
 dependencies {
     testImplementation("junit:junit:4.13.2")
 }

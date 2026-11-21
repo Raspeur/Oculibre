@@ -35,7 +35,7 @@ Estimates are for one person at about 8–10 h/week (side project). #done done �
 - #done Glass-to-glass latency measured and documented (30 and 60 fps)
 - #done Automatic bench: `oculibre bench` walks every camera × mode through the protocol 0.2 `set_mode`
   command and writes the results into the phone's `devices/` report
-- 🎯 _Usable on Linux_
+- Goal: _Usable on Linux_
 
 = Phase 2 — Wi-Fi and security
 
@@ -54,7 +54,7 @@ Estimates are for one person at about 8–10 h/week (side project). #done done �
 - #open Windows DirectShow backend (Softcam-based)
 - #open Windows 11 Media Foundation backend
 - #open MSI installer, code signing (SignPath Foundation)
-- 🎯 _v1: Linux + Windows, video only_
+- Goal: _v1: Linux + Windows, video only_
 
 = Phase 4 — Station mode and old devices
 

@@ -374,3 +374,8 @@ export function decoders(): Promise<Decoders> {
     ? invoke<Decoders>("decoders")
     : Promise.resolve({ ffmpeg: null, openh264: null, ffmpeg_info: null, openh264_version: null });
 }
+
+/** Opens the licences of every component the app ships, in the computer's browser. */
+export function openLicences(): Promise<void> {
+  return invoke<void>("open_licences");
+}

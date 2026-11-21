@@ -19,5 +19,5 @@ fi
 find docs -name '*.typ' ! -name 'oculibre.typ' ! -name 'example.typ' ! -path 'docs/build/*' | sort |
 while read -r f; do
     out="$(pdf_for "$f")"
-    typst compile --root . "$f" "$out" && echo "✔ $out"
+    typst compile --root . "$f" "$out" && echo "✓ $out"
 done

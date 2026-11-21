@@ -336,8 +336,8 @@ rate an app can request in a regular session; "high-speed" modes are slow-motion
         )
 
     rel = lambda p: os.path.relpath(p, Path.cwd())  # noqa: E731
-    print(f"✔ {rel(dump_file)}  ({len(clean) // 1024} KiB, {redacted} entries redacted)")
-    print(f"✔ {rel(report)}" + ("  (kept: already exists)" if report_existed else "  (created: fill in the results)"))
+    print(f"✓ {rel(dump_file)}  ({len(clean) // 1024} KiB, {redacted} entries redacted)")
+    print(f"✓ {rel(report)}" + ("  (kept: already exists)" if report_existed else "  (created: fill in the results)"))
     print()
     print(table)
 

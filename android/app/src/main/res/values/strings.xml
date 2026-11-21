@@ -83,6 +83,8 @@
     <string name="about">About Oculibre</string>
     <string name="about_version">Version %1$s</string>
     <string name="about_text">Free and open source (MIT licence). Your phone becomes the webcam of your computer: nothing leaves your network, no account, no cloud.</string>
+    <string name="licences">Open source licences</string>
+    <string name="licences_zxing">ZXing 3.5.3, QR code decoding (the in-app scanner).\nCopyright ZXing authors.\nApache License 2.0:</string>
     <string name="section_advanced">Advanced</string>
     <string name="advanced_settings">Technical settings</string>
     <string name="advanced_settings_value">Address, quality</string>

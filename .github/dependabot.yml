@@ -1,0 +1,26 @@
+# Dependabot: security alerts and weekly updates of the dependencies (grouped, to keep the noise low).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /desktop
+    schedule: { interval: weekly }
+    groups:
+      rust: { patterns: ["*"] }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /desktop/app
+    schedule: { interval: weekly }
+    groups:
+      npm: { patterns: ["*"] }
+    open-pull-requests-limit: 5
+  # The Android app has no runtime dependency (only the Gradle plugin and JUnit for tests).
+  - package-ecosystem: gradle
+    directory: /android
+    schedule: { interval: monthly }
+    groups:
+      gradle: { patterns: ["*"] }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups:
+      actions: { patterns: ["*"] }

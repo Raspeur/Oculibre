@@ -1,0 +1,4 @@
+# gitleaks: findings checked and accepted (#27). Both are the same made-up pairing token of the tests
+# (a real one is random, valid 10 minutes, single use); never a real secret.
+1c66a865739e0dfaf2751578b39af17ba5e04c83:android/app/src/test/java/org/oculibre/PairingTest.kt:generic-api-key:10
+1c66a865739e0dfaf2751578b39af17ba5e04c83:tests/protocol/vectors/hello_camera_pairing.json:generic-api-key:13

@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" width="960" height="400" role="img" aria-labelledby="title desc">
+  <title id="title">How Oculibre works</title>
+  <desc id="desc">The Android phone films and encodes the video, sends it to the computer over Wi-Fi (encrypted, paired with a QR code) or over the USB cable; Oculibre on the computer decodes it on the graphics card and shows it as a webcam named Oculibre in every app: OBS, Zoom, Teams, Discord, Google Meet.</desc>
+  <style>
+    text { font-family: -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; fill: #0B1220; }
+    .muted { fill: #4A5873; }
+    .title { font-size: 17px; font-weight: 700; }
+    .small { font-size: 13px; }
+    .tiny { font-size: 12px; }
+    .card { fill: #F3F5F9; stroke: #D5DCE8; stroke-width: 1.5; }
+    .chip { fill: #FFFFFF; stroke: #D5DCE8; stroke-width: 1.2; }
+    .outline { fill: none; stroke: #0B1220; stroke-width: 3; }
+    .screen { fill: #0B1220; }
+    .base { fill: #4A5873; }
+    .wire { fill: none; stroke: #9AA7BD; stroke-width: 3; stroke-linecap: round; }
+    .flow { fill: none; stroke: #FE633C; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 10 18; animation: flow 1.2s linear infinite; }
+    .flow.usb { stroke: #12A36B; }
+    .accent { fill: #FE633C; }
+    .ring { fill: none; stroke: #FE633C; stroke-width: 3; }
+    .live { fill: #12A36B; }
+    .live-line { fill: none; stroke: #12A36B; stroke-width: 2.2; stroke-linecap: round; }
+    .badge-text { fill: #0B1220; font-weight: 700; }
+    @keyframes flow { to { stroke-dashoffset: -28; } }
+    @media (prefers-reduced-motion: reduce) { .flow { animation: none; } }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #E9EEF6; }
+      .muted { fill: #A3B1C7; }
+      .card { fill: #111A2C; stroke: #22314F; }
+      .chip { fill: #0E1729; stroke: #22314F; }
+      .outline { stroke: #E9EEF6; }
+      .screen { fill: #060B14; }
+      .base { fill: #A3B1C7; }
+      .wire { stroke: #33476E; }
+      .flow.usb { stroke: #3DDC97; }
+      .live { fill: #3DDC97; }
+      .live-line { stroke: #3DDC97; }
+      .badge-text { fill: #0B1220; }
+    }
+  </style>
+
+  <!-- The phone -->
+  <rect class="card" x="20" y="40" width="210" height="300" rx="18"/>
+  <rect class="outline" x="85" y="66" width="80" height="148" rx="14"/>
+  <rect class="screen" x="91" y="80" width="68" height="112" rx="5"/>
+  <circle class="ring" cx="125" cy="136" r="17"/>
+  <circle cx="125" cy="136" r="6" class="accent"/>
+  <rect class="base" x="113" y="200" width="24" height="4" rx="2"/>
+  <text x="125" y="248" text-anchor="middle" class="title">Your phone</text>
+  <text x="125" y="270" text-anchor="middle" class="small muted">Android 5 and up,</text>
+  <text x="125" y="287" text-anchor="middle" class="small muted">even an old one</text>
+  <text x="125" y="314" text-anchor="middle" class="tiny muted">films and encodes (H.264)</text>
+
+  <!-- The two links -->
+  <path class="wire" d="M232 150 C 300 150, 330 120, 400 120 L 470 120 C 540 120, 560 150, 628 150"/>
+  <path class="flow" d="M232 150 C 300 150, 330 120, 400 120 L 470 120 C 540 120, 560 150, 628 150"/>
+  <path class="wire" d="M232 230 C 300 230, 330 260, 400 260 L 470 260 C 540 260, 560 230, 628 230"/>
+  <path class="flow usb" d="M232 230 C 300 230, 330 260, 400 260 L 470 260 C 540 260, 560 230, 628 230"/>
+
+  <!-- Wi-Fi label with a padlock -->
+  <rect class="chip" x="316" y="72" width="238" height="34" rx="17"/>
+  <g transform="translate(332 79)">
+    <rect x="0" y="8" width="14" height="11" rx="2" class="accent"/>
+    <path d="M3 8 V5 a4 4 0 0 1 8 0 V8" class="ring" style="stroke-width: 2.2"/>
+  </g>
+  <text x="354" y="94" class="small"><tspan font-weight="700">Wi-Fi</tspan> <tspan class="muted">encrypted, paired by QR</tspan></text>
+
+  <!-- USB label -->
+  <rect class="chip" x="345" y="274" width="180" height="34" rx="17"/>
+  <g transform="translate(360 282)">
+    <path d="M0 9 H17 M17 9 l-5 -5 M17 9 l-5 5" class="live-line"/>
+  </g>
+  <text x="384" y="296" class="small"><tspan font-weight="700">USB cable</tspan> <tspan class="muted">or both</tspan></text>
+
+  <!-- The computer -->
+  <rect class="card" x="630" y="40" width="200" height="300" rx="18"/>
+  <rect class="outline" x="668" y="74" width="124" height="82" rx="8"/>
+  <rect class="screen" x="674" y="80" width="112" height="70" rx="3"/>
+  <circle class="ring" cx="730" cy="115" r="14" style="stroke-width: 2.5"/>
+  <circle cx="730" cy="115" r="5" class="accent"/>
+  <rect class="base" x="712" y="160" width="36" height="10" rx="2"/>
+  <rect class="base" x="696" y="170" width="68" height="5" rx="2.5"/>
+  <text x="730" y="210" text-anchor="middle" class="title">Your computer</text>
+  <text x="730" y="232" text-anchor="middle" class="small muted">Windows or Linux</text>
+  <text x="730" y="256" text-anchor="middle" class="tiny muted">decodes on the graphics card</text>
+  <rect class="accent" x="660" y="276" width="140" height="40" rx="10"/>
+  <text x="730" y="301" text-anchor="middle" class="small badge-text">Webcam "Oculibre"</text>
+
+  <!-- The apps -->
+  <path class="wire" d="M832 166 H 840 M840 61 V 271 M840 61 H 850 M840 103 H 850 M840 145 H 850 M840 187 H 850 M840 229 H 850 M840 271 H 850" style="stroke-width: 2"/>
+  <g class="small">
+    <rect class="chip" x="852" y="44" width="96" height="34" rx="10"/><text x="900" y="66" text-anchor="middle">OBS Studio</text>
+    <rect class="chip" x="852" y="86" width="96" height="34" rx="10"/><text x="900" y="108" text-anchor="middle">Zoom</text>
+    <rect class="chip" x="852" y="128" width="96" height="34" rx="10"/><text x="900" y="150" text-anchor="middle">Teams</text>
+    <rect class="chip" x="852" y="170" width="96" height="34" rx="10"/><text x="900" y="192" text-anchor="middle">Discord</text>
+    <rect class="chip" x="852" y="212" width="96" height="34" rx="10"/><text x="900" y="234" text-anchor="middle">Google Meet</text>
+    <rect class="chip" x="852" y="254" width="96" height="34" rx="10"/><text x="900" y="276" text-anchor="middle">Chrome, Edge</text>
+    <text x="900" y="316" text-anchor="middle" class="tiny muted">and every app</text>
+    <text x="900" y="332" text-anchor="middle" class="tiny muted">with a camera</text>
+  </g>
+
+  <!-- The promise -->
+  <text x="480" y="384" text-anchor="middle" class="small muted">About <tspan class="live" font-weight="700">80 ms</tspan> of delay  ·  up to 1080p at 60 fps or 4K  ·  nothing leaves your network</text>
+</svg>

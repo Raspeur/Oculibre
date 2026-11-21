@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability
-    about: Please report vulnerabilities privately, not in a public issue.
+    url: https://github.com/Raspeur/Oculibre/security/advisories/new
+    about: Report vulnerabilities privately here, never in a public issue.
+  - name: Question or idea
+    url: https://github.com/Raspeur/Oculibre/discussions
+    about: Ask how to do something, share a setup or discuss an idea. Issues are for bugs and planned work.

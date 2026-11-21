@@ -9,8 +9,9 @@
 #
 # Why one package per release: FFmpeg changes its binary interface at each major version, and
 # Oculibre loads the libavcodec major it was built against (libavcodec.so.60 on Ubuntu 24.04,
-# .61 on Debian 13, .62 on Ubuntu 26.04). The window (HTML/JS) is the same everywhere: it is
-# built once here, the containers only compile the Rust side.
+# .61 on Debian 13, .62 on Ubuntu 26.04). The window (HTML/JS) and the licences file are the same
+# everywhere: they are built once here (needs cargo-about, see desktop/app/scripts/licences.mjs),
+# the containers only compile the Rust side.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -47,8 +48,8 @@ done
 
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/desktop/Cargo.toml" | head -1)
 
-echo "== The window (once, on this computer)"
-(cd "$ROOT/desktop/app" && npm run build >/dev/null)
+echo "== The window and the licences file (once, on this computer)"
+(cd "$ROOT/desktop/app" && npm run build >/dev/null && npm run --silent licences)
 
 for t in "${targets[@]}"; do
     echo "== $t: build environment"
@@ -58,6 +59,8 @@ for t in "${targets[@]}"; do
     work=$OUT/$t
     mkdir -p "$work/src" "$work/cache"
     rsync -a --delete --exclude target --exclude node_modules "$ROOT/desktop/" "$work/src/desktop/"
+    mkdir -p "$work/src/desktop/target/licences"
+    cp "$ROOT/desktop/target/licences/THIRD-PARTY-LICENSES.html" "$work/src/desktop/target/licences/"
 
     config=$(printf '{"build":{"beforeBuildCommand":""},"bundle":{"linux":{"deb":{"depends":[%s],"recommends":["%s","adb","pkexec"]}}}}' "${MODULE[$t]}" "${DECODERS[$t]}")
     echo "== $t: build (first time: several minutes)"
