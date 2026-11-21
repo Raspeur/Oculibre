@@ -1,0 +1,54 @@
+name: Device report
+description: How Oculibre works (or doesn't) on a given phone — the most useful contribution
+title: "[Device] <brand> <model> — Android <version>"
+labels: [devices]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One report per phone. Old phones are especially welcome: Oculibre aims at Android 5 and up.
+  - type: input
+    id: phone
+    attributes:
+      label: Phone
+      placeholder: "e.g. Xiaomi Redmi Note 9 Pro"
+    validations: { required: true }
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+      placeholder: "e.g. 12 (MIUI 14)"
+    validations: { required: true }
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options: [Works, Works with problems, Does not work]
+    validations: { required: true }
+  - type: input
+    id: quality
+    attributes:
+      label: Best quality that works
+      placeholder: "e.g. 1080p60 back camera, 4K30"
+  - type: input
+    id: latency
+    attributes:
+      label: Latency shown on the computer
+      placeholder: "e.g. 90 ms over Wi-Fi, 80 ms over USB"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Computer
+      options: [Windows 11, Windows 10, Ubuntu 26.04, Ubuntu 24.04, Debian 13, Other Linux, macOS]
+    validations: { required: true }
+  - type: checkboxes
+    id: connections
+    attributes:
+      label: Connections tried
+      options:
+        - label: Wi-Fi
+        - label: USB cable (USB debugging)
+  - type: textarea
+    id: notes
+    attributes:
+      label: Problems, heat after 30 minutes, anything else
