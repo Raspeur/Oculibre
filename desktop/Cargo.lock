@@ -2681,7 +2681,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-app"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "oculibre-core",
  "serde",
@@ -2695,7 +2695,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "oculibre-core",
  "oculibre-protocol",
@@ -2703,7 +2703,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ffmpeg-sys-next",
  "if-addrs",
@@ -2725,7 +2725,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-protocol"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -2734,7 +2734,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-vcam-dshow"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "oculibre-vcam-shm",
  "windows",
@@ -2743,7 +2743,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-vcam-mf"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "oculibre-vcam-shm",
  "windows",
@@ -2752,7 +2752,7 @@ dependencies = [
 
 [[package]]
 name = "oculibre-vcam-shm"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "windows",
 ]

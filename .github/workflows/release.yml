@@ -1,0 +1,161 @@
+# Builds every package of a release when a version tag is pushed (`git tag v0.4.0 && git push origin
+# v0.4.0`), then makes a *draft* GitHub release with them and their SHA-256 checksums: the maintainer
+# reads it and publishes it by hand. Not marked as a pre-release, even for 0.x: the README's download
+# links point to releases/latest, which skips pre-releases. See .github/RELEASING.md.
+#
+# - Only the owner can push v* tags (ruleset "release tags").
+# - No cache here: a cache written by a pull request must never end up in a published package.
+# - The Android signing key is a secret of the "release" environment, given to one step only.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # A rehearsal from Actions › Release › Run workflow: every package is built (the APK unsigned),
+  # nothing is published.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Versions match the tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: Tag, desktop, window and Android app say the same version
+        if: github.ref_type == 'tag'
+        run: |
+          tag=${GITHUB_REF_NAME#v}
+          desktop=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop/Cargo.toml | head -1)
+          tauri=$(python3 -c "import json; print(json.load(open('desktop/app/src-tauri/tauri.conf.json'))['version'])")
+          npm=$(python3 -c "import json; print(json.load(open('desktop/app/package.json'))['version'])")
+          android=$(sed -n 's/^ *versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)
+          echo "tag $tag, desktop $desktop, tauri $tauri, npm $npm, android $android"
+          [ "$tag" = "$desktop" ] && [ "$tag" = "$tauri" ] && [ "$tag" = "$npm" ] && [ "$tag" = "$android" ]
+
+  deb:
+    name: Linux (${{ matrix.release }})
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        release: [ubuntu-26.04, ubuntu-24.04, debian-13]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: cargo-about (licences file)
+        run: cargo install --locked cargo-about@0.9.3 --features cli
+      - name: Window dependencies
+        working-directory: desktop/app
+        run: npm ci --no-audit --no-fund
+      # Built in a container of that release, then installed on a clean one (scripts/build-deb.sh).
+      - name: Package
+        run: bash scripts/build-deb.sh ${{ matrix.release }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deb-${{ matrix.release }}
+          path: desktop/target/deb/*.deb
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: 22 }
+      - name: Rust target and cargo-about
+        run: |
+          rustup target add i686-pc-windows-msvc
+          cargo install --locked cargo-about@0.9.3 --features cli
+      # tauri build runs tauri.windows.conf.json's beforeBuildCommand: adb, licences, window, DLLs.
+      - name: Installer
+        working-directory: desktop/app
+        run: |
+          npm ci --no-audit --no-fund
+          npx tauri build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows
+          path: desktop/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+  android:
+    name: Android
+    needs: check
+    runs-on: ubuntu-latest
+    # The signing key only for a tag (the environment accepts v* tags only).
+    environment: ${{ github.ref_type == 'tag' && 'release' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with: { distribution: temurin, java-version: 17 }
+      - name: Signed APK
+        working-directory: android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.OCULIBRE_KEYSTORE_BASE64 }}
+          OCULIBRE_KEYSTORE_PASSWORD: ${{ secrets.OCULIBRE_KEYSTORE_PASSWORD }}
+          OCULIBRE_KEY_ALIAS: ${{ secrets.OCULIBRE_KEY_ALIAS }}
+          OCULIBRE_KEY_PASSWORD: ${{ secrets.OCULIBRE_KEY_PASSWORD }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/apk"
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            ./gradlew --no-daemon testDebugUnitTest assembleRelease
+            cp app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/apk/Oculibre_rehearsal_android-unsigned.apk"
+            exit 0
+          fi
+          [ -n "$KEYSTORE_BASE64" ] || { echo "the release environment has no signing key"; exit 1; }
+          export OCULIBRE_KEYSTORE_FILE="$RUNNER_TEMP/release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$OCULIBRE_KEYSTORE_FILE"
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease
+          rm -f "$OCULIBRE_KEYSTORE_FILE"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/apk/Oculibre_${GITHUB_REF_NAME#v}_android.apk"
+      - name: Signature check
+        if: github.ref_type == 'tag'
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs "$RUNNER_TEMP"/apk/*.apk | grep -E "DN|SHA-256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android
+          path: ${{ runner.temp }}/apk/*.apk
+          if-no-files-found: error
+
+  publish:
+    name: Draft release
+    needs: [deb, windows, android]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Checksums and draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd packages
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          notes="../.github/release-notes/$GITHUB_REF_NAME.md"
+          [ -f "$notes" ] || { echo "Release notes to write." > ../notes.md; notes=../notes.md; }
+          gh release create "$GITHUB_REF_NAME" * --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Oculibre ${GITHUB_REF_NAME#v}" --notes-file "$notes"

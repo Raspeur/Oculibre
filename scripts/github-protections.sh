@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Turns on the repository's protections (#27): rulesets (.github/rulesets), Dependabot, merged
-# branches deleted, and the two that need a public repository on a free plan (secret scanning,
-# private vulnerability reporting).
+# branches deleted, the release environment, and what needs a public repository on a free plan
+# (secret scanning, private vulnerability reporting, approval of releases).
 # Run it now, then again right after making the repository public:
 #   gh repo edit Raspeur/Oculibre --visibility public --accept-visibility-change-consequences
 #   bash scripts/github-protections.sh
@@ -33,6 +33,21 @@ try "Dependabot security updates" gh api -X PUT "repos/$REPO/automated-security-
 
 # A pull request's branch is deleted once it is merged (it can be restored from the pull request).
 try "Delete merged branches" gh repo edit "$REPO" --delete-branch-on-merge
+
+# The "release" environment holds the Android signing key (.github/RELEASING.md): only v* tags may
+# use it, and, once the repository is public, each release waits for the owner's approval.
+gh api -X PUT "repos/$REPO/environments/release" --input - >/dev/null <<'JSON'
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}}
+JSON
+if ! gh api "repos/$REPO/environments/release/deployment-branch-policies" --jq '.branch_policies[].name' | grep -qxF 'v*'; then
+    gh api -X POST "repos/$REPO/environments/release/deployment-branch-policies" -f name='v*' -f type=tag >/dev/null
+fi
+echo "== Release environment: v* tags only"
+owner_id=$(gh api "users/${REPO%%/*}" --jq .id)
+try "Release environment: owner's approval" gh api -X PUT "repos/$REPO/environments/release" --input - <<JSON
+{"deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true},
+ "reviewers": [{"type": "User", "id": $owner_id}], "prevent_self_review": false}
+JSON
 
 echo "== Rulesets"
 existing=$(gh api "repos/$REPO/rulesets" --jq '.[].name')
