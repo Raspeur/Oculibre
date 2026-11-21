@@ -402,7 +402,7 @@ pub fn table(rows: &[Row]) -> String {
             }
             Err(e) => {
                 let e = e.replace('|', "/");
-                t += &format!("| {camera} | {mode} | {} | ❌ {e} | | | | | | |\n", r.path);
+                t += &format!("| {camera} | {mode} | {} | error: {e} | | | | | | |\n", r.path);
             }
         }
     }
@@ -715,7 +715,7 @@ mod tests {
              Camera + encoder + queue + network + PC | Mbit/s | Dropped | Decode errors |\n\
              |---|---|---|---|---|---|---|---|---|---|\n\
              | 0 back | 1920×1080 @ 60 | unlisted | 60.0 | 60.0 | 82 / 92 ms | 15 + 22 + 3 + 32 + 10 | 12.0 | 0 | 0 |\n\
-             | 1 front | 3840×2160 @ 30 | normal | ❌ failed (camera / refused) | | | | | | |\n"
+             | 1 front | 3840×2160 @ 30 | normal | error: failed (camera / refused) | | | | | | |\n"
         );
     }
 

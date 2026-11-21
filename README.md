@@ -3,9 +3,9 @@
 **Turn any Android phone — even an old one — into a webcam for Linux, Windows and macOS.**
 Free, open source, private by default. No ads, no watermark, no paid "Pro" tier.
 
-> 🇫🇷 *Oculibre transforme un smartphone Android, même ancien, en webcam pour PC. Gratuit, open source, chiffré par défaut. Les contributions en français sont bienvenues.*
+> **En français :** *Oculibre transforme un smartphone Android, même ancien, en webcam pour PC. Gratuit, open source, chiffré par défaut. Les contributions en français sont bienvenues.*
 
-> ⚠️ **Status: early, Linux only.** The phone streams up to 4K or 1080p60 to a Linux virtual webcam,
+> **Status: early, Linux only.** The phone streams up to 4K or 1080p60 to a Linux virtual webcam,
 > with about 60–110 ms of latency, over USB or over Wi-Fi (encrypted, after pairing with a QR code).
 > Windows and macOS are planned. See [Try it](#try-it-linux-usb).
 
@@ -68,8 +68,8 @@ The documentation is written in [Typst](https://typst.app). Build the PDFs with 
 
 ## Roadmap
 
-1. **Phase 1** ✅ — H.264 over TCP through ADB (USB), received by a Rust CLI writing to v4l2loopback (Linux).
-2. **Phase 2** — Wi-Fi: QR pairing, TLS encryption and mDNS discovery ✅, adaptive bitrate.
+1. **Phase 1** (done) — H.264 over TCP through ADB (USB), received by a Rust CLI writing to v4l2loopback (Linux).
+2. **Phase 2** — Wi-Fi: QR pairing, TLS encryption and mDNS discovery (done), adaptive bitrate.
 3. **Phase 3** — Tauri desktop app, then Windows (DirectShow, then Media Foundation).
 4. **Phase 4** — Station mode, thermal management, test campaign on old devices.
 5. **Phase 5** — macOS, audio (virtual microphone), advanced camera controls.

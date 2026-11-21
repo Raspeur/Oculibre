@@ -44,5 +44,5 @@ The phone's serial number is never read. **Never commit a raw dump**: `camera-du
 
 | Device | Android | Listed max fps | Real 60 fps (unlisted `[60,60]`) | Slow-motion mode | Latency 1080p60, USB / Wi-Fi (glass-to-glass) |
 |---|---|---|---|---|---|
-| [Xiaomi Redmi Note 9 Pro](redmi/redmi-note-9-pro/report.md) | 12 | 30 | ✅ 1080p 60.5 fps (exposure ≤ 8.3 ms) | 1080p@120: too dark indoors | not measured yet |
-| [Samsung Galaxy S23 Ultra](samsung/galaxy-s23-ultra/report.md) | 17 | 30 | ✅ 1080p 59.8 fps (exposure 16.7 ms) | 1080p@120/240: good picture | 112 ms / 103 ms |
+| [Xiaomi Redmi Note 9 Pro](redmi/redmi-note-9-pro/report.md) | 12 | 30 | 1080p 60.5 fps (exposure ≤ 8.3 ms) | 1080p@120: too dark indoors | not measured yet |
+| [Samsung Galaxy S23 Ultra](samsung/galaxy-s23-ultra/report.md) | 17 | 30 | 1080p 59.8 fps (exposure 16.7 ms) | 1080p@120/240: good picture | 112 ms / 103 ms |
