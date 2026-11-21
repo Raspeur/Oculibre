@@ -108,7 +108,8 @@ Build on Windows itself (the DLLs and the installer are Windows-only):
 
 1. Install [Rust](https://rustup.rs) with the MSVC toolchain (it offers the Visual Studio Build
    Tools), [Node.js](https://nodejs.org) LTS, and Git.
-2. `rustup target add i686-pc-windows-msvc` (the 32-bit DirectShow DLL, for 32-bit apps).
+2. `rustup target add i686-pc-windows-msvc` (the 32-bit DirectShow DLL, for 32-bit apps), and
+   `cargo install --locked cargo-about --features cli` (the licences file, see below).
 3. From `desktop/app`: `npm install`, then `npm run tauri dev` to run the app, or
    `npm run tauri build` for the installer (`target/release/bundle/nsis/Oculibre_<version>_x64-setup.exe`).
    The build downloads Google's `adb` (pinned version and checksum, `app/src-tauri/windows/fetch-adb.ps1`).
@@ -148,6 +149,19 @@ No Flatpak, Snap or AppImage for now: none of them can bring the virtual camera'
 (see [`docs/research/linux-packages.typ`](../docs/research/linux-packages.typ)).
 
 For quick local tests, `cd app && npm run tauri build -- --bundles deb` builds for this computer only.
+
+## Licences of the components
+
+Each package ships `THIRD-PARTY-LICENSES.html`, which the About screen opens ("Show the licences"):
+every crate built into the app for that platform, the Rust standard library, the npm packages of
+the page and the fonts, each with its licence text. It is generated at build time, never committed:
+`npm run licences` (in `app/`, runs `app/scripts/licences.mjs`) → `target/licences/`. It needs
+[cargo-about](https://github.com/EmbarkStudios/cargo-about):
+`cargo install --locked cargo-about --features cli`. Its settings: [`about.toml`](about.toml).
+
+Which licences may enter at all is checked in CI by [cargo-deny](https://github.com/EmbarkStudios/cargo-deny)
+(`cargo deny check licenses`, list in [`deny.toml`](deny.toml)): a new dependency under another licence
+fails the pull request. Adding a licence to the list is a decision, not a fix.
 
 ## Develop
 

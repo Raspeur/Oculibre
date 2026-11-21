@@ -332,6 +332,47 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
+/// Opens the licences of everything the app ships (generated at build time by
+/// `app/scripts/licences.mjs`) with the computer's browser. Installed: next to the program on
+/// Windows, in the package's documentation folder on Linux. Development builds also look in
+/// `desktop/target/licences/`, after `npm run licences`.
+#[tauri::command]
+fn open_licences() -> Result<(), String> {
+    const NAME: &str = "THIRD-PARTY-LICENSES.html";
+    let mut places = Vec::new();
+    if cfg!(windows) {
+        if let Some(dir) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|d| d.join(NAME)))
+        {
+            places.push(dir);
+        }
+    } else {
+        places.push(std::path::PathBuf::from("/usr/share/doc/oculibre").join(NAME));
+    }
+    if cfg!(debug_assertions) {
+        places.push(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../target/licences")
+                .join(NAME),
+        );
+    }
+    let file = places
+        .into_iter()
+        .find(|p| p.is_file())
+        .ok_or_else(|| format!("{NAME} not found (generated when the app is packaged)"))?;
+    let opener = if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener)
+        .arg(&file)
+        .spawn()
+        .map(drop)
+        .map_err(|e| format!("{opener}: {e}"))
+}
+
 /// The cameras of the phone being served and their modes (size, frame rate, capture path).
 #[tauri::command(async)]
 fn capabilities(receiver: State<Receiver>) -> Result<Capabilities, String> {
@@ -516,7 +557,8 @@ pub fn run() {
             forget_phone,
             vcam_status,
             fix_vcam,
-            decoders
+            decoders,
+            open_licences
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

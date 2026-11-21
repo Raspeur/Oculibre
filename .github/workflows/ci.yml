@@ -54,6 +54,31 @@ jobs:
         working-directory: desktop
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+  licences:
+    name: Licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/cargo-about
+          key: licence-tools-deny-0.22.0-about-0.9.3
+      - name: Tools
+        run: |
+          command -v cargo-deny || cargo install --locked cargo-deny@0.22.0
+          command -v cargo-about || cargo install --locked cargo-about@0.9.3 --features cli
+      # Only the licences of desktop/deny.toml may enter the programs.
+      - name: Allowed licences
+        working-directory: desktop
+        run: cargo deny check licenses
+      # The file the About screen opens can be generated (every crate's licence found).
+      - name: Licences file
+        working-directory: desktop/app
+        run: npm ci --no-audit --no-fund && npm run licences
+
   windows:
     name: Desktop (Windows)
     runs-on: windows-latest

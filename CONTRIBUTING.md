@@ -94,6 +94,15 @@ When one hard part really needs outside code, a small piece of source code may b
   `README.md` giving its origin, version and checksum, the files kept and what was changed.
 
 First case: ZXing's QR decoder, for the in-app pairing scan ([`android/third_party/zxing`](android/third_party/zxing)).
+Its licence is shown in the app (About › Open source licences): a new vendored piece adds its own.
+
+## Dependencies of the desktop programs
+
+Crates and npm packages are welcome when they earn their place. Their licence must be one of
+[`desktop/deny.toml`](desktop/deny.toml): the CI check *Licences* fails otherwise. The licences file
+the apps ship is generated from the lock files at build time (see
+[`desktop/README.md`](desktop/README.md#licences-of-the-components)); a new npm package bundled into the
+page is added to the list at the top of `desktop/app/scripts/licences.mjs`.
 
 ## Rules for any change touching the network
 

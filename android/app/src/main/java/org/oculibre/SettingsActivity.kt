@@ -224,6 +224,19 @@ class SettingsActivity : Activity() {
             .setTitle("Oculibre ${version()}")
             .setMessage(R.string.about_text)
             .setPositiveButton(R.string.ok, null)
+            .setNeutralButton(R.string.licences) { _, _ -> showLicences() }
+            .show()
+    }
+
+    /** What the vendored code's licences ask for: its notice and the licence text (Apache-2.0). */
+    private fun showLicences() {
+        val zxing = runCatching {
+            assets.open("licences/zxing-LICENSE.txt").bufferedReader().use { it.readText() }
+        }.getOrDefault("")
+        AlertDialog.Builder(this)
+            .setTitle(R.string.licences)
+            .setMessage(getString(R.string.licences_zxing) + "\n\n" + zxing.trimIndent().trim())
+            .setPositiveButton(R.string.ok, null)
             .show()
     }
 

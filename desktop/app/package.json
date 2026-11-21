@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "licences": "node scripts/licences.mjs",
     "preview": "vite preview",
     "tauri": "bash scripts/no-snap-env.sh tauri"
   },

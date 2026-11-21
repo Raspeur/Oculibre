@@ -48,6 +48,7 @@ Then, from this folder:
 npm install          # once, and after a change of package.json
 npm run tauri dev    # opens the window; the page reloads on save, Rust rebuilds on save
 npm run build        # type-checks and builds the page alone (dist/)
+npm run licences     # the licences file of the About screen (needs cargo-about, see ../README.md)
 ```
 
 The virtual camera must be loaded as for the command line (`bash scripts/vcam-load.sh`).

@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run licences && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -55,7 +55,8 @@
           "/etc/modprobe.d/oculibre.conf": "linux/modprobe-oculibre.conf",
           "/etc/modules-load.d/oculibre.conf": "linux/modules-load-oculibre.conf",
           "/usr/lib/oculibre/vcam-setup": "linux/vcam-setup.sh",
-          "/usr/share/polkit-1/actions/org.oculibre.vcam.policy": "linux/org.oculibre.vcam.policy"
+          "/usr/share/polkit-1/actions/org.oculibre.vcam.policy": "linux/org.oculibre.vcam.policy",
+          "/usr/share/doc/oculibre/THIRD-PARTY-LICENSES.html": "../../target/licences/THIRD-PARTY-LICENSES.html"
         },
         "postInstallScript": "linux/postinst.sh"
       }
