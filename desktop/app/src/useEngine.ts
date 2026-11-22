@@ -37,6 +37,8 @@ export interface EngineState {
   /** Rotation and mirror applied, and whether the rotation follows the phone. */
   transform: (Transform & { auto: boolean }) | null;
   decoder: string | null;
+  /** The graphics card was too slow: decoding moved to the processor (problem 505). */
+  decoderTooSlow: { decode_ms: number; frame_ms: number } | null;
   /** Size of the virtual camera (it may be locked by an app). */
   outputSize: [number, number] | null;
   /** Phones this computer knows (paired for Wi-Fi, or seen over USB). */
@@ -56,6 +58,7 @@ const initial: EngineState = {
   status: null,
   transform: null,
   decoder: null,
+  decoderTooSlow: null,
   outputSize: null,
   known: [],
   key: null,
@@ -77,6 +80,7 @@ const noPhone = {
   status: null,
   transform: null,
   decoder: null,
+  decoderTooSlow: null,
   outputSize: null,
 };
 
@@ -111,6 +115,8 @@ function reduceEvent(state: EngineState, event: EngineEvent): EngineState {
       return { ...state, transform: { ...event.data.transform, auto: event.data.auto } };
     case "Decoder":
       return { ...state, decoder: event.data.name };
+    case "DecoderTooSlow":
+      return { ...state, decoderTooSlow: { decode_ms: event.data.decode_ms, frame_ms: event.data.frame_ms } };
     case "VirtualCameraSize":
       return { ...state, outputSize: event.data.size };
     case "SessionEnded":

@@ -137,6 +137,7 @@ class Component extends DCLogic {
       P('502', 'info', 'Décodage par le processeur', 'La carte graphique n’a pas pu décoder la vidéo : le processeur prend le relais, l’ordinateur peut chauffer un peu plus.', 'réglages, ligne « Décodage de la vidéo »'),
       P('503', 'error', 'Aucun décodeur vidéo sur cet ordinateur', 'Sans FFmpeg ni OpenH264, Oculibre ne peut pas afficher la vidéo du téléphone. Installez le paquet libavcodec (conseillé) ou libopenh264.', 'fenêtre principale, au lancement'),
       P('504', 'warning', 'Cet ordinateur n’arrive pas à suivre', 'Des images sont sautées pour que le délai reste court. Désactivez l’économie d’énergie, passez l’aperçu en Léger, fermez les programmes gourmands, ou choisissez une qualité plus basse.', 'sous les chiffres, tant que l’ordinateur décroche', 'Aperçu léger'),
+      P('505', 'info', 'Décodage passé au processeur', 'La carte graphique mettait 20 ms par image, plus que les 17 ms entre deux images du téléphone : le processeur décode la vidéo jusqu’à la fin de cette session. L’économie d’énergie ralentit souvent la carte graphique.', 'sous les chiffres, jusqu’à la fin de la session'),
     ];
     return { items };
   }

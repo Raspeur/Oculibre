@@ -74,6 +74,14 @@ pub fn events(port: u16) -> Events {
             println!("\nRotation: {}°{mode}{mirror}", transform.rotation);
         }
         Event::Decoder { name } => println!("\nDecoder: {name}"),
+        Event::DecoderTooSlow {
+            from,
+            decode_ms,
+            frame_ms,
+        } => println!(
+            "\n{from} takes {decode_ms:.1} ms per picture, the phone sends one every \
+             {frame_ms:.1} ms: decoding on the processor instead"
+        ),
         Event::RequestRefused { id, code, message } => eprintln!(
             "\nphone refused request {id}: {code} {}",
             message.unwrap_or_default()

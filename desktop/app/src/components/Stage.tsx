@@ -122,6 +122,21 @@ export function Stage({ engine }: { engine: EngineState }) {
           </div>
         </div>
       )}
+      {engine.decoderTooSlow && (
+        <div className="oc-alert oc-alert--info" role="status">
+          <span className="oc-alert__icon" aria-hidden="true">i</span>
+          <div className="oc-alert__body">
+            <span className="oc-alert__title">{t("gpu_slow_title")}</span>
+            <span className="oc-alert__text">
+              {t("gpu_slow_text", {
+                decode: engine.decoderTooSlow.decode_ms.toFixed(0),
+                frame: engine.decoderTooSlow.frame_ms.toFixed(0),
+              })}
+            </span>
+            <span className="oc-alert__code">{t("code", { code: 505 })}</span>
+          </div>
+        </div>
+      )}
       {status?.link_slow && (
         <div className="oc-alert" role="status">
           <span className="oc-alert__icon" aria-hidden="true">!</span>

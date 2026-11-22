@@ -169,6 +169,7 @@ export type EngineEvent =
   | { kind: "StreamPaused"; data: { reason: string } }
   | { kind: "Transform"; data: { transform: Transform; auto: boolean } }
   | { kind: "Decoder"; data: { name: string } }
+  | { kind: "DecoderTooSlow"; data: { from: string; decode_ms: number; frame_ms: number } }
   | { kind: "VirtualCameraSize"; data: { wanted: [number, number]; size: [number, number] } }
   | { kind: "RequestRefused"; data: { id: number; code: string; message: string | null } }
   | { kind: "Status"; data: Status }

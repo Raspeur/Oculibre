@@ -179,6 +179,48 @@ const DRAIN_EVERY: Duration = Duration::from_secs(10);
 /// How long the status says the computer is behind after pictures were skipped or drained.
 const BEHIND_FOR: Duration = Duration::from_secs(10);
 
+/// Hardware decoding too slow for the frame rate: on some laptops (Intel Iris Xe on power
+/// saving) the graphics card takes longer per picture than the phone leaves between two, and
+/// the video falls behind; the processor does better then (#4). Judged on [`WATCH_FRAMES`]
+/// pictures after the first [`WATCH_WARMUP`] (a decoder is slow to start).
+#[derive(Debug, Default)]
+struct DecodeWatch {
+    frame_us: u64,
+    seen: u32,
+    sum_us: u64,
+    n: u32,
+}
+
+const WATCH_WARMUP: u32 = 30;
+const WATCH_FRAMES: u32 = 60;
+
+impl DecodeWatch {
+    fn new(fps: u32) -> Self {
+        Self {
+            frame_us: 1_000_000 / u64::from(fps.max(1)),
+            ..Self::default()
+        }
+    }
+
+    /// One picture decoded in `decode_us`: the average decoding time (µs) when it takes more
+    /// than 80 % of the time between two pictures.
+    fn too_slow(&mut self, decode_us: u64) -> Option<u64> {
+        self.seen += 1;
+        if self.seen <= WATCH_WARMUP {
+            return None;
+        }
+        self.sum_us += decode_us;
+        self.n += 1;
+        if self.n < WATCH_FRAMES {
+            return None;
+        }
+        let average = self.sum_us / u64::from(self.n);
+        self.sum_us = 0;
+        self.n = 0;
+        (average * 10 > self.frame_us * 8).then_some(average)
+    }
+}
+
 /// Features this host understands (§15).
 pub const HOST_FEATURES: [&str; 4] = [
     features::VIDEO_H264,
@@ -854,6 +896,10 @@ fn receive_loop(
     free: &mpsc::Receiver<Picture>,
 ) -> Result<End, Box<dyn Error>> {
     let mut decoder = VideoDecoder::new()?;
+    // The graphics card was too slow once: software for the rest of the session.
+    let mut software: bool = false;
+    let mut watch = DecodeWatch::default();
+    let mut codec_data: Vec<u8> = Vec::new();
     // A picture the output thread never took (a newer one replaced it): filled again next.
     let mut spare: Option<Picture> = None;
     // Skipping late frames since then, and when we last did ([`BEHIND_US`]).
@@ -898,10 +944,16 @@ fn receive_loop(
                 if config.codec != "h264" {
                     return Err(format!("unsupported codec {:?}", config.codec).into());
                 }
-                let codec_data = config.codec_data_bytes()?;
+                codec_data = config.codec_data_bytes()?;
                 shared.emit(Event::Stream(config.clone()));
                 // A new stream may have another size or camera: start from a clean decoder.
                 decoder = VideoDecoder::new()?;
+                if software {
+                    if let Some(d) = decoder.software_instead() {
+                        decoder = d;
+                    }
+                }
+                watch = DecodeWatch::new(config.fps);
                 if !codec_data.is_empty() {
                     // SPS + PPS: no picture expected; errors show up on the next frame anyway.
                     let _ = decoder.decode(&codec_data, &mut picture);
@@ -975,6 +1027,27 @@ fn receive_loop(
                 let decode_start = shared.now_us();
                 let decoded = decoder.decode(&frame.data, &mut picture);
                 let decode_us = shared.now_us() - decode_start;
+                let too_slow = (decoded.as_ref().is_ok_and(|&p| p) && decoder.hardware())
+                    .then(|| watch.too_slow(decode_us))
+                    .flatten();
+                if let Some(average_us) = too_slow {
+                    if let Some(d) = decoder.software_instead() {
+                        shared.emit(Event::DecoderTooSlow {
+                            from: decoder.name(),
+                            decode_ms: average_us as f64 / 1000.0,
+                            frame_ms: watch.frame_us as f64 / 1000.0,
+                        });
+                        // The next keyframe starts the picture again on the processor.
+                        decoder = d;
+                        software = true;
+                        if !codec_data.is_empty() {
+                            let _ = decoder.decode(&codec_data, &mut picture);
+                        }
+                        need_key = true;
+                        ask_keyframe(&mut last_key_request)?;
+                        continue;
+                    }
+                }
                 match decoded {
                     Ok(true) => {
                         need_key = false;
@@ -1458,5 +1531,32 @@ mod totals_tests {
             })
         );
         assert_eq!(Summary::default().phone, None);
+    }
+}
+
+#[cfg(test)]
+mod watch_tests {
+    use super::{DecodeWatch, WATCH_FRAMES, WATCH_WARMUP};
+
+    /// Feeds `n` pictures decoded in `us` each; whether any of them was judged too slow.
+    fn feed(w: &mut DecodeWatch, n: u32, us: u64) -> bool {
+        (0..n).fold(false, |slow, _| w.too_slow(us).is_some() || slow)
+    }
+
+    #[test]
+    fn a_decoder_slower_than_the_frame_rate_is_noticed() {
+        // 60 fps = 16.7 ms a picture: 20 ms is too slow, 10 ms is fine.
+        let mut w = DecodeWatch::new(60);
+        assert!(
+            !feed(&mut w, WATCH_WARMUP, 50_000),
+            "a slow start is forgiven"
+        );
+        assert!(!feed(&mut w, WATCH_FRAMES - 1, 20_000));
+        assert_eq!(w.too_slow(20_000), Some(20_000));
+        let mut fine = DecodeWatch::new(60);
+        assert!(!feed(&mut fine, WATCH_WARMUP + 5 * WATCH_FRAMES, 10_000));
+        // The same 20 ms is fine at 30 fps (33 ms a picture).
+        let mut thirty = DecodeWatch::new(30);
+        assert!(!feed(&mut thirty, WATCH_WARMUP + 5 * WATCH_FRAMES, 20_000));
     }
 }

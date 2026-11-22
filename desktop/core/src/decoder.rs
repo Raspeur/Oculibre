@@ -185,6 +185,25 @@ impl VideoDecoder {
         })
     }
 
+    /// Decoding on the graphics card.
+    pub fn hardware(&self) -> bool {
+        match &self.backend {
+            #[cfg(ffmpeg)]
+            Backend::Ffmpeg(d) => d.hardware().is_some(),
+            #[cfg(windows)]
+            Backend::MediaFoundation(d) => d.hardware(),
+            Backend::OpenH264(_) => false,
+        }
+    }
+
+    /// A software decoder to replace this one when the graphics card turns out too slow for the
+    /// frame rate: only on the automatic choice (`--decoder vaapi` is the user's call).
+    pub fn software_instead(&self) -> Option<Self> {
+        (self.hardware() && choice() == Choice::Auto)
+            .then(|| Self::with(Choice::Software).ok())
+            .flatten()
+    }
+
     /// "VA-API (hardware)", "NVDEC (hardware)", "FFmpeg (software)" or "OpenH264 (software)".
     pub fn name(&self) -> &'static str {
         match &self.backend {

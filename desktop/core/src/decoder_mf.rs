@@ -23,6 +23,8 @@ pub struct MediaFoundation {
     mft: IMFTransform,
     /// The graphics card's device manager while decoding on it (kept alive with the decoder).
     gpu: Option<IMFDXGIDeviceManager>,
+    /// Our own way back from video memory, while decoding on the graphics card.
+    readback: Option<Readback>,
     /// Coded size of the output pictures (height rounded up to 16: 1088 for 1080p), the stride
     /// of their rows, and the visible size (what the phone filmed).
     coded: (usize, usize),
@@ -84,12 +86,16 @@ impl MediaFoundation {
                         "Media Foundation: this H.264 decoder cannot use Direct3D 11".into(),
                     );
                 }
-                let manager = gpu_manager()?;
+                let (manager, device) = gpu_manager()?;
                 mft.ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, manager.as_raw() as usize)
                     .map_err(|e| mf_error("graphics card", e))?;
-                Some(manager)
+                Some((manager, Readback::new(device)))
             } else {
                 None
+            };
+            let (gpu, readback) = match gpu {
+                Some((m, r)) => (Some(m), r),
+                None => (None, None),
             };
             let input = MFCreateMediaType().map_err(|e| mf_error("media type", e))?;
             input
@@ -100,6 +106,7 @@ impl MediaFoundation {
             let mut decoder = Self {
                 mft,
                 gpu,
+                readback,
                 coded: (0, 0),
                 stride: 0,
                 visible: (0, 0),
@@ -213,8 +220,15 @@ impl MediaFoundation {
     }
 
     /// NV12 sample → `out` (visible area only).
-    fn copy(&self, sample: &IMFSample, out: &mut Picture) -> Result<(), String> {
+    fn copy(&mut self, sample: &IMFSample, out: &mut Picture) -> Result<(), String> {
         let (w, h) = self.visible;
+        if let Some(r) = &mut self.readback {
+            match r.copy(sample, (w, h), out) {
+                Ok(()) => return Ok(()),
+                // Not a graphics card texture after all: Windows' own way below, from now on.
+                Err(_) => self.readback = None,
+            }
+        }
         let rows = self.coded.1.max(h);
         // SAFETY: the buffer stays locked while we read it; reads stay within the locked size.
         unsafe {
@@ -256,7 +270,13 @@ impl MediaFoundation {
 /// A Direct3D 11 device on the graphics card, for the decoder. Not on Microsoft's "Basic Render
 /// Driver" (a virtual machine, or no graphics driver): it has no video decoder, software is as
 /// good there.
-fn gpu_manager() -> Result<IMFDXGIDeviceManager, String> {
+fn gpu_manager() -> Result<
+    (
+        IMFDXGIDeviceManager,
+        windows::Win32::Graphics::Direct3D11::ID3D11Device,
+    ),
+    String,
+> {
     use windows::Win32::Foundation::HMODULE;
     use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
     use windows::Win32::Graphics::Direct3D11::{
@@ -303,7 +323,103 @@ fn gpu_manager() -> Result<IMFDXGIDeviceManager, String> {
         manager
             .ResetDevice(&device, token)
             .map_err(|e| mf_error("device manager", e))?;
-        Ok(manager)
+        Ok((manager, device))
+    }
+}
+
+/// Pictures back from the graphics card through one staging texture of ours, reused for every
+/// picture. Windows' generic way (`ConvertToContiguousBuffer` on a video memory sample) costs
+/// far more: about 20 ms a picture on an Intel Iris Xe laptop at 1080p, more than the 16.6 ms
+/// a picture has at 60 fps, so the video fell behind (#4).
+struct Readback {
+    device: windows::Win32::Graphics::Direct3D11::ID3D11Device,
+    context: windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
+    /// The staging texture and the size and format it was made for.
+    staging: Option<(
+        windows::Win32::Graphics::Direct3D11::ID3D11Texture2D,
+        u32,
+        u32,
+        windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
+    )>,
+}
+
+impl Readback {
+    fn new(device: windows::Win32::Graphics::Direct3D11::ID3D11Device) -> Option<Self> {
+        // SAFETY: plain COM call on a device we own.
+        let context = unsafe { device.GetImmediateContext() }.ok()?;
+        Some(Self {
+            device,
+            context,
+            staging: None,
+        })
+    }
+
+    /// The decoder's texture (one slice of its texture array) → staging → `out`.
+    fn copy(
+        &mut self,
+        sample: &IMFSample,
+        (w, h): (usize, usize),
+        out: &mut Picture,
+    ) -> Result<(), String> {
+        use windows::Win32::Graphics::Direct3D11::*;
+        // SAFETY: COM calls on interfaces we own. The device is multithread protected (the
+        // decoder uses it from its own threads); the mapped memory is read only while mapped,
+        // within RowPitch × rows.
+        unsafe {
+            let buffer = sample
+                .GetBufferByIndex(0)
+                .map_err(|e| mf_error("picture buffer", e))?;
+            let dxgi = buffer
+                .cast::<IMFDXGIBuffer>()
+                .map_err(|e| mf_error("picture buffer", e))?;
+            let mut raw = std::ptr::null_mut();
+            dxgi.GetResource(&ID3D11Texture2D::IID, &mut raw)
+                .map_err(|e| mf_error("picture texture", e))?;
+            let texture = ID3D11Texture2D::from_raw(raw);
+            let slice = dxgi
+                .GetSubresourceIndex()
+                .map_err(|e| mf_error("picture texture", e))?;
+            let mut desc = D3D11_TEXTURE2D_DESC::default();
+            texture.GetDesc(&mut desc);
+            let fits = matches!(&self.staging,
+                Some((_, sw, sh, f)) if *sw == desc.Width && *sh == desc.Height && *f == desc.Format);
+            if !fits {
+                let staging_desc = D3D11_TEXTURE2D_DESC {
+                    MipLevels: 1,
+                    ArraySize: 1,
+                    Usage: D3D11_USAGE_STAGING,
+                    BindFlags: 0,
+                    CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                    MiscFlags: 0,
+                    ..desc
+                };
+                let mut staging = None;
+                self.device
+                    .CreateTexture2D(&staging_desc, None, Some(&mut staging))
+                    .map_err(|e| mf_error("staging texture", e))?;
+                let staging = staging.ok_or("Direct3D 11: no staging texture")?;
+                self.staging = Some((staging, desc.Width, desc.Height, desc.Format));
+            }
+            let (staging, _, rows, _) = self.staging.as_ref().unwrap();
+            let rows = *rows as usize;
+            if rows < h {
+                return Err("Direct3D 11: texture smaller than the picture".into());
+            }
+            self.context
+                .CopySubresourceRegion(staging, 0, 0, 0, 0, &texture, slice, None);
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            self.context
+                .Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
+                .map_err(|e| mf_error("read picture", e))?;
+            let pitch = mapped.RowPitch as usize;
+            let base = mapped.pData as *const u8;
+            // NV12 in one texture: the luma rows, then the chroma rows (half as many).
+            let y = std::slice::from_raw_parts(base, pitch * rows);
+            let uv = std::slice::from_raw_parts(base.add(pitch * rows), pitch * rows / 2);
+            out.copy_nv12(w, h, (y, pitch), (uv, pitch));
+            self.context.Unmap(staging, 0);
+        }
+        Ok(())
     }
 }
 
