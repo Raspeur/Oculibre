@@ -1008,6 +1008,8 @@ pub struct Status {
     pub split: Option<PhoneSplit>,
     /// The PC's share (received → virtual camera), ms. The network is what remains.
     pub pc: Option<f64>,
+    /// The H.264 decoding part of `pc`, ms; the rest is rotation, conversion and write.
+    pub pc_decode: Option<f64>,
     pub rtt: Option<f64>,
     /// Frames the phone dropped since the start (its `stats`).
     pub dropped: Option<u64>,
@@ -1219,6 +1221,7 @@ fn ticker(shared: &Shared) -> Totals {
             phone: phone.get("latency_ms").and_then(Value::as_f64),
             split: PhoneSplit::from_stats(&phone),
             pc: avg_ms(latency.pc_sum),
+            pc_decode: avg_ms(latency.decode_sum),
             rtt: rtt_ms,
             dropped: totals.dropped,
             errors,

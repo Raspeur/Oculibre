@@ -125,6 +125,8 @@ export interface Status {
   phone: number | null;
   split: PhoneSplit | null;
   pc: number | null;
+  /** The decoding part of `pc`; the rest is rotation, conversion and write. */
+  pc_decode: number | null;
   rtt: number | null;
   dropped: number | null;
   errors: number;

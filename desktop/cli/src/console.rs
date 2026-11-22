@@ -269,6 +269,7 @@ mod tests {
             phone: Some(30.4),
             split: None,
             pc: Some(11.9),
+            pc_decode: Some(5.2),
             rtt: Some(1.23),
             dropped: Some(0),
             errors: 0,

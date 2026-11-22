@@ -2,7 +2,7 @@
 // or, without a phone, what to do.
 
 import { useEffect, useRef, useState } from "react";
-import { type PreviewMode, onPreview, phoneName, setPreviewMode } from "../engine";
+import { type PreviewMode, type Status, onPreview, phoneName, setPreviewMode } from "../engine";
 import type { EngineState } from "../useEngine";
 import { t, useLang } from "../i18n";
 
@@ -10,6 +10,7 @@ export function Stage({ engine }: { engine: EngineState }) {
   useLang();
   const { phone, via, stream, paused, status } = engine;
   const [mode, setMode] = usePreviewMode();
+  const [details, setDetails] = useDetailsOpen();
   const preview = usePreview(phone !== null && mode !== "Off");
 
   if (!phone) {
@@ -89,11 +90,24 @@ export function Stage({ engine }: { engine: EngineState }) {
       </div>
 
       <div className="oc-stats">
-        <Stat label={t("latency")} value={status?.latency != null ? `${status.latency.toFixed(0)} ms` : "—"} />
+        <button
+          type="button"
+          className="oc-stat oc-stat--button"
+          aria-expanded={details}
+          aria-controls="latency-details"
+          title={details ? t("latency_details_hide") : t("latency_details_show")}
+          onClick={() => setDetails(!details)}
+        >
+          <span className="oc-stat__label">
+            {t("latency")} <Chevron open={details} />
+          </span>
+          <span className="oc-stat__value">{status?.latency != null ? ms(status.latency) : "—"}</span>
+        </button>
         <Stat label={t("frames_per_second")} value={status ? status.shown_fps.toFixed(0) : "—"} />
         <Stat label={t("bitrate")} value={status ? `${status.mbits.toFixed(1)} Mbit/s` : "—"} />
         <Stat label={t("connection")} value={via?.kind === "Wifi" ? "Wi-Fi" : "USB"} />
       </div>
+      {details && <LatencyDetails status={status} />}
     </section>
   );
 }
@@ -159,6 +173,108 @@ function usePreview(withPhone: boolean): string | null {
 }
 
 const stageStyle = { flex: "999 1 520px", minWidth: 0, padding: 24, boxSizing: "border-box", gap: 16 } as const;
+
+const ms = (v: number) => `${Math.round(v)} ms`;
+
+/** Whether the latency details are open; remembered by this computer. */
+function useDetailsOpen(): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem("latency-details") === "open";
+    } catch {
+      return false;
+    }
+  });
+  const set = (value: boolean) => {
+    setOpen(value);
+    try {
+      localStorage.setItem("latency-details", value ? "open" : "closed");
+    } catch {
+      // private storage refused: the choice only lasts until the window closes
+    }
+  };
+  return [open, set];
+}
+
+/**
+ * Where the delay of the last second comes from: the phone (camera, encoder, its queue), the
+ * network (what remains, so it also counts the time the video waits in the sockets when the
+ * computer reads too slowly) and the computer (decoding, then rotation + conversion + write).
+ */
+function LatencyDetails({ status }: { status: Status | null }) {
+  const total = status?.latency;
+  const parts =
+    status && total != null && status.phone != null && status.pc != null
+      ? { phone: status.phone, pc: status.pc, network: Math.max(0, total - status.phone - status.pc) }
+      : null;
+  const biggest = parts ? (Object.entries(parts).sort((a, b) => b[1] - a[1])[0][0] as keyof typeof parts) : null;
+  const share = (v: number) => `${total ? Math.max(2, (v / total) * 100) : 0}%`;
+  return (
+    <section id="latency-details" className="oc-latency" aria-label={t("lat_title")}>
+      <h2 className="oc-label">{t("lat_title")}</h2>
+      {!parts || !status ? (
+        <p className="oc-small">{t("lat_unmeasured")}</p>
+      ) : (
+        <>
+          <div className="oc-latency__bar" aria-hidden="true">
+            <span className="oc-latency__seg oc-latency__seg--phone" style={{ width: share(parts.phone) }} />
+            <span className="oc-latency__seg oc-latency__seg--network" style={{ width: share(parts.network) }} />
+            <span className="oc-latency__seg oc-latency__seg--pc" style={{ width: share(parts.pc) }} />
+          </div>
+          <dl className="oc-latency__rows">
+            <Part kind="phone" strong={biggest === "phone"} label={t("lat_phone")} value={parts.phone}
+              detail={status.split && t("lat_phone_split", {
+                camera: ms(status.split.camera), encoder: ms(status.split.encoder), queue: ms(status.split.queue),
+              })} />
+            <Part kind="network" strong={biggest === "network"} label={t("lat_network")} value={parts.network}
+              detail={t("lat_network_hint")} />
+            <Part kind="pc" strong={biggest === "pc"} label={t("lat_pc")} value={parts.pc}
+              detail={status.pc_decode != null && t("lat_pc_split", {
+                decode: ms(status.pc_decode), output: ms(Math.max(0, parts.pc - status.pc_decode)),
+              })} />
+          </dl>
+          <p className="oc-small">
+            {t("lat_max_avg", {
+              max: status.latency_max != null ? ms(status.latency_max) : "—",
+              avg: status.latency_avg != null ? ms(status.latency_avg) : "—",
+            })}
+          </p>
+        </>
+      )}
+      {status && (
+        <p className="oc-small">
+          {t("lat_frames", { shown: status.shown_fps.toFixed(0), camera: status.camera_fps ?? "—" })}
+          {status.dropped != null && <> · {t("lat_dropped", { n: status.dropped })}</>}
+          {status.errors > 0 && <> · {t("lat_errors", { n: status.errors })}</>}
+          {status.rtt != null && <> · {t("lat_rtt", { rtt: `${status.rtt.toFixed(1)} ms` })}</>}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function Part(props: { kind: string; strong: boolean; label: string; value: number; detail?: string | false | null }) {
+  return (
+    <div className="oc-latency__row" data-strong={props.strong || undefined}>
+      <dt>
+        <span className={`oc-latency__key oc-latency__seg--${props.kind}`} aria-hidden="true" />
+        {props.label}
+      </dt>
+      <dd>
+        <strong>{ms(props.value)}</strong>
+        {props.detail && <span className="oc-small"> {props.detail}</span>}
+      </dd>
+    </div>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: "-1px", transform: open ? "rotate(180deg)" : undefined }}>
+      <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
