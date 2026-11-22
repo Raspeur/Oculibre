@@ -178,6 +178,7 @@ fn parse_args() -> Result<Args, String> {
 fn main() {
     // Before any thread exists: it may set environment variables.
     decoder::prepare_environment();
+    oculibre_core::power::keep_full_speed();
     if let Err(e) = run() {
         eprintln!("error: {e}");
         std::process::exit(1);

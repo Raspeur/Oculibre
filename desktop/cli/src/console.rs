@@ -218,8 +218,14 @@ fn status_line(s: &Status) -> String {
     if let Some(d) = s.dropped.filter(|&d| d > 0) {
         line += &format!(" · dropped by phone {d}");
     }
+    if s.skipped > 0 {
+        line += &format!(" · skipped by this computer {}", s.skipped);
+    }
     if s.errors > 0 {
         line += &format!(" · decode errors {}", s.errors);
+    }
+    if s.behind {
+        line += " · this computer is not keeping up (power saving? other programs?)";
     }
     line
 }
@@ -272,6 +278,8 @@ mod tests {
             pc_decode: Some(5.2),
             rtt: Some(1.23),
             dropped: Some(0),
+            skipped: 0,
+            behind: false,
             errors: 0,
             clock_mismatch: false,
         };

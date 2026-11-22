@@ -129,6 +129,10 @@ export interface Status {
   pc_decode: number | null;
   rtt: number | null;
   dropped: number | null;
+  /** Pictures this computer could not write in time (a newer one took their place), since the start. */
+  skipped: number;
+  /** This computer does not keep up (problem 504). */
+  behind: boolean;
   errors: number;
   clock_mismatch: boolean;
 }

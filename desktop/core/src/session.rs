@@ -18,7 +18,7 @@ use std::io::{self, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -166,6 +166,18 @@ impl Orientation {
 const SILENCE: Duration = Duration::from_secs(5);
 /// Minimum time between two `request_keyframe` (the phone needs a moment to produce one).
 const KEYFRAME_RETRY: Duration = Duration::from_millis(500);
+/// A frame this late (capture → arrival, µs) means video piles up between the phone and us: the
+/// computer did not keep up. Frames are then skipped, not decoded, until they arrive on time.
+const BEHIND_US: i64 = 1_000_000;
+/// Lateness (µs) at which skipping stops: the backlog is gone.
+const CAUGHT_UP_US: i64 = 300_000;
+/// Longest skipping: if frames never arrive on time again (the network itself is too slow for the
+/// stream), showing late pictures beats showing none.
+const DRAIN_MAX: Duration = Duration::from_secs(2);
+/// Minimum time between two drains, for the same reason.
+const DRAIN_EVERY: Duration = Duration::from_secs(10);
+/// How long the status says the computer is behind after pictures were skipped or drained.
+const BEHIND_FOR: Duration = Duration::from_secs(10);
 
 /// Features this host understands (§15).
 pub const HOST_FEATURES: [&str; 4] = [
@@ -215,6 +227,11 @@ struct Shared {
     // Counters since the last tick.
     received: AtomicU32,
     decoded: AtomicU32,
+    /// Decoded pictures replaced by a newer one before the output thread took them.
+    skipped: AtomicU32,
+    skipped_total: AtomicU64,
+    /// Last time frames were skipped undecoded because they arrived too late ([`BEHIND_US`]).
+    last_drain: Mutex<Option<Instant>>,
     errors_total: AtomicU32,
     bytes: AtomicU32,
     latency: Mutex<Latency>,
@@ -597,6 +614,9 @@ pub fn run_driven(
         clock: Mutex::new(ClockSync::default()),
         received: AtomicU32::new(0),
         decoded: AtomicU32::new(0),
+        skipped: AtomicU32::new(0),
+        skipped_total: AtomicU64::new(0),
+        last_drain: Mutex::new(None),
         errors_total: AtomicU32::new(0),
         bytes: AtomicU32::new(0),
         latency: Mutex::new(Latency::default()),
@@ -734,35 +754,90 @@ struct Job {
     decode_us: u64,
 }
 
+/// The output thread's inbox: one picture at most. A newer picture replaces one still waiting, so
+/// decoding never waits for the output: a computer too slow to write every picture shows fewer of
+/// them, never older ones (waiting here used to stop the reading, and the video then piled up in
+/// the network buffers: seconds of delay).
+struct Mailbox {
+    /// The waiting job, and whether either side has stopped.
+    slot: Mutex<(Option<Job>, bool)>,
+    ready: Condvar,
+}
+
+impl Mailbox {
+    fn new() -> Self {
+        Self {
+            slot: Mutex::new((None, false)),
+            ready: Condvar::new(),
+        }
+    }
+
+    /// Leaves a job for the output thread; gives back the one it replaced, or the job itself
+    /// (`Err`) once the output thread is gone.
+    fn put(&self, job: Job) -> Result<Option<Job>, Job> {
+        let mut slot = self.slot.lock().unwrap();
+        if slot.1 {
+            return Err(job);
+        }
+        let replaced = slot.0.replace(job);
+        self.ready.notify_one();
+        Ok(replaced)
+    }
+
+    /// Waits for a job; `None` once closed with nothing left.
+    fn take(&self) -> Option<Job> {
+        let mut slot = self.slot.lock().unwrap();
+        loop {
+            if let Some(job) = slot.0.take() {
+                return Some(job);
+            }
+            if slot.1 {
+                return None;
+            }
+            slot = self.ready.wait(slot).unwrap();
+        }
+    }
+
+    fn close(&self) {
+        self.slot.lock().unwrap().1 = true;
+        self.ready.notify_all();
+    }
+}
+
 /// Reads and decodes on this thread; rotates, converts and writes on an output thread, so that
 /// the next frame is decoded while this one is written: the frame rate is limited by the slower of
 /// the two, not by their sum (4K: decoding alone takes most of a 30 fps frame interval). At most
-/// one picture waits between them: latency does not pile up.
+/// one picture waits between them ([`Mailbox`]): latency does not pile up.
 fn receive(
     reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
     shared: &Shared,
     sink: &mut (dyn Sink + Send),
     clock_enabled: bool,
 ) -> Result<End, Box<dyn Error>> {
-    let (jobs, jobs_rx) = mpsc::sync_channel::<Job>(0);
+    let mailbox = Mailbox::new();
     let (free_tx, free) = mpsc::channel::<Picture>();
     thread::scope(|scope| {
+        let inbox = &mailbox;
         let output = thread::Builder::new()
             .name("oculibre-output".into())
             .spawn_scoped(scope, move || -> Result<(), String> {
-                for job in jobs_rx {
-                    sink.show(&job.picture, job.transform)
-                        .map_err(|e| e.to_string())?;
-                    shared.decoded.fetch_add(1, Ordering::Relaxed);
-                    if clock_enabled {
-                        record_latency(shared, job.capture_us, job.arrival_us, job.decode_us);
+                let result = (|| {
+                    while let Some(job) = inbox.take() {
+                        sink.show(&job.picture, job.transform)
+                            .map_err(|e| e.to_string())?;
+                        shared.decoded.fetch_add(1, Ordering::Relaxed);
+                        if clock_enabled {
+                            record_latency(shared, job.capture_us, job.arrival_us, job.decode_us);
+                        }
+                        let _ = free_tx.send(job.picture); // reused for a later frame
                     }
-                    let _ = free_tx.send(job.picture); // reused for a later frame
-                }
-                Ok(())
+                    Ok(())
+                })();
+                inbox.close(); // the reader stops leaving pictures for nobody
+                result
             })?;
-        let result = receive_loop(reader, shared, &jobs, &free);
-        drop(jobs);
+        let result = receive_loop(reader, shared, &mailbox, &free);
+        mailbox.close();
         match output.join() {
             Ok(Ok(())) => result,
             // The sink's error explains why the loop stopped.
@@ -775,10 +850,15 @@ fn receive(
 fn receive_loop(
     reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
     shared: &Shared,
-    jobs: &mpsc::SyncSender<Job>,
+    jobs: &Mailbox,
     free: &mpsc::Receiver<Picture>,
 ) -> Result<End, Box<dyn Error>> {
     let mut decoder = VideoDecoder::new()?;
+    // A picture the output thread never took (a newer one replaced it): filled again next.
+    let mut spare: Option<Picture> = None;
+    // Skipping late frames since then, and when we last did ([`BEHIND_US`]).
+    let mut draining: Option<Instant> = None;
+    let mut last_drain: Option<Instant> = None;
     let mut announced_decoder: Option<&'static str> = None;
     // Picture being filled by the decoder (recycled from the output thread).
     let mut picture = Picture::default();
@@ -863,6 +943,31 @@ fn receive_loop(
                 if frame.discontinuity && !frame.key {
                     need_key = true;
                 }
+                // Capture → arrival, once the clocks are synchronised (absurd values ignored).
+                let late_us = shared
+                    .clock
+                    .lock()
+                    .unwrap()
+                    .best()
+                    .map(|b| arrival_us as i64 - (frame.timestamp as i64 - b.offset_us))
+                    .filter(|l| (0..10_000_000).contains(l));
+                if let Some(since) = draining {
+                    if late_us.is_none_or(|l| l < CAUGHT_UP_US) || since.elapsed() >= DRAIN_MAX {
+                        draining = None;
+                        need_key = true; // what follows needs the frames we skipped
+                    } else {
+                        continue; // read, not decoded: the backlog empties at network speed
+                    }
+                } else if late_us.is_some_and(|l| l > BEHIND_US)
+                    && last_drain.is_none_or(|t| t.elapsed() >= DRAIN_EVERY)
+                {
+                    let now = Instant::now();
+                    draining = Some(now);
+                    last_drain = Some(now);
+                    *shared.last_drain.lock().unwrap() = Some(now);
+                    need_key = true;
+                    continue;
+                }
                 if need_key && !frame.key {
                     ask_keyframe(&mut last_key_request)?;
                     continue;
@@ -887,7 +992,10 @@ fn receive_loop(
                                 name: decoder.name(),
                             });
                         }
-                        let next = free.try_recv().unwrap_or_default();
+                        let next = spare
+                            .take()
+                            .or_else(|| free.try_recv().ok())
+                            .unwrap_or_default();
                         let job = Job {
                             picture: std::mem::replace(&mut picture, next),
                             transform,
@@ -895,8 +1003,14 @@ fn receive_loop(
                             arrival_us,
                             decode_us,
                         };
-                        if jobs.send(job).is_err() {
-                            return Err("the virtual camera stopped".into());
+                        match jobs.put(job) {
+                            Ok(None) => {}
+                            Ok(Some(replaced)) => {
+                                shared.skipped.fetch_add(1, Ordering::Relaxed);
+                                shared.skipped_total.fetch_add(1, Ordering::Relaxed);
+                                spare = Some(replaced.picture);
+                            }
+                            Err(_) => return Err("the virtual camera stopped".into()),
                         }
                     }
                     Ok(false) => {}
@@ -1013,6 +1127,12 @@ pub struct Status {
     pub rtt: Option<f64>,
     /// Frames the phone dropped since the start (its `stats`).
     pub dropped: Option<u64>,
+    /// Decoded pictures this computer could not write in time (a newer one took their place),
+    /// since the start.
+    pub skipped: u64,
+    /// This computer does not keep up: it skipped many pictures, or had to drop late video to
+    /// catch up, in the last [`BEHIND_FOR`] (problem 504 in the app).
+    pub behind: bool,
     /// Decoding errors since the start.
     pub errors: u32,
     /// Latency samples were thrown away as absurd: the phone's clocks disagree.
@@ -1124,6 +1244,8 @@ fn ticker(shared: &Shared) -> Totals {
     let mut totals = Totals::default();
     let mut seq = 0u32;
     let mut last = Instant::now();
+    // Last second in which more than a tenth of the decoded pictures were skipped.
+    let mut last_struggle: Option<Instant> = None;
     while !shared.stop.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_millis(100));
         if last.elapsed() < Duration::from_secs(1) {
@@ -1135,6 +1257,15 @@ fn ticker(shared: &Shared) -> Totals {
 
         let received = shared.received.swap(0, Ordering::Relaxed);
         let decoded = shared.decoded.swap(0, Ordering::Relaxed);
+        let skipped = shared.skipped.swap(0, Ordering::Relaxed);
+        if skipped > 0 && skipped * 10 > decoded + skipped {
+            last_struggle = Some(Instant::now());
+        }
+        let last_drain = *shared.last_drain.lock().unwrap();
+        let behind = [last_struggle, last_drain]
+            .into_iter()
+            .flatten()
+            .any(|t| t.elapsed() < BEHIND_FOR);
         let bytes = shared.bytes.swap(0, Ordering::Relaxed);
         let errors = shared.errors_total.load(Ordering::Relaxed);
         let latency = std::mem::take(&mut *shared.latency.lock().unwrap());
@@ -1224,6 +1355,8 @@ fn ticker(shared: &Shared) -> Totals {
             pc_decode: avg_ms(latency.decode_sum),
             rtt: rtt_ms,
             dropped: totals.dropped,
+            skipped: shared.skipped_total.load(Ordering::Relaxed),
+            behind,
             errors,
             clock_mismatch: latency.rejected > 0,
         }));

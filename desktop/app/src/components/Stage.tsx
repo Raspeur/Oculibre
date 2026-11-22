@@ -107,6 +107,21 @@ export function Stage({ engine }: { engine: EngineState }) {
         <Stat label={t("bitrate")} value={status ? `${status.mbits.toFixed(1)} Mbit/s` : "—"} />
         <Stat label={t("connection")} value={via?.kind === "Wifi" ? "Wi-Fi" : "USB"} />
       </div>
+      {status?.behind && (
+        <div className="oc-alert" role="status">
+          <span className="oc-alert__icon" aria-hidden="true">!</span>
+          <div className="oc-alert__body">
+            <span className="oc-alert__title">{t("behind_title")}</span>
+            <span className="oc-alert__text">{t("behind_text")}</span>
+            {mode === "Full" && (
+              <div className="oc-alert__actions">
+                <button type="button" className="oc-btn oc-btn--secondary" onClick={() => setMode("Light")}>{t("behind_light")}</button>
+              </div>
+            )}
+            <span className="oc-alert__code">{t("code", { code: 504 })}</span>
+          </div>
+        </div>
+      )}
       {details && <LatencyDetails status={status} />}
     </section>
   );
@@ -245,6 +260,7 @@ function LatencyDetails({ status }: { status: Status | null }) {
         <p className="oc-small">
           {t("lat_frames", { shown: status.shown_fps.toFixed(0), camera: status.camera_fps ?? "—" })}
           {status.dropped != null && <> · {t("lat_dropped", { n: status.dropped })}</>}
+          {status.skipped > 0 && <> · {t("lat_skipped", { n: status.skipped })}</>}
           {status.errors > 0 && <> · {t("lat_errors", { n: status.errors })}</>}
           {status.rtt != null && <> · {t("lat_rtt", { rtt: `${status.rtt.toFixed(1)} ms` })}</>}
         </p>

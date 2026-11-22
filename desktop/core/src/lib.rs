@@ -20,6 +20,7 @@ pub mod discovery;
 pub mod events;
 pub mod host;
 pub mod pairing;
+pub mod power;
 pub mod preview;
 pub mod profiles;
 pub mod session;

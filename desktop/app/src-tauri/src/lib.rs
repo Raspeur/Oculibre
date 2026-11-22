@@ -48,6 +48,10 @@ struct Receiver {
     viewer: Mutex<Option<Viewer>>,
     /// The preview chosen in the window.
     preview: Mutex<PreviewMode>,
+    /// The window is on screen (not hidden in the tray, not minimised): otherwise no preview.
+    window_shown: AtomicBool,
+    /// The computer runs on its battery: the smooth preview becomes light.
+    on_battery: AtomicBool,
 }
 
 /// The preview control of the window.
@@ -58,16 +62,20 @@ enum PreviewMode {
     /// About 10 pictures a second: never slows the source down.
     #[default]
     Light,
-    /// Every picture: when nothing else needs the computer.
+    /// Up to 30 pictures a second: when nothing else needs the computer.
     Full,
 }
 
 impl Receiver {
     /// What the host should do with previews now: the page's channel at the chosen rate.
     fn watch(&self) -> Option<Watch> {
+        if !self.window_shown.load(Ordering::Relaxed) {
+            return None; // nobody can see it: nothing is computed
+        }
         let rate = match *self.preview.lock().unwrap() {
             PreviewMode::Off => return None,
             PreviewMode::Light => Rate::Light,
+            PreviewMode::Full if self.on_battery.load(Ordering::Relaxed) => Rate::Light,
             PreviewMode::Full => Rate::Full,
         };
         let viewer = self.viewer.lock().unwrap().clone()?;
@@ -495,6 +503,8 @@ fn set_view(receiver: State<Receiver>, view: View) -> Result<(), String> {
 pub fn run() {
     // Before any thread exists: it may set environment variables (VA-API drivers).
     oculibre_core::decoder::prepare_environment();
+    // Full speed even hidden in the tray: power saving must not make the video fall behind.
+    oculibre_core::power::keep_full_speed();
     let receiver = Receiver {
         settings: Mutex::new(AppSettings::load()),
         ..Receiver::default()
@@ -520,6 +530,21 @@ pub fn run() {
                     tray::put_away(&window);
                 }
             }
+            // Every 2 s: is the window on screen, is the computer on battery? The preview follows.
+            let watcher = app.handle().clone();
+            std::thread::spawn(move || loop {
+                let receiver = watcher.state::<Receiver>();
+                let shown = watcher.get_webview_window("main").is_some_and(|w| {
+                    w.is_visible().unwrap_or(true) && !w.is_minimized().unwrap_or(false)
+                });
+                let battery = oculibre_core::power::on_battery();
+                let was_shown = receiver.window_shown.swap(shown, Ordering::Relaxed);
+                let was_battery = receiver.on_battery.swap(battery, Ordering::Relaxed);
+                if was_shown != shown || was_battery != battery {
+                    receiver.apply_preview();
+                }
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            });
             // The receiver starts now, without waiting for the page (the window may be hidden).
             std::thread::spawn(move || {
                 let result = start_host(&handle, &handle.state::<Receiver>());

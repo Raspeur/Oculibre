@@ -2,11 +2,14 @@
 //! app). The virtual camera itself is never opened for that: an app holding it would lock its
 //! size for everyone else.
 //!
-//! The output thread only takes a small RGB copy (at most every 100 ms with [`Rate::Light`], every
-//! picture with [`Rate::Full`]); a thread of its own compresses it. If that thread is still busy,
-//! the copy is dropped: the preview may skip a picture, the virtual camera never waits.
+//! The output thread only copies the picture as it is (a few hundred microseconds), at most every
+//! 100 ms with [`Rate::Light`], 30 times a second with [`Rate::Full`], and only when the preview
+//! thread is free: that thread makes the thumbnail and the JPEG. The preview may skip pictures, the
+//! virtual camera never waits for it (the thumbnail used to be made on the output thread, and a
+//! laptop then fell seconds behind with the full preview).
 
-use std::sync::mpsc::{self, SyncSender, TrySendError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -18,7 +21,7 @@ use crate::yuv::{self, Picture, Transform};
 pub enum Rate {
     /// About 10 pictures a second, 640 pixels: smooth enough to frame yourself, nearly free.
     Light,
-    /// Every picture of the stream, 960 pixels: for when nothing else needs the computer.
+    /// Up to 30 pictures a second, 960 pixels: for when nothing else needs the computer.
     Full,
 }
 
@@ -27,7 +30,8 @@ impl Rate {
     pub fn interval(self) -> Duration {
         match self {
             Rate::Light => Duration::from_millis(100),
-            Rate::Full => Duration::ZERO,
+            // 30 a second: smooth to the eye, half the work of a 60 fps stream.
+            Rate::Full => Duration::from_millis(33),
         }
     }
 
@@ -65,46 +69,64 @@ pub struct Watch {
 /// `None` in the slot: nobody watches, nothing is made.
 pub type ViewerSlot = Arc<Mutex<Option<Watch>>>;
 
+/// A copy of a picture for the preview thread, and how to turn and size it.
+struct Job {
+    picture: Picture,
+    transform: Transform,
+    size: usize,
+}
+
 /// Makes preview pictures for one session (see the module documentation).
 pub struct Previewer {
     viewers: ViewerSlot,
     last: Option<Instant>,
-    rgb: Vec<u8>,
-    jobs: SyncSender<(usize, usize, Vec<u8>)>,
+    /// A picture the preview thread gave back, copied into next time.
+    spare: Receiver<Picture>,
+    /// Set by `offer` when it sends a job, cleared by the preview thread once done.
+    busy: Arc<AtomicBool>,
+    jobs: SyncSender<Job>,
 }
 
 impl Previewer {
     pub fn new(viewers: ViewerSlot) -> Self {
-        // A queue of one: the encoder thread takes a picture while the next one waits, at most.
-        let (jobs, rx) = mpsc::sync_channel::<(usize, usize, Vec<u8>)>(1);
+        let (jobs, rx) = mpsc::sync_channel::<Job>(1);
+        let (back, spare) = mpsc::channel::<Picture>();
+        let busy = Arc::new(AtomicBool::new(false));
         let slot = viewers.clone();
+        let done = busy.clone();
         let _ = thread::Builder::new()
             .name("oculibre-preview".into())
             .spawn(move || {
+                let mut rgb = Vec::new();
                 // Ends when the Previewer (its sender) is dropped, with the session.
-                for (width, height, rgb) in rx {
-                    let Some(jpeg) = encode(width, height, &rgb) else {
-                        continue;
-                    };
-                    let watch = slot.lock().unwrap().clone();
-                    if let Some(Watch { viewer, .. }) = watch {
-                        viewer(Frame {
-                            width,
-                            height,
-                            jpeg,
-                        });
+                for job in rx {
+                    let (w, h) =
+                        yuv::thumbnail(&job.picture, job.transform, job.size, job.size, &mut rgb);
+                    let _ = back.send(job.picture);
+                    let jpeg = (w > 0).then(|| encode(w, h, &rgb)).flatten();
+                    if let Some(jpeg) = jpeg {
+                        let watch = slot.lock().unwrap().clone();
+                        if let Some(Watch { viewer, .. }) = watch {
+                            viewer(Frame {
+                                width: w,
+                                height: h,
+                                jpeg,
+                            });
+                        }
                     }
+                    done.store(false, Ordering::Release);
                 }
             });
         Self {
             viewers,
             last: None,
-            rgb: Vec::new(),
+            spare,
+            busy,
             jobs,
         }
     }
 
-    /// Called by the virtual camera with every picture it writes.
+    /// Called by the virtual camera with every picture it writes: cheap, never waits.
     pub fn offer(&mut self, picture: &Picture, transform: Transform) {
         let Some(rate) = self.viewers.lock().unwrap().as_ref().map(|w| w.rate) else {
             return; // nobody watches
@@ -112,15 +134,20 @@ impl Previewer {
         if self.last.is_some_and(|t| t.elapsed() < rate.interval()) {
             return;
         }
-        self.last = Some(Instant::now());
-        let size = rate.max_size();
-        let (w, h) = yuv::thumbnail(picture, transform, size, size, &mut self.rgb);
-        if w == 0 {
-            return;
+        if self.busy.swap(true, Ordering::Acquire) {
+            return; // the previous preview picture is not done yet: skip this one
         }
-        match self.jobs.try_send((w, h, std::mem::take(&mut self.rgb))) {
-            Ok(()) | Err(TrySendError::Disconnected(_)) => {}
-            Err(TrySendError::Full((_, _, rgb))) => self.rgb = rgb, // busy: skip, keep the buffer
+        self.last = Some(Instant::now());
+        let mut copy = self.spare.try_recv().unwrap_or_default();
+        copy.copy_from(picture);
+        let job = Job {
+            picture: copy,
+            transform,
+            size: rate.max_size(),
+        };
+        if let Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) = self.jobs.try_send(job)
+        {
+            self.busy.store(false, Ordering::Release);
         }
     }
 }
@@ -181,7 +208,7 @@ mod tests {
             assert_eq!(&frames[0].jpeg[..2], &[0xFF, 0xD8]); // JPEG start marker
         }
 
-        // Full rate: every picture is taken (when the encoder keeps up), bigger.
+        // Full rate: up to 30 a second, never while the previous picture is being made.
         *slot.lock().unwrap() = Some(Watch {
             viewer,
             rate: Rate::Full,
@@ -189,9 +216,15 @@ mod tests {
         let mut previewer = Previewer::new(slot.clone());
         previewer.offer(&picture, turned);
         let first = previewer.last;
-        thread::sleep(Duration::from_millis(1));
         previewer.offer(&picture, turned);
-        assert!(previewer.last > first, "the second picture was taken too");
+        assert_eq!(previewer.last, first, "too soon: skipped");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while previewer.busy.load(Ordering::Acquire) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        thread::sleep(Rate::Full.interval());
+        previewer.offer(&picture, turned);
+        assert!(previewer.last > first, "the next picture was taken");
 
         // Nobody watching: nothing is made.
         *slot.lock().unwrap() = None;
