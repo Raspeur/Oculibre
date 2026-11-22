@@ -2,8 +2,10 @@
 
 use std::io::BufReader;
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use oculibre_protocol::{
     features, streams, write_message, Bye, Hello, Message, MessageReader, Preamble, Role,
@@ -31,6 +33,23 @@ struct Counter {
     transforms: Vec<Transform>,
     /// Time each picture takes to write: a slow virtual camera.
     delay: Duration,
+    shown: Shown,
+}
+
+/// Pictures the sink has written, readable from the simulated phone's thread.
+#[derive(Clone, Default)]
+struct Shown(Arc<AtomicUsize>);
+
+impl Shown {
+    /// Waits until the sink has written `n` pictures (at most 5 s). A phone that sends its next
+    /// frame only then gets every frame shown even on a slow test machine, where the host would
+    /// otherwise rightly skip a picture its output had not taken yet.
+    fn wait(&self, n: usize) {
+        let start = Instant::now();
+        while self.0.load(Ordering::SeqCst) < n && start.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
 }
 
 impl Sink for Counter {
@@ -45,6 +64,7 @@ impl Sink for Counter {
         assert_eq!(self.yuyv.len(), W * H * 2);
         self.pictures += 1;
         self.transforms.push(transform);
+        self.shown.0.fetch_add(1, Ordering::SeqCst);
         thread::sleep(self.delay);
         Ok(())
     }
@@ -203,12 +223,14 @@ fn wait_request(s: &mut TcpStream, r: &mut MessageReader<BufReader<TcpStream>>) 
 #[test]
 fn every_frame_is_shown_without_delay_then_bye() {
     let (codec_data, frames) = encode(10);
-    let (result, pictures) = with_phone(move |mut s| {
+    let sink = Counter::default();
+    let shown = sink.shown.clone();
+    let (result, sink) = with_phone_sink(View::default(), sink, move |mut s| {
         let _r = handshake(&mut s);
         write_message(&mut s, &config(1, &codec_data)).unwrap();
         for (i, au) in frames.iter().enumerate() {
             write_message(&mut s, &frame(i as u32, 1, au, i == 0, false)).unwrap();
-            thread::sleep(PACE);
+            shown.wait(i + 1);
         }
         write_message(
             &mut s,
@@ -227,7 +249,7 @@ fn every_frame_is_shown_without_delay_then_bye() {
         }
     );
     // One picture per access unit, including the last one: no frame stays stuck in the host.
-    assert_eq!(pictures, 10);
+    assert_eq!(sink.pictures, 10);
 }
 
 #[test]
@@ -339,7 +361,7 @@ fn not_an_oculibre_peer() {
 }
 
 /// The phone turns: upright, top edge on the left, flat on the table, top edge on the right.
-fn turning_phone(mut s: TcpStream, frames: Vec<Vec<u8>>, codec_data: Vec<u8>) {
+fn turning_phone(mut s: TcpStream, frames: Vec<Vec<u8>>, codec_data: Vec<u8>, shown: Shown) {
     let _r = handshake(&mut s);
     write_message(&mut s, &config_back90(1, &codec_data)).unwrap();
     let rotations = [
@@ -354,7 +376,7 @@ fn turning_phone(mut s: TcpStream, frames: Vec<Vec<u8>>, codec_data: Vec<u8>) {
             write_message(&mut s, &rotation_event(r)).unwrap();
         }
         write_message(&mut s, &frame(i as u32, 1, &frames[i], i == 0, false)).unwrap();
-        thread::sleep(PACE);
+        shown.wait(i + 1);
     }
 }
 
@@ -399,7 +421,9 @@ fn late_video_is_dropped_to_catch_up() {
     const AHEAD: u64 = 10_000_000;
     let (codec_data, late) = encode(5);
     let (_, on_time) = encode(4);
-    let (result, sink) = with_phone_sink(View::default(), Counter::default(), move |mut s| {
+    let sink = Counter::default();
+    let shown = sink.shown.clone();
+    let (result, sink) = with_phone_sink(View::default(), sink, move |mut s| {
         let mut r = handshake(&mut s);
         write_message(&mut s, &config(1, &codec_data)).unwrap();
         let host_now = loop {
@@ -435,6 +459,7 @@ fn late_video_is_dropped_to_catch_up() {
         send(&mut s, 5, &on_time[1], false, at(20_000));
         for (i, au) in on_time.iter().enumerate() {
             send(&mut s, 6 + i as u32, au, i == 0, at(20_000));
+            shown.wait(i + 1);
         }
         assert_eq!(wait_request(&mut s, &mut r), "request_keyframe");
     });
@@ -500,8 +525,10 @@ fn a_lowered_bitrate_means_a_slow_connection() {
 #[test]
 fn auto_rotation_follows_the_phone() {
     let (codec_data, frames) = encode(5);
-    let (result, sink) = with_phone_view(View::default(), move |s| {
-        turning_phone(s, frames, codec_data)
+    let sink = Counter::default();
+    let shown = sink.shown.clone();
+    let (result, sink) = with_phone_sink(View::default(), sink, move |s| {
+        turning_phone(s, frames, codec_data, shown)
     });
     assert_eq!(result.unwrap(), End::Closed);
     let rotations: Vec<u16> = sink.transforms.iter().map(|t| t.rotation).collect();
@@ -517,7 +544,11 @@ fn fixed_rotation_ignores_the_phone() {
         rotate: Rotate::Fixed(270),
         mirror: true,
     };
-    let (result, sink) = with_phone_view(view, move |s| turning_phone(s, frames, codec_data));
+    let sink = Counter::default();
+    let shown = sink.shown.clone();
+    let (result, sink) = with_phone_sink(view, sink, move |s| {
+        turning_phone(s, frames, codec_data, shown)
+    });
     assert_eq!(result.unwrap(), End::Closed);
     let expected = Transform {
         rotation: 270,
