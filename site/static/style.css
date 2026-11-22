@@ -148,7 +148,7 @@ strong { color: var(--text); font-weight: 600; }
 .points { margin: 28px 0 0; padding: 0; list-style: none; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
 .points li { padding-left: 28px; position: relative; color: var(--muted); }
 .points li::before { content: ""; position: absolute; left: 0; top: 0.5em; width: 12px; height: 12px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.15); }
-.policy { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); display: grid; gap: 10px; max-width: 52em; }
+.policy { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); display: grid; gap: 10px; }
 .policy p { color: var(--muted); font-size: 15px; }
 
 details { border-bottom: 1px solid var(--border); }
