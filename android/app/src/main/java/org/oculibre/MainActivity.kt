@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -70,6 +71,7 @@ class MainActivity : Activity() {
         val asking = savedInstanceState == null && handlePairingLink(intent)
         // With a pairing dialog open, the first-launch screens wait for it (see its dismiss).
         if (!asking) maybeWelcome()
+        if (savedInstanceState == null) cableBack(intent)
     }
 
     // ------------------------------------------------------------------ layout
@@ -373,6 +375,12 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handlePairingLink(intent)
+        cableBack(intent)
+    }
+
+    /** Android opened the app for the computer's USB accessory (#21). */
+    private fun cableBack(intent: Intent?) {
+        if (intent?.action == UsbManager.ACTION_USB_ACCESSORY_ATTACHED) StreamService.cableBack(this)
     }
 
     // ------------------------------------------------------------------ Wi-Fi pairing (§13)

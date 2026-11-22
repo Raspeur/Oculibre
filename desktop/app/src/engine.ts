@@ -153,10 +153,17 @@ export interface Summary {
   pc_output: number | null;
 }
 
+/** USB without developer mode (#21): the phones plugged in, in accessory mode. */
+export type Accessory =
+  | { kind: "Switched"; data: { phone: string } }
+  | { kind: "Waiting" }
+  | { kind: "Failed"; data: string };
+
 /** Everything the engine reports: look at `kind`, then `data` has the matching type. */
 export type EngineEvent =
   | { kind: "VirtualCamera"; data: { path: string } }
   | { kind: "Usb"; data: Result<null> }
+  | { kind: "Accessory"; data: Accessory }
   | { kind: "Wifi"; data: WifiInfo }
   | { kind: "AnnounceFailed"; data: string }
   | { kind: "PhoneConnected"; data: { peer: string; via: Via } }

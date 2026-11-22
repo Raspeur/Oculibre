@@ -5,9 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.hardware.usb.UsbManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
@@ -62,16 +65,51 @@ class StreamService : Service() {
      * failed attempt over Wi-Fi (cable, direct, mDNS, VPN tries) can last more than 10 s.
      */
     private var wentLive = false
+    /** The cable came back during an attempt: the next one starts at once (#21). */
+    private var retrySoon = false
     private val retry = Runnable { request?.let { if (session == null) startSession(it) } }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** The user answered the USB accessory permission prompt (#21): yes means try now. */
+    private val usbPermission = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) retryNow()
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        val filter = IntentFilter(UsbAccessoryLink.ACTION_PERMISSION)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(usbPermission, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(usbPermission, filter)
+        }
+    }
+
+    /** The cable is usable again: a stream looking for the computer tries at once. */
+    private fun retryNow() {
+        val request = request ?: return
+        if (session == null) {
+            main.removeCallbacks(retry)
+            attempts = 0
+            startSession(request)
+        } else {
+            retrySoon = true // after the attempt in progress
+        }
+    }
+
     // The notification in the app's language (settings), like the screens.
     override fun attachBaseContext(base: Context) = super.attachBaseContext(Lang.wrap(base))
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_RETRY_NOW) {
+            if (request == null && session == null) stopSelf() else retryNow()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             main.removeCallbacks(retry)
             request = null
@@ -128,7 +166,8 @@ class StreamService : Service() {
                 Problem.NOT_FOUND, error)
             return
         }
-        val delay = minOf(1000L shl attempts.coerceAtMost(4), MAX_DELAY_MS)
+        val delay = if (retrySoon) 0L else minOf(1000L shl attempts.coerceAtMost(4), MAX_DELAY_MS)
+        retrySoon = false
         attempts++
         val why = error?.let { " ($it)" } ?: ""
         // The first minute: "looking for it"; after that, "cannot be found" (it keeps looking).
@@ -147,6 +186,7 @@ class StreamService : Service() {
             main.post {
                 if (this@StreamService.session !== session) return@post
                 wentLive = true
+                retrySoon = false
                 val lines = minOf(width, height)
                 val size = if (lines >= 2160) "4K" else "${lines}p"
                 publish(current.copy(running = true, phase = Phase.LIVE, live = "$size · $fps", problem = null, detail = null, retryInS = null))
@@ -181,6 +221,7 @@ class StreamService : Service() {
     }
 
     override fun onDestroy() {
+        runCatching { unregisterReceiver(usbPermission) }
         main.removeCallbacks(retry)
         request = null
         session?.stop()
@@ -260,6 +301,7 @@ class StreamService : Service() {
 
     companion object {
         private const val ACTION_STOP = "org.oculibre.action.STOP"
+        private const val ACTION_RETRY_NOW = "org.oculibre.action.RETRY_NOW"
         private const val CHANNEL_ID = "streaming"
         private const val NOTIFICATION_ID = 1
         private const val MAX_DELAY_MS = 10_000L
@@ -285,6 +327,15 @@ class StreamService : Service() {
 
         fun stop(context: Context) {
             context.startService(Intent(context, StreamService::class.java).setAction(ACTION_STOP))
+        }
+
+        /**
+         * The computer's USB accessory appeared (#21): a stream looking for the computer tries
+         * again now instead of waiting for its next attempt (up to 10 s away).
+         */
+        fun cableBack(context: Context) {
+            if (!current.running) return
+            context.startService(Intent(context, StreamService::class.java).setAction(ACTION_RETRY_NOW))
         }
 
         /** Registers [observer] (called on the main thread) and immediately gives it the current state. */

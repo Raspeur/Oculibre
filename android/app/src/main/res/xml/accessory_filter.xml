@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- USB without developer mode (#21): what the computer sends when it switches the phone to
+     accessory mode (desktop/core/src/aoa.rs, MANUFACTURER and MODEL). -->
+<resources>
+    <usb-accessory manufacturer="Oculibre" model="Oculibre" />
+</resources>

@@ -7,13 +7,15 @@
 //! - [`session`]: one connection with a phone (protocol, decoding, latency, commands)
 //! - [`decoder`]: H.264 decoding (FFmpeg with VA-API / NVDEC, or OpenH264)
 //! - [`yuv`]: rotation, mirror, fit and pixel conversion; [`vcam`] over [`v4l2`]: the Linux
-//!   virtual camera; [`adb`]: USB phones
+//!   virtual camera; [`adb`]: USB phones; `aoa`: USB without developer mode (Linux)
 //! - [`tls`], [`pairing`], [`discovery`]: encrypted Wi-Fi, paired phones, mDNS announcement
 //! - [`preview`]: small JPEG pictures of the output, for a window
 //! - [`profiles`]: each phone's settings, remembered
 //! - [`bench`]: measures every camera × mode of a phone (`oculibre bench`)
 
 pub mod adb;
+#[cfg(target_os = "linux")]
+pub mod aoa;
 pub mod bench;
 pub mod decoder;
 pub mod discovery;

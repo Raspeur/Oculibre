@@ -38,6 +38,9 @@ pub struct Config {
     pub device: Option<PathBuf>,
     /// Run `adb reverse` so that USB phones can connect.
     pub adb: bool,
+    /// Experimental (#21, Linux): switch the phones plugged in to accessory mode, so that USB
+    /// works without developer mode.
+    pub usb_accessory: bool,
     /// Also accept paired phones over the network (TLS).
     pub wifi: bool,
     /// Testing: offer TLS 1.2 only, as with Android 5–9 phones.
@@ -60,6 +63,7 @@ impl Default for Config {
             port: oculibre_protocol::HOST_PORT,
             device: None,
             adb: true,
+            usb_accessory: false,
             wifi: false,
             tls12_only: false,
             view: View::default(),
@@ -143,6 +147,9 @@ pub struct Host {
     profiles: Option<Arc<Profiles>>,
     /// Follows the USB phones (adb reverse); ends with the host.
     usb: Mutex<Option<adb::Watch>>,
+    /// Follows the phones in accessory mode (`usb_accessory`); ends with the host.
+    #[cfg(target_os = "linux")]
+    accessory: Mutex<Option<crate::aoa::Watch>>,
 }
 
 impl Host {
@@ -194,6 +201,11 @@ impl Host {
         let usb = config.adb.then(|| {
             let events = events.clone();
             adb::watch(port, move |result| events(Event::Usb(result)))
+        });
+        #[cfg(target_os = "linux")]
+        let accessory = config.usb_accessory.then(|| {
+            let events = events.clone();
+            crate::aoa::watch(port, move |what| events(Event::Accessory(what)))
         });
 
         let wifi = if config.wifi {
@@ -248,6 +260,8 @@ impl Host {
             viewers: ViewerSlot::default(),
             profiles,
             usb: Mutex::new(usb),
+            #[cfg(target_os = "linux")]
+            accessory: Mutex::new(accessory),
         })
     }
 
@@ -571,6 +585,8 @@ impl Host {
     pub fn stop(&self) {
         self.stopping.store(true, Ordering::Relaxed);
         drop(self.usb.lock().unwrap().take());
+        #[cfg(target_os = "linux")]
+        drop(self.accessory.lock().unwrap().take());
         if let Some(link) = self.current.lock().unwrap().as_ref() {
             let _ = link.shutdown_link();
         }

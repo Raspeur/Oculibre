@@ -394,6 +394,9 @@ class StreamSession(
             s.connect(InetSocketAddress(address, port), timeoutMs)
             return s
         }
+        // The cable without developer mode before anything (#21): the computer switched this
+        // phone to accessory mode.
+        accessory()?.let { return it }
         if (SecureChannel.isLoopback(host)) return open(host, CONNECT_TIMEOUT_MS)
         // The cable first, whatever the field holds: when it is plugged into the computer running
         // Oculibre, it is the fastest way and it needs neither Wi-Fi nor pairing.
@@ -439,6 +442,27 @@ class StreamSession(
             "Cannot reach ${paired.name} (tried ${tried.joinToString()}, and not found on this " +
                 "network): is `oculibre --wifi` running there?",
         )
+    }
+
+    /** The computer through the USB cable in accessory mode (no developer mode, #21), or null. */
+    private fun accessory(): Socket? {
+        if (!running.get()) return null
+        val accessory = UsbAccessoryLink.find(appContext) ?: return null
+        if (!UsbAccessoryLink.allowed(appContext, accessory)) {
+            // "Open Oculibre" was not accepted: ask here; a yes starts a new attempt.
+            UsbAccessoryLink.askPermission(appContext, accessory)
+            status("USB cable: allow Oculibre to use it (Android's prompt), or plug it again")
+            return null
+        }
+        return try {
+            UsbAccessoryLink.open(appContext, accessory).also {
+                target = LOOPBACK
+                status("Connected over USB (accessory)")
+            }
+        } catch (e: IOException) {
+            status("USB accessory: ${e.message}")
+            null
+        }
     }
 
     /**

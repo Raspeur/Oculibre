@@ -21,6 +21,18 @@ pub enum Via {
     Wifi { tls: String },
 }
 
+/// What happens with the phones plugged in, in accessory mode ([`Event::Accessory`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "data")]
+pub enum Accessory {
+    /// A phone was asked to switch to accessory mode: Android offers to open Oculibre.
+    Switched { phone: String },
+    /// A phone is in accessory mode: waiting for the app to start the stream.
+    Waiting,
+    /// The phone in accessory mode cannot be used (no access to its USB device…).
+    Failed(String),
+}
+
 /// Why a connection was refused before any session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", content = "data")]
@@ -66,6 +78,8 @@ pub enum Event {
     VirtualCamera { path: PathBuf },
     /// `adb reverse` for USB phones: done, or why not (USB then won't work, Wi-Fi still will).
     Usb(Result<(), String>),
+    /// USB without developer mode (Android Open Accessory, #21, Linux).
+    Accessory(Accessory),
     /// Wi-Fi is on (`--wifi`).
     Wifi(WifiInfo),
     /// The mDNS announcement failed: phones will use the address they remember.

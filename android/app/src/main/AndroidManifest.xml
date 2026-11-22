@@ -14,6 +14,10 @@
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="true" />
+    <!-- USB without developer mode (#21); phones without it still use adb or Wi-Fi. -->
+    <uses-feature
+        android:name="android.hardware.usb.accessory"
+        android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -38,6 +42,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="oculibre" android:host="pair" />
             </intent-filter>
+            <!-- USB without developer mode (#21): the computer switched the phone to accessory
+                 mode; accepting "Open Oculibre" allows the app to use it. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
+                android:resource="@xml/accessory_filter" />
         </activity>
 
         <activity

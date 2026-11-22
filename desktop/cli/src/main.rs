@@ -28,6 +28,8 @@ OPTIONS:
     -p, --port <PORT>       TCP port to listen on [default: 47100]
     -d, --device <PATH>     v4l2loopback device [default: auto-detect]
         --no-adb            Don't run `adb reverse`
+        --usb-accessory     Experimental: USB without developer mode (Android Open
+                            Accessory): switches the phones plugged in
     -w, --wifi              Also accept paired phones over the network (Wi-Fi), encrypted
         --pair              Pair a new phone: shows a QR code to scan (implies --wifi)
         --tls12-only        Testing: Wi-Fi with TLS 1.2 only, as with Android 5-9 phones
@@ -130,6 +132,7 @@ fn parse_args() -> Result<Args, String> {
                 c.device = Some(it.next().ok_or("--device needs a value")?.into());
             }
             "--no-adb" => c.adb = false,
+            "--usb-accessory" => c.usb_accessory = true,
             "-w" | "--wifi" => c.wifi = true,
             "--tls12-only" => c.tls12_only = true,
             "--pair" => {

@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use std::sync::Arc;
 
 use oculibre_core::bench::{self, Progress};
-use oculibre_core::events::{Refusal, Via, WifiInfo};
+use oculibre_core::events::{Accessory, Refusal, Via, WifiInfo};
 use oculibre_core::session::{End, Status, Summary, AVERAGE_WINDOW};
 use oculibre_core::{Event, Events};
 use oculibre_protocol::{Hello, StreamConfig};
@@ -18,6 +18,13 @@ pub fn events(port: u16) -> Events {
             println!("USB: adb reverse tcp:{port} OK — use 127.0.0.1 in the app")
         }
         Event::Usb(Err(e)) => eprintln!("warning: {e} — USB won't work, Wi-Fi still will"),
+        Event::Accessory(Accessory::Switched { phone }) => {
+            println!("USB: {phone} switched to accessory mode — accept \"Open Oculibre\" on it")
+        }
+        Event::Accessory(Accessory::Waiting) => {
+            println!("USB: phone in accessory mode — waiting for the app to start")
+        }
+        Event::Accessory(Accessory::Failed(e)) => eprintln!("warning: USB accessory: {e}"),
         Event::Wifi(info) => println!("{}", wifi_line(&info)),
         Event::AnnounceFailed(e) => eprintln!(
             "warning: cannot announce this computer on the network (mDNS: {e}): \
