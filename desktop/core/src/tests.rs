@@ -446,6 +446,58 @@ fn late_video_is_dropped_to_catch_up() {
 }
 
 #[test]
+fn a_lowered_bitrate_means_a_slow_connection() {
+    // The phone says it lowered its bitrate for the network: the front-end hears it is the
+    // connection (problem 501), not this computer (504).
+    let (codec_data, frames) = encode(14);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let phone = thread::spawn(move || {
+        let mut s = TcpStream::connect(addr).unwrap();
+        let _r = handshake(&mut s);
+        write_message(&mut s, &config(1, &codec_data)).unwrap();
+        let stats = json!({"camera_fps": 30, "sent_fps": 30, "bitrate": 8_000_000,
+            "dropped": 3, "queue": 2, "target_bitrate": 8_000_000});
+        write_message(
+            &mut s,
+            &Message::Event(oculibre_protocol::Event {
+                event: "stats".into(),
+                data: stats,
+            }),
+        )
+        .unwrap();
+        for (i, au) in frames.iter().enumerate() {
+            write_message(&mut s, &frame(i as u32, 1, au, i == 0, false)).unwrap();
+            thread::sleep(Duration::from_millis(100));
+        }
+        let bye = Bye {
+            reason: "user_stop".into(),
+            message: None,
+        };
+        write_message(&mut s, &Message::Bye(bye)).unwrap();
+    });
+    let (stream, _) = listener.accept().unwrap();
+    let hello = session::host_hello("host-id".into(), "test-host".into(), None);
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events: crate::Events = {
+        let seen = seen.clone();
+        std::sync::Arc::new(move |e| {
+            if let crate::Event::Status(st) = e {
+                seen.lock().unwrap().push(st);
+            }
+        })
+    };
+    let mut sink = Counter::default();
+    let end = session::run_driven(stream, &hello, &mut sink, session::Setup::new(events));
+    phone.join().unwrap();
+    assert!(matches!(end.unwrap(), End::Bye { .. }));
+    let seen = seen.lock().unwrap();
+    let last = seen.last().expect("a status");
+    assert!(last.link_slow && !last.behind, "{last:?}");
+    assert_eq!(last.target_mbits, Some(8.0));
+}
+
+#[test]
 fn auto_rotation_follows_the_phone() {
     let (codec_data, frames) = encode(5);
     let (result, sink) = with_phone_view(View::default(), move |s| {

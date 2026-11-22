@@ -122,6 +122,16 @@ export function Stage({ engine }: { engine: EngineState }) {
           </div>
         </div>
       )}
+      {status?.link_slow && (
+        <div className="oc-alert" role="status">
+          <span className="oc-alert__icon" aria-hidden="true">!</span>
+          <div className="oc-alert__body">
+            <span className="oc-alert__title">{t("link_slow_title")}</span>
+            <span className="oc-alert__text">{t("link_slow_text")}</span>
+            <span className="oc-alert__code">{t("code", { code: 501 })}</span>
+          </div>
+        </div>
+      )}
       {details && <LatencyDetails status={status} />}
     </section>
   );
@@ -261,6 +271,7 @@ function LatencyDetails({ status }: { status: Status | null }) {
           {t("lat_frames", { shown: status.shown_fps.toFixed(0), camera: status.camera_fps ?? "—" })}
           {status.dropped != null && <> · {t("lat_dropped", { n: status.dropped })}</>}
           {status.skipped > 0 && <> · {t("lat_skipped", { n: status.skipped })}</>}
+          {status.target_mbits != null && <> · {t("lat_lowered", { mbits: status.target_mbits.toFixed(1) })}</>}
           {status.errors > 0 && <> · {t("lat_errors", { n: status.errors })}</>}
           {status.rtt != null && <> · {t("lat_rtt", { rtt: `${status.rtt.toFixed(1)} ms` })}</>}
         </p>

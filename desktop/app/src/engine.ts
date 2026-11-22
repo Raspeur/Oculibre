@@ -133,6 +133,10 @@ export interface Status {
   skipped: number;
   /** This computer does not keep up (problem 504). */
   behind: boolean;
+  /** The connection does not carry the video: bitrate lowered or late video dropped (problem 501). */
+  link_slow: boolean;
+  /** What the phone aims at while it has lowered its bitrate for the network, Mbit/s. */
+  target_mbits: number | null;
   errors: number;
   clock_mismatch: boolean;
 }

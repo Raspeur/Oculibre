@@ -171,6 +171,8 @@ class StreamSession(
     @Volatile private var endedByComputer = false
 
     @Volatile private var socket: Socket? = null
+    /** The TCP socket under TLS (the same as [socket] on USB): its send buffer is sized here. */
+    @Volatile private var tcp: Socket? = null
     @Volatile private var writer: Protocol.MessageWriter? = null
     /** Camera + encoder currently streaming (or starting). */
     @Volatile private var pipeline: Pipeline? = null
@@ -210,6 +212,9 @@ class StreamSession(
     private val switching = AtomicBoolean(false)
 
     private val queue = ArrayBlockingQueue<Packet>(QUEUE_CAPACITY)
+
+    /** Adaptive bitrate (drain thread, and set_bitrate on the reader thread). */
+    private val bitrateControl = BitrateControl(requested.bitrate)
 
     /** Features both sides understand (HELLO intersection). */
     @Volatile private var shared: Set<String> = emptySet()
@@ -269,6 +274,7 @@ class StreamSession(
         setupThread = thread(name = "oculibre-setup") {
             try {
                 val s = connect()
+                tcp = s
                 socket = s
                 if (!running.get()) return@thread
                 socket = secure(s)
@@ -657,8 +663,10 @@ class StreamSession(
                     )
                 } else {
                     try {
-                        c.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bitrate.toInt()) })
+                        setEncoderBitrate(c, bitrate.toInt())
                         activeConfig = activeConfig.copy(bitrate = bitrate.toInt())
+                        bitrateControl.reset(bitrate.toInt())
+                        sizeSendBuffer(bitrate.toInt())
                         Message.Response.ok(req.id)
                     } catch (e: IllegalStateException) {
                         Message.Response.error(req.id, Protocol.ErrorCode.FAILED, e.message)
@@ -895,6 +903,8 @@ class StreamSession(
         outputFormat = null
         activeConfig = cfg
         pipelineStartMs = SystemClock.elapsedRealtime()
+        bitrateControl.reset(cfg.bitrate)
+        sizeSendBuffer(cfg.bitrate)
 
         val tuning = Tuning.load(appContext)
         tuningLabel = if (tuning.label.isEmpty()) "" else "\nLab settings: ${tuning.label}"
@@ -1021,7 +1031,8 @@ class StreamSession(
         val bytes = Protocol.encodeVideoFrame(
             Protocol.STREAM_VIDEO, timestampUs, isKey, pendingDiscontinuity, number, configId, data, 0, size,
         )
-        if (queue.offer(Packet(bytes, timestampUs, encodedUs))) {
+        val sent = queue.offer(Packet(bytes, timestampUs, encodedUs))
+        if (sent) {
             pendingDiscontinuity = false
         } else {
             framesDropped.incrementAndGet()
@@ -1029,6 +1040,29 @@ class StreamSession(
             waitingForKeyframe = true
             requestKeyframe(c)
         }
+        bitrateControl.observe(
+            SystemClock.elapsedRealtime(), dropped = !sent, queueHigh = queue.size >= QUEUE_CAPACITY / 2,
+        )?.let { setEncoderBitrate(c, it) }
+    }
+
+    /** Changes the encoder's target at once (API 19), without a new STREAM_CONFIG (§flow). */
+    private fun setEncoderBitrate(c: MediaCodec, bitrate: Int) {
+        runCatching {
+            c.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bitrate) })
+        }
+    }
+
+    /**
+     * Keeps the system's send buffer to about [SEND_BUFFER_MS] of video. Left alone, Android grows
+     * it to megabytes: when the network is slower than the video, seconds of it waited there,
+     * where neither the drop policy nor the adaptive bitrate could see them (#4). Small, the
+     * queue fills at once instead, and both react.
+     */
+    private fun sizeSendBuffer(bitrate: Int) {
+        // The encoder overshoots its target by about a quarter.
+        val bytes = (bitrate.toLong() * 5 / 4 / 8 * SEND_BUFFER_MS / 1000)
+            .coerceIn(MIN_SEND_BUFFER.toLong(), MAX_SEND_BUFFER.toLong()).toInt()
+        runCatching { tcp?.sendBufferSize = bytes }
     }
 
     private fun requestKeyframe(c: MediaCodec) {
@@ -1310,6 +1344,8 @@ class StreamSession(
                             data["encoder_ms"] = Math.round(maxOf(0.0, encodedMs - cameraMs) * 10) / 10.0
                         }
                         queueMs?.let { data["queue_ms"] = it }
+                        // Lowered because the network cannot carry the mode's bitrate (0.3, later).
+                        if (bitrateControl.lowered) data["target_bitrate"] = bitrateControl.target.toLong()
                         runCatching { writer?.write(Message.Event("stats", data)) }
                     }
 
@@ -1334,9 +1370,15 @@ class StreamSession(
                             ms(h["latency_ms"])?.let { append(" · latency $it ms") }
                         }
                     } ?: ""
+                    val lowered = if (bitrateControl.lowered) {
+                        " (network too slow: aiming at ${"%.1f".format(bitrateControl.target / 1_000_000.0)})"
+                    } else {
+                        ""
+                    }
                     status(
                         "Streaming ${cfg.width}x${cfg.height}$linkLabel$tuningLabel\n" +
-                            "camera $cameraFps fps · sent $sentFps fps · ${"%.1f".format(bitrate / 1_000_000.0)} Mbit/s\n" +
+                            "camera $cameraFps fps · sent $sentFps fps · ${"%.1f".format(bitrate / 1_000_000.0)} Mbit/s" +
+                            lowered + "\n" +
                             "dropped: ${framesDropped.get()}" + pc + warning,
                     )
                 }
@@ -1361,6 +1403,10 @@ class StreamSession(
         /** ~200 ms at 30 fps: beyond that we'd rather drop than add latency. */
         private const val QUEUE_CAPACITY = 6
         private const val MIN_BITRATE = 100_000L
+        /** Video the system may hold before our queue (the network's own delay is a few ms). */
+        private const val SEND_BUFFER_MS = 100
+        private const val MIN_SEND_BUFFER = 64 * 1024
+        private const val MAX_SEND_BUFFER = 1024 * 1024
         private const val MAX_BITRATE = 100_000_000L
         private const val PREF_INSTALL_ID = "install_id"
         /** A first frame closer than this to a clock uses that clock. */

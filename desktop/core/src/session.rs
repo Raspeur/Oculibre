@@ -1131,8 +1131,15 @@ pub struct Status {
     /// since the start.
     pub skipped: u64,
     /// This computer does not keep up: it skipped many pictures, or had to drop late video to
-    /// catch up, in the last [`BEHIND_FOR`] (problem 504 in the app).
+    /// catch up while its decoding was busy all the time, in the last [`BEHIND_FOR`] (problem 504
+    /// in the app).
     pub behind: bool,
+    /// The connection does not carry the video: the phone lowered its bitrate, or late video had
+    /// to be dropped while this computer was keeping up, in the last [`BEHIND_FOR`] (problem 501).
+    pub link_slow: bool,
+    /// What the phone's encoder aims at while it has lowered its bitrate for the network,
+    /// Mbit/s (its `stats` `target_bitrate`); `None` at the mode's bitrate.
+    pub target_mbits: Option<f64>,
     /// Decoding errors since the start.
     pub errors: u32,
     /// Latency samples were thrown away as absurd: the phone's clocks disagree.
@@ -1246,6 +1253,10 @@ fn ticker(shared: &Shared) -> Totals {
     let mut last = Instant::now();
     // Last second in which more than a tenth of the decoded pictures were skipped.
     let mut last_struggle: Option<Instant> = None;
+    // Last second in which decoding kept the reading thread busy (over 90 % of the time).
+    let mut last_decoder_busy: Option<Instant> = None;
+    // Last second in which the phone said it had lowered its bitrate.
+    let mut last_lowered: Option<Instant> = None;
     while !shared.stop.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_millis(100));
         if last.elapsed() < Duration::from_secs(1) {
@@ -1262,16 +1273,18 @@ fn ticker(shared: &Shared) -> Totals {
             last_struggle = Some(Instant::now());
         }
         let last_drain = *shared.last_drain.lock().unwrap();
-        let behind = [last_struggle, last_drain]
-            .into_iter()
-            .flatten()
-            .any(|t| t.elapsed() < BEHIND_FOR);
         let bytes = shared.bytes.swap(0, Ordering::Relaxed);
         let errors = shared.errors_total.load(Ordering::Relaxed);
         let latency = std::mem::take(&mut *shared.latency.lock().unwrap());
         let avg_ms =
             |sum: i64| (latency.count > 0).then(|| sum as f64 / latency.count as f64 / 1000.0);
         let latency_ms = avg_ms(latency.total_sum);
+        // Decoding is on the reading thread: busy all the time, video waits in the sockets.
+        if let Some(decode_ms) = avg_ms(latency.decode_sum) {
+            if decode_ms * f64::from(decoded) / secs > 900.0 {
+                last_decoder_busy = Some(Instant::now());
+            }
+        }
         totals.add_second(decoded, &latency);
         totals.errors = errors;
         let rtt_ms = shared
@@ -1320,6 +1333,18 @@ fn ticker(shared: &Shared) -> Totals {
             .clone()
             .unwrap_or_default();
         totals.dropped = phone.get("dropped").and_then(Value::as_u64);
+        let target_mbits = phone
+            .get("target_bitrate")
+            .and_then(Value::as_f64)
+            .map(|b| b / 1e6);
+        if target_mbits.is_some() {
+            last_lowered = Some(Instant::now());
+        }
+        let recent = |t: Option<Instant>| t.is_some_and(|t| t.elapsed() < BEHIND_FOR);
+        // Late video drained: this computer's fault if its decoding was saturated, else the link's.
+        let drained = recent(last_drain);
+        let behind = recent(last_struggle) || (drained && recent(last_decoder_busy));
+        let link_slow = !behind && (drained || recent(last_lowered));
         if latency.count > 0 {
             totals.add_phone(PhoneSplit::from_stats(&phone));
         }
@@ -1357,6 +1382,8 @@ fn ticker(shared: &Shared) -> Totals {
             dropped: totals.dropped,
             skipped: shared.skipped_total.load(Ordering::Relaxed),
             behind,
+            link_slow,
+            target_mbits,
             errors,
             clock_mismatch: latency.rejected > 0,
         }));

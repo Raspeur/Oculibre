@@ -227,6 +227,14 @@ fn status_line(s: &Status) -> String {
     if s.behind {
         line += " · this computer is not keeping up (power saving? other programs?)";
     }
+    if s.link_slow {
+        line += &match s.target_mbits {
+            Some(m) => {
+                format!(" · connection too slow: the phone lowered the bitrate to {m:.1} Mbit/s")
+            }
+            None => " · connection too slow: late video dropped".to_string(),
+        };
+    }
     line
 }
 
@@ -280,6 +288,8 @@ mod tests {
             dropped: Some(0),
             skipped: 0,
             behind: false,
+            link_slow: false,
+            target_mbits: None,
             errors: 0,
             clock_mismatch: false,
         };
