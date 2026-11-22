@@ -74,6 +74,14 @@ pub fn events(port: u16) -> Events {
             println!("\nRotation: {}°{mode}{mirror}", transform.rotation);
         }
         Event::Decoder { name } => println!("\nDecoder: {name}"),
+        Event::DecoderTooSlow {
+            from,
+            decode_ms,
+            frame_ms,
+        } => println!(
+            "\n{from} takes {decode_ms:.1} ms per picture, the phone sends one every \
+             {frame_ms:.1} ms: decoding on the processor instead"
+        ),
         Event::RequestRefused { id, code, message } => eprintln!(
             "\nphone refused request {id}: {code} {}",
             message.unwrap_or_default()
@@ -218,8 +226,22 @@ fn status_line(s: &Status) -> String {
     if let Some(d) = s.dropped.filter(|&d| d > 0) {
         line += &format!(" · dropped by phone {d}");
     }
+    if s.skipped > 0 {
+        line += &format!(" · skipped by this computer {}", s.skipped);
+    }
     if s.errors > 0 {
         line += &format!(" · decode errors {}", s.errors);
+    }
+    if s.behind {
+        line += " · this computer is not keeping up (power saving? other programs?)";
+    }
+    if s.link_slow {
+        line += &match s.target_mbits {
+            Some(m) => {
+                format!(" · connection too slow: the phone lowered the bitrate to {m:.1} Mbit/s")
+            }
+            None => " · connection too slow: late video dropped".to_string(),
+        };
     }
     line
 }
@@ -269,8 +291,13 @@ mod tests {
             phone: Some(30.4),
             split: None,
             pc: Some(11.9),
+            pc_decode: Some(5.2),
             rtt: Some(1.23),
             dropped: Some(0),
+            skipped: 0,
+            behind: false,
+            link_slow: false,
+            target_mbits: None,
             errors: 0,
             clock_mismatch: false,
         };

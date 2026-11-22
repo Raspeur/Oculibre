@@ -125,8 +125,18 @@ export interface Status {
   phone: number | null;
   split: PhoneSplit | null;
   pc: number | null;
+  /** The decoding part of `pc`; the rest is rotation, conversion and write. */
+  pc_decode: number | null;
   rtt: number | null;
   dropped: number | null;
+  /** Pictures this computer could not write in time (a newer one took their place), since the start. */
+  skipped: number;
+  /** This computer does not keep up (problem 504). */
+  behind: boolean;
+  /** The connection does not carry the video: bitrate lowered or late video dropped (problem 501). */
+  link_slow: boolean;
+  /** What the phone aims at while it has lowered its bitrate for the network, Mbit/s. */
+  target_mbits: number | null;
   errors: number;
   clock_mismatch: boolean;
 }
@@ -159,6 +169,7 @@ export type EngineEvent =
   | { kind: "StreamPaused"; data: { reason: string } }
   | { kind: "Transform"; data: { transform: Transform; auto: boolean } }
   | { kind: "Decoder"; data: { name: string } }
+  | { kind: "DecoderTooSlow"; data: { from: string; decode_ms: number; frame_ms: number } }
   | { kind: "VirtualCameraSize"; data: { wanted: [number, number]; size: [number, number] } }
   | { kind: "RequestRefused"; data: { id: number; code: string; message: string | null } }
   | { kind: "Status"; data: Status }

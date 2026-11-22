@@ -432,7 +432,7 @@ Unsolicited notifications, no response.
   columns: (auto, auto, 1fr, auto),
   table.header([`event`], [Direction], [`data`], [Since]),
   [`orientation`], [camera → host], [`{"device_rotation"}`: `0`, `90`, `180`, `270` or `null` (@orientation)], [0.1],
-  [`stats`], [camera → host, every 1 s], [`{"camera_fps", "sent_fps", "bitrate", "dropped", "queue", "latency_ms"?, "camera_ms"?, "encoder_ms"?, "queue_ms"?}`; `latency_ms`: average delay from capture to handing the frame to the network; its parts: `camera_ms` capture → picture finished by the camera, `encoder_ms` → out of the encoder, `queue_ms` → handed to the network (0.3)], [0.1],
+  [`stats`], [camera → host, every 1 s], [`{"camera_fps", "sent_fps", "bitrate", "dropped", "queue", "latency_ms"?, "camera_ms"?, "encoder_ms"?, "queue_ms"?}`; `latency_ms`: average delay from capture to handing the frame to the network; its parts: `camera_ms` capture → picture finished by the camera, `encoder_ms` → out of the encoder, `queue_ms` → handed to the network (0.3); `target_bitrate` (bit/s): present only while the camera has lowered its encoder's bitrate below the mode's because the network cannot carry it (@flow)], [0.1],
   [`stats`], [host → camera, every 1 s], [`{"received_fps", "decoded_fps", "decode_errors", "rtt_ms"?, "latency_ms"?}`; `latency_ms`: average capture-to-output latency (§11)], [0.1],
   [`thermal`], [camera → host], [`{"status", "battery_temp_c"?, "battery_pct"?, "charging"?}`; `status` is one of `none`, `light`, `moderate`, `severe`, `critical`, `emergency`, `shutdown` (Android thermal status)], [reserved],
   [`mode_changed`], [camera → host], [`{"reason": "thermal"|"user"|"camera", …}`, followed by a new `STREAM_CONFIG`], [reserved],
@@ -495,11 +495,15 @@ $ "rtt" = (t_4 - t_1) - (t_3 - t_2) quad quad "offset" = ((t_2 - t_1) + (t_3 - t
 = Flow control <flow>
 
 - *Camera:* never lets latency pile up. When its send queue is full, it drops frames until the next
-  keyframe, asks its encoder for one, and sets `DISCONTINUITY` on the next frame sent.
+  keyframe, asks its encoder for one, and sets `DISCONTINUITY` on the next frame sent. It SHOULD keep
+  the system's socket send buffer small (about 100 ms of video): a large one hides a slow network from
+  the queue, and seconds of video wait there.
 - *Host:* keeps at most one decoded frame waiting; on a decode error or a gap it cannot recover from, it
   sends `request_keyframe`.
-- *Adaptive bitrate (later):* the camera MAY adjust its bitrate from the host `stats` event and the
-  `rtt`; changing the bitrate does not need a new `STREAM_CONFIG`.
+- *Adaptive bitrate:* the camera MAY lower its encoder's bitrate when its queue fills or it drops
+  frames, and raise it back when the network keeps up, never above the mode's bitrate (or the one set
+  with `set_bitrate`). Changing the bitrate does not need a new `STREAM_CONFIG`. While lowered, its
+  `stats` carry `target_bitrate`, so the host can tell the user that the connection is the limit.
 
 = Security <security>
 
@@ -663,7 +667,7 @@ USB, Redmi Note 9 Pro, 1080p60 (`→` camera to host, `←` host to camera):
     non-loopback connection, pairing through a QR code (`oculibre://pair?v=1&…`), `HELLO.pairing_token`,
     host checks the camera's `HELLO` before sending its own. Plaintext stays for loopback (USB).
     Discovery: `_oculibre-host._tcp` with TXT `v`, `k`. Camera `stats`: `camera_ms`, `encoder_ms`,
-    `queue_ms`.],
+    `queue_ms`; later, `target_bitrate` (adaptive bitrate, optional, compatible).],
   [0.2], [`set_mode` command and feature `control.mode` (the host picks the camera and the mode;
     used by `oculibre bench`), `STREAM_END` reason `mode_change`, capabilities list every camera. A
     0.1 peer still works, without `set_mode`. Encryption moves to the version that adds pairing.],

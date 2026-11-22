@@ -2,8 +2,10 @@
 
 use std::io::BufReader;
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use oculibre_protocol::{
     features, streams, write_message, Bye, Hello, Message, MessageReader, Preamble, Role,
@@ -20,12 +22,34 @@ use crate::yuv::Transform;
 
 const W: usize = 320;
 const H: usize = 240;
+/// Time between two frames of a simulated phone: a real one films at most 60 a second. Without
+/// it, the host would rightly show only the newest of frames arriving all at once.
+const PACE: Duration = Duration::from_millis(15);
 
 #[derive(Default)]
 struct Counter {
     pictures: usize,
     yuyv: Vec<u8>,
     transforms: Vec<Transform>,
+    /// Time each picture takes to write: a slow virtual camera.
+    delay: Duration,
+    shown: Shown,
+}
+
+/// Pictures the sink has written, readable from the simulated phone's thread.
+#[derive(Clone, Default)]
+struct Shown(Arc<AtomicUsize>);
+
+impl Shown {
+    /// Waits until the sink has written `n` pictures (at most 5 s). A phone that sends its next
+    /// frame only then gets every frame shown even on a slow test machine, where the host would
+    /// otherwise rightly skip a picture its output had not taken yet.
+    fn wait(&self, n: usize) {
+        let start = Instant::now();
+        while self.0.load(Ordering::SeqCst) < n && start.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
 }
 
 impl Sink for Counter {
@@ -40,6 +64,8 @@ impl Sink for Counter {
         assert_eq!(self.yuyv.len(), W * H * 2);
         self.pictures += 1;
         self.transforms.push(transform);
+        self.shown.0.fetch_add(1, Ordering::SeqCst);
+        thread::sleep(self.delay);
         Ok(())
     }
 }
@@ -94,12 +120,19 @@ fn with_phone_view(
     view: View,
     phone: impl FnOnce(TcpStream) + Send + 'static,
 ) -> (Result<End, String>, Counter) {
+    with_phone_sink(view, Counter::default(), phone)
+}
+
+fn with_phone_sink(
+    view: View,
+    mut sink: Counter,
+    phone: impl FnOnce(TcpStream) + Send + 'static,
+) -> (Result<End, String>, Counter) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let phone = thread::spawn(move || phone(TcpStream::connect(addr).unwrap()));
     let (stream, _) = listener.accept().unwrap();
     let hello = session::host_hello("host-id".into(), "test-host".into(), None);
-    let mut sink = Counter::default();
     let result = session::run(stream, &hello, view, &mut sink).map_err(|e| e.to_string());
     phone.join().unwrap();
     (result, sink)
@@ -190,11 +223,14 @@ fn wait_request(s: &mut TcpStream, r: &mut MessageReader<BufReader<TcpStream>>) 
 #[test]
 fn every_frame_is_shown_without_delay_then_bye() {
     let (codec_data, frames) = encode(10);
-    let (result, pictures) = with_phone(move |mut s| {
+    let sink = Counter::default();
+    let shown = sink.shown.clone();
+    let (result, sink) = with_phone_sink(View::default(), sink, move |mut s| {
         let _r = handshake(&mut s);
         write_message(&mut s, &config(1, &codec_data)).unwrap();
         for (i, au) in frames.iter().enumerate() {
             write_message(&mut s, &frame(i as u32, 1, au, i == 0, false)).unwrap();
+            shown.wait(i + 1);
         }
         write_message(
             &mut s,
@@ -213,7 +249,7 @@ fn every_frame_is_shown_without_delay_then_bye() {
         }
     );
     // One picture per access unit, including the last one: no frame stays stuck in the host.
-    assert_eq!(pictures, 10);
+    assert_eq!(sink.pictures, 10);
 }
 
 #[test]
@@ -325,7 +361,7 @@ fn not_an_oculibre_peer() {
 }
 
 /// The phone turns: upright, top edge on the left, flat on the table, top edge on the right.
-fn turning_phone(mut s: TcpStream, frames: Vec<Vec<u8>>, codec_data: Vec<u8>) {
+fn turning_phone(mut s: TcpStream, frames: Vec<Vec<u8>>, codec_data: Vec<u8>, shown: Shown) {
     let _r = handshake(&mut s);
     write_message(&mut s, &config_back90(1, &codec_data)).unwrap();
     let rotations = [
@@ -340,14 +376,159 @@ fn turning_phone(mut s: TcpStream, frames: Vec<Vec<u8>>, codec_data: Vec<u8>) {
             write_message(&mut s, &rotation_event(r)).unwrap();
         }
         write_message(&mut s, &frame(i as u32, 1, &frames[i], i == 0, false)).unwrap();
+        shown.wait(i + 1);
     }
+}
+
+#[test]
+fn a_slow_virtual_camera_never_holds_back_decoding() {
+    // The virtual camera needs 60 ms per picture, the phone sends one every 5 ms: the host shows
+    // the newest picture each time and skips the others, instead of letting video pile up.
+    let (codec_data, frames) = encode(20);
+    let sink = Counter {
+        delay: Duration::from_millis(60),
+        ..Default::default()
+    };
+    let start = std::time::Instant::now();
+    let (result, sink) = with_phone_sink(View::default(), sink, move |mut s| {
+        let _r = handshake(&mut s);
+        write_message(&mut s, &config(1, &codec_data)).unwrap();
+        for (i, au) in frames.iter().enumerate() {
+            write_message(&mut s, &frame(i as u32, 1, au, i == 0, false)).unwrap();
+            thread::sleep(Duration::from_millis(5));
+        }
+    });
+    assert_eq!(result.unwrap(), End::Closed);
+    assert!(sink.pictures >= 2, "{} pictures", sink.pictures);
+    assert!(
+        sink.pictures < 10,
+        "{} pictures: nothing was skipped",
+        sink.pictures
+    );
+    // Waiting for each picture would take 20 × 60 ms.
+    assert!(
+        start.elapsed() < Duration::from_millis(800),
+        "{:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn late_video_is_dropped_to_catch_up() {
+    // The phone's clock is 10 s ahead of the host's. After the first PING, it sends frames
+    // captured 2 s ago (video piled up on the way): the host skips them without decoding, then
+    // waits for a keyframe among the frames that arrive on time.
+    const AHEAD: u64 = 10_000_000;
+    let (codec_data, late) = encode(5);
+    let (_, on_time) = encode(4);
+    let sink = Counter::default();
+    let shown = sink.shown.clone();
+    let (result, sink) = with_phone_sink(View::default(), sink, move |mut s| {
+        let mut r = handshake(&mut s);
+        write_message(&mut s, &config(1, &codec_data)).unwrap();
+        let host_now = loop {
+            if let Message::Ping(p) = r.read_message().unwrap() {
+                let t = p.t1 + AHEAD;
+                write_message(
+                    &mut s,
+                    &Message::Pong(oculibre_protocol::Pong {
+                        seq: p.seq,
+                        t1: p.t1,
+                        t2: t,
+                        t3: t,
+                    }),
+                )
+                .unwrap();
+                break p.t1;
+            }
+        };
+        let started = std::time::Instant::now();
+        let at = |lateness: u64| host_now + AHEAD + started.elapsed().as_micros() as u64 - lateness;
+        let send = |s: &mut TcpStream, n: u32, au: &[u8], key: bool, ts: u64| {
+            let mut m = frame(n, 1, au, key, false);
+            if let Message::VideoFrame(f) = &mut m {
+                f.timestamp = ts;
+            }
+            write_message(s, &m).unwrap();
+            thread::sleep(PACE);
+        };
+        for (i, au) in late.iter().enumerate() {
+            send(&mut s, i as u32, au, i == 0, at(2_000_000));
+        }
+        // On time again: this frame ends the skipping, the next keyframe starts the picture again.
+        send(&mut s, 5, &on_time[1], false, at(20_000));
+        for (i, au) in on_time.iter().enumerate() {
+            send(&mut s, 6 + i as u32, au, i == 0, at(20_000));
+            shown.wait(i + 1);
+        }
+        assert_eq!(wait_request(&mut s, &mut r), "request_keyframe");
+    });
+    assert_eq!(result.unwrap(), End::Closed);
+    assert_eq!(
+        sink.pictures, 4,
+        "only the frames after the keyframe that came on time"
+    );
+}
+
+#[test]
+fn a_lowered_bitrate_means_a_slow_connection() {
+    // The phone says it lowered its bitrate for the network: the front-end hears it is the
+    // connection (problem 501), not this computer (504).
+    let (codec_data, frames) = encode(14);
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let phone = thread::spawn(move || {
+        let mut s = TcpStream::connect(addr).unwrap();
+        let _r = handshake(&mut s);
+        write_message(&mut s, &config(1, &codec_data)).unwrap();
+        let stats = json!({"camera_fps": 30, "sent_fps": 30, "bitrate": 8_000_000,
+            "dropped": 3, "queue": 2, "target_bitrate": 8_000_000});
+        write_message(
+            &mut s,
+            &Message::Event(oculibre_protocol::Event {
+                event: "stats".into(),
+                data: stats,
+            }),
+        )
+        .unwrap();
+        for (i, au) in frames.iter().enumerate() {
+            write_message(&mut s, &frame(i as u32, 1, au, i == 0, false)).unwrap();
+            thread::sleep(Duration::from_millis(100));
+        }
+        let bye = Bye {
+            reason: "user_stop".into(),
+            message: None,
+        };
+        write_message(&mut s, &Message::Bye(bye)).unwrap();
+    });
+    let (stream, _) = listener.accept().unwrap();
+    let hello = session::host_hello("host-id".into(), "test-host".into(), None);
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let events: crate::Events = {
+        let seen = seen.clone();
+        std::sync::Arc::new(move |e| {
+            if let crate::Event::Status(st) = e {
+                seen.lock().unwrap().push(st);
+            }
+        })
+    };
+    let mut sink = Counter::default();
+    let end = session::run_driven(stream, &hello, &mut sink, session::Setup::new(events));
+    phone.join().unwrap();
+    assert!(matches!(end.unwrap(), End::Bye { .. }));
+    let seen = seen.lock().unwrap();
+    let last = seen.last().expect("a status");
+    assert!(last.link_slow && !last.behind, "{last:?}");
+    assert_eq!(last.target_mbits, Some(8.0));
 }
 
 #[test]
 fn auto_rotation_follows_the_phone() {
     let (codec_data, frames) = encode(5);
-    let (result, sink) = with_phone_view(View::default(), move |s| {
-        turning_phone(s, frames, codec_data)
+    let sink = Counter::default();
+    let shown = sink.shown.clone();
+    let (result, sink) = with_phone_sink(View::default(), sink, move |s| {
+        turning_phone(s, frames, codec_data, shown)
     });
     assert_eq!(result.unwrap(), End::Closed);
     let rotations: Vec<u16> = sink.transforms.iter().map(|t| t.rotation).collect();
@@ -363,7 +544,11 @@ fn fixed_rotation_ignores_the_phone() {
         rotate: Rotate::Fixed(270),
         mirror: true,
     };
-    let (result, sink) = with_phone_view(view, move |s| turning_phone(s, frames, codec_data));
+    let sink = Counter::default();
+    let shown = sink.shown.clone();
+    let (result, sink) = with_phone_sink(view, sink, move |s| {
+        turning_phone(s, frames, codec_data, shown)
+    });
     assert_eq!(result.unwrap(), End::Closed);
     let expected = Transform {
         rotation: 270,
@@ -402,6 +587,9 @@ fn obedient_phone(s: TcpStream, codec_data: Vec<u8>, frames: Vec<Vec<u8>>) -> Ve
     let writer = Arc::new(Mutex::new(s.try_clone().unwrap()));
     let send = |w: &Arc<Mutex<TcpStream>>, m: &Message| write_message(&mut *w.lock().unwrap(), m);
 
+    // The phone's own clock: PONGs and frame times use it, like the real app.
+    let clock = std::time::Instant::now();
+    let phone_us = move || clock.elapsed().as_micros() as u64 + 1_000;
     // Reader: answers PINGs, hands requests over.
     let (tx, rx) = mpsc::channel();
     let reader = {
@@ -412,8 +600,8 @@ fn obedient_phone(s: TcpStream, codec_data: Vec<u8>, frames: Vec<Vec<u8>>) -> Ve
                     let pong = Message::Pong(oculibre_protocol::Pong {
                         seq: p.seq,
                         t1: p.t1,
-                        t2: p.t1,
-                        t3: p.t1,
+                        t2: phone_us(),
+                        t3: phone_us(),
                     });
                     let _ = send(&w, &pong);
                 }
@@ -485,7 +673,11 @@ fn obedient_phone(s: TcpStream, codec_data: Vec<u8>, frames: Vec<Vec<u8>>) -> Ve
         }
         if streaming {
             let i = n as usize % frames.len();
-            if send(&writer, &frame(n, config_id, &frames[i], i == 0, false)).is_err() {
+            let mut m = frame(n, config_id, &frames[i], i == 0, false);
+            if let Message::VideoFrame(f) = &mut m {
+                f.timestamp = phone_us();
+            }
+            if send(&writer, &m).is_err() {
                 break;
             }
             n += 1;

@@ -93,6 +93,14 @@ pub enum Event {
     Transform { transform: Transform, auto: bool },
     /// The video decoder in use, known for sure once a picture came out ("VA-API", "OpenH264"…).
     Decoder { name: &'static str },
+    /// The graphics card decoder `from` took `decode_ms` per picture on average, more than the
+    /// `frame_ms` the phone leaves between two: decoding moves to the processor for the rest of
+    /// the session (problem 505). A [`Event::Decoder`] with the new name follows.
+    DecoderTooSlow {
+        from: &'static str,
+        decode_ms: f64,
+        frame_ms: f64,
+    },
     /// The virtual camera was (re)opened for pictures of `wanted` size; `size` is what it really
     /// has: smaller or of another shape when an app holds it open (the picture is then fitted).
     VirtualCameraSize {

@@ -18,7 +18,7 @@ use std::io::{self, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -166,6 +166,60 @@ impl Orientation {
 const SILENCE: Duration = Duration::from_secs(5);
 /// Minimum time between two `request_keyframe` (the phone needs a moment to produce one).
 const KEYFRAME_RETRY: Duration = Duration::from_millis(500);
+/// A frame this late (capture → arrival, µs) means video piles up between the phone and us: the
+/// computer did not keep up. Frames are then skipped, not decoded, until they arrive on time.
+const BEHIND_US: i64 = 1_000_000;
+/// Lateness (µs) at which skipping stops: the backlog is gone.
+const CAUGHT_UP_US: i64 = 300_000;
+/// Longest skipping: if frames never arrive on time again (the network itself is too slow for the
+/// stream), showing late pictures beats showing none.
+const DRAIN_MAX: Duration = Duration::from_secs(2);
+/// Minimum time between two drains, for the same reason.
+const DRAIN_EVERY: Duration = Duration::from_secs(10);
+/// How long the status says the computer is behind after pictures were skipped or drained.
+const BEHIND_FOR: Duration = Duration::from_secs(10);
+
+/// Hardware decoding too slow for the frame rate: on some laptops (Intel Iris Xe on power
+/// saving) the graphics card takes longer per picture than the phone leaves between two, and
+/// the video falls behind; the processor does better then (#4). Judged on [`WATCH_FRAMES`]
+/// pictures after the first [`WATCH_WARMUP`] (a decoder is slow to start).
+#[derive(Debug, Default)]
+struct DecodeWatch {
+    frame_us: u64,
+    seen: u32,
+    sum_us: u64,
+    n: u32,
+}
+
+const WATCH_WARMUP: u32 = 30;
+const WATCH_FRAMES: u32 = 60;
+
+impl DecodeWatch {
+    fn new(fps: u32) -> Self {
+        Self {
+            frame_us: 1_000_000 / u64::from(fps.max(1)),
+            ..Self::default()
+        }
+    }
+
+    /// One picture decoded in `decode_us`: the average decoding time (µs) when it takes more
+    /// than 80 % of the time between two pictures.
+    fn too_slow(&mut self, decode_us: u64) -> Option<u64> {
+        self.seen += 1;
+        if self.seen <= WATCH_WARMUP {
+            return None;
+        }
+        self.sum_us += decode_us;
+        self.n += 1;
+        if self.n < WATCH_FRAMES {
+            return None;
+        }
+        let average = self.sum_us / u64::from(self.n);
+        self.sum_us = 0;
+        self.n = 0;
+        (average * 10 > self.frame_us * 8).then_some(average)
+    }
+}
 
 /// Features this host understands (§15).
 pub const HOST_FEATURES: [&str; 4] = [
@@ -215,6 +269,11 @@ struct Shared {
     // Counters since the last tick.
     received: AtomicU32,
     decoded: AtomicU32,
+    /// Decoded pictures replaced by a newer one before the output thread took them.
+    skipped: AtomicU32,
+    skipped_total: AtomicU64,
+    /// Last time frames were skipped undecoded because they arrived too late ([`BEHIND_US`]).
+    last_drain: Mutex<Option<Instant>>,
     errors_total: AtomicU32,
     bytes: AtomicU32,
     latency: Mutex<Latency>,
@@ -597,6 +656,9 @@ pub fn run_driven(
         clock: Mutex::new(ClockSync::default()),
         received: AtomicU32::new(0),
         decoded: AtomicU32::new(0),
+        skipped: AtomicU32::new(0),
+        skipped_total: AtomicU64::new(0),
+        last_drain: Mutex::new(None),
         errors_total: AtomicU32::new(0),
         bytes: AtomicU32::new(0),
         latency: Mutex::new(Latency::default()),
@@ -734,35 +796,90 @@ struct Job {
     decode_us: u64,
 }
 
+/// The output thread's inbox: one picture at most. A newer picture replaces one still waiting, so
+/// decoding never waits for the output: a computer too slow to write every picture shows fewer of
+/// them, never older ones (waiting here used to stop the reading, and the video then piled up in
+/// the network buffers: seconds of delay).
+struct Mailbox {
+    /// The waiting job, and whether either side has stopped.
+    slot: Mutex<(Option<Job>, bool)>,
+    ready: Condvar,
+}
+
+impl Mailbox {
+    fn new() -> Self {
+        Self {
+            slot: Mutex::new((None, false)),
+            ready: Condvar::new(),
+        }
+    }
+
+    /// Leaves a job for the output thread; gives back the one it replaced, or the job itself
+    /// (`Err`) once the output thread is gone.
+    fn put(&self, job: Job) -> Result<Option<Job>, Job> {
+        let mut slot = self.slot.lock().unwrap();
+        if slot.1 {
+            return Err(job);
+        }
+        let replaced = slot.0.replace(job);
+        self.ready.notify_one();
+        Ok(replaced)
+    }
+
+    /// Waits for a job; `None` once closed with nothing left.
+    fn take(&self) -> Option<Job> {
+        let mut slot = self.slot.lock().unwrap();
+        loop {
+            if let Some(job) = slot.0.take() {
+                return Some(job);
+            }
+            if slot.1 {
+                return None;
+            }
+            slot = self.ready.wait(slot).unwrap();
+        }
+    }
+
+    fn close(&self) {
+        self.slot.lock().unwrap().1 = true;
+        self.ready.notify_all();
+    }
+}
+
 /// Reads and decodes on this thread; rotates, converts and writes on an output thread, so that
 /// the next frame is decoded while this one is written: the frame rate is limited by the slower of
 /// the two, not by their sum (4K: decoding alone takes most of a 30 fps frame interval). At most
-/// one picture waits between them: latency does not pile up.
+/// one picture waits between them ([`Mailbox`]): latency does not pile up.
 fn receive(
     reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
     shared: &Shared,
     sink: &mut (dyn Sink + Send),
     clock_enabled: bool,
 ) -> Result<End, Box<dyn Error>> {
-    let (jobs, jobs_rx) = mpsc::sync_channel::<Job>(0);
+    let mailbox = Mailbox::new();
     let (free_tx, free) = mpsc::channel::<Picture>();
     thread::scope(|scope| {
+        let inbox = &mailbox;
         let output = thread::Builder::new()
             .name("oculibre-output".into())
             .spawn_scoped(scope, move || -> Result<(), String> {
-                for job in jobs_rx {
-                    sink.show(&job.picture, job.transform)
-                        .map_err(|e| e.to_string())?;
-                    shared.decoded.fetch_add(1, Ordering::Relaxed);
-                    if clock_enabled {
-                        record_latency(shared, job.capture_us, job.arrival_us, job.decode_us);
+                let result = (|| {
+                    while let Some(job) = inbox.take() {
+                        sink.show(&job.picture, job.transform)
+                            .map_err(|e| e.to_string())?;
+                        shared.decoded.fetch_add(1, Ordering::Relaxed);
+                        if clock_enabled {
+                            record_latency(shared, job.capture_us, job.arrival_us, job.decode_us);
+                        }
+                        let _ = free_tx.send(job.picture); // reused for a later frame
                     }
-                    let _ = free_tx.send(job.picture); // reused for a later frame
-                }
-                Ok(())
+                    Ok(())
+                })();
+                inbox.close(); // the reader stops leaving pictures for nobody
+                result
             })?;
-        let result = receive_loop(reader, shared, &jobs, &free);
-        drop(jobs);
+        let result = receive_loop(reader, shared, &mailbox, &free);
+        mailbox.close();
         match output.join() {
             Ok(Ok(())) => result,
             // The sink's error explains why the loop stopped.
@@ -775,10 +892,19 @@ fn receive(
 fn receive_loop(
     reader: &mut MessageReader<io::BufReader<Box<dyn Link>>>,
     shared: &Shared,
-    jobs: &mpsc::SyncSender<Job>,
+    jobs: &Mailbox,
     free: &mpsc::Receiver<Picture>,
 ) -> Result<End, Box<dyn Error>> {
     let mut decoder = VideoDecoder::new()?;
+    // The graphics card was too slow once: software for the rest of the session.
+    let mut software: bool = false;
+    let mut watch = DecodeWatch::default();
+    let mut codec_data: Vec<u8> = Vec::new();
+    // A picture the output thread never took (a newer one replaced it): filled again next.
+    let mut spare: Option<Picture> = None;
+    // Skipping late frames since then, and when we last did ([`BEHIND_US`]).
+    let mut draining: Option<Instant> = None;
+    let mut last_drain: Option<Instant> = None;
     let mut announced_decoder: Option<&'static str> = None;
     // Picture being filled by the decoder (recycled from the output thread).
     let mut picture = Picture::default();
@@ -818,10 +944,16 @@ fn receive_loop(
                 if config.codec != "h264" {
                     return Err(format!("unsupported codec {:?}", config.codec).into());
                 }
-                let codec_data = config.codec_data_bytes()?;
+                codec_data = config.codec_data_bytes()?;
                 shared.emit(Event::Stream(config.clone()));
                 // A new stream may have another size or camera: start from a clean decoder.
                 decoder = VideoDecoder::new()?;
+                if software {
+                    if let Some(d) = decoder.software_instead() {
+                        decoder = d;
+                    }
+                }
+                watch = DecodeWatch::new(config.fps);
                 if !codec_data.is_empty() {
                     // SPS + PPS: no picture expected; errors show up on the next frame anyway.
                     let _ = decoder.decode(&codec_data, &mut picture);
@@ -863,6 +995,31 @@ fn receive_loop(
                 if frame.discontinuity && !frame.key {
                     need_key = true;
                 }
+                // Capture → arrival, once the clocks are synchronised (absurd values ignored).
+                let late_us = shared
+                    .clock
+                    .lock()
+                    .unwrap()
+                    .best()
+                    .map(|b| arrival_us as i64 - (frame.timestamp as i64 - b.offset_us))
+                    .filter(|l| (0..10_000_000).contains(l));
+                if let Some(since) = draining {
+                    if late_us.is_none_or(|l| l < CAUGHT_UP_US) || since.elapsed() >= DRAIN_MAX {
+                        draining = None;
+                        need_key = true; // what follows needs the frames we skipped
+                    } else {
+                        continue; // read, not decoded: the backlog empties at network speed
+                    }
+                } else if late_us.is_some_and(|l| l > BEHIND_US)
+                    && last_drain.is_none_or(|t| t.elapsed() >= DRAIN_EVERY)
+                {
+                    let now = Instant::now();
+                    draining = Some(now);
+                    last_drain = Some(now);
+                    *shared.last_drain.lock().unwrap() = Some(now);
+                    need_key = true;
+                    continue;
+                }
                 if need_key && !frame.key {
                     ask_keyframe(&mut last_key_request)?;
                     continue;
@@ -870,6 +1027,27 @@ fn receive_loop(
                 let decode_start = shared.now_us();
                 let decoded = decoder.decode(&frame.data, &mut picture);
                 let decode_us = shared.now_us() - decode_start;
+                let too_slow = (decoded.as_ref().is_ok_and(|&p| p) && decoder.hardware())
+                    .then(|| watch.too_slow(decode_us))
+                    .flatten();
+                if let Some(average_us) = too_slow {
+                    if let Some(d) = decoder.software_instead() {
+                        shared.emit(Event::DecoderTooSlow {
+                            from: decoder.name(),
+                            decode_ms: average_us as f64 / 1000.0,
+                            frame_ms: watch.frame_us as f64 / 1000.0,
+                        });
+                        // The next keyframe starts the picture again on the processor.
+                        decoder = d;
+                        software = true;
+                        if !codec_data.is_empty() {
+                            let _ = decoder.decode(&codec_data, &mut picture);
+                        }
+                        need_key = true;
+                        ask_keyframe(&mut last_key_request)?;
+                        continue;
+                    }
+                }
                 match decoded {
                     Ok(true) => {
                         need_key = false;
@@ -887,7 +1065,10 @@ fn receive_loop(
                                 name: decoder.name(),
                             });
                         }
-                        let next = free.try_recv().unwrap_or_default();
+                        let next = spare
+                            .take()
+                            .or_else(|| free.try_recv().ok())
+                            .unwrap_or_default();
                         let job = Job {
                             picture: std::mem::replace(&mut picture, next),
                             transform,
@@ -895,8 +1076,14 @@ fn receive_loop(
                             arrival_us,
                             decode_us,
                         };
-                        if jobs.send(job).is_err() {
-                            return Err("the virtual camera stopped".into());
+                        match jobs.put(job) {
+                            Ok(None) => {}
+                            Ok(Some(replaced)) => {
+                                shared.skipped.fetch_add(1, Ordering::Relaxed);
+                                shared.skipped_total.fetch_add(1, Ordering::Relaxed);
+                                spare = Some(replaced.picture);
+                            }
+                            Err(_) => return Err("the virtual camera stopped".into()),
                         }
                     }
                     Ok(false) => {}
@@ -1008,9 +1195,24 @@ pub struct Status {
     pub split: Option<PhoneSplit>,
     /// The PC's share (received → virtual camera), ms. The network is what remains.
     pub pc: Option<f64>,
+    /// The H.264 decoding part of `pc`, ms; the rest is rotation, conversion and write.
+    pub pc_decode: Option<f64>,
     pub rtt: Option<f64>,
     /// Frames the phone dropped since the start (its `stats`).
     pub dropped: Option<u64>,
+    /// Decoded pictures this computer could not write in time (a newer one took their place),
+    /// since the start.
+    pub skipped: u64,
+    /// This computer does not keep up: it skipped many pictures, or had to drop late video to
+    /// catch up while its decoding was busy all the time, in the last [`BEHIND_FOR`] (problem 504
+    /// in the app).
+    pub behind: bool,
+    /// The connection does not carry the video: the phone lowered its bitrate, or late video had
+    /// to be dropped while this computer was keeping up, in the last [`BEHIND_FOR`] (problem 501).
+    pub link_slow: bool,
+    /// What the phone's encoder aims at while it has lowered its bitrate for the network,
+    /// Mbit/s (its `stats` `target_bitrate`); `None` at the mode's bitrate.
+    pub target_mbits: Option<f64>,
     /// Decoding errors since the start.
     pub errors: u32,
     /// Latency samples were thrown away as absurd: the phone's clocks disagree.
@@ -1122,6 +1324,12 @@ fn ticker(shared: &Shared) -> Totals {
     let mut totals = Totals::default();
     let mut seq = 0u32;
     let mut last = Instant::now();
+    // Last second in which more than a tenth of the decoded pictures were skipped.
+    let mut last_struggle: Option<Instant> = None;
+    // Last second in which decoding kept the reading thread busy (over 90 % of the time).
+    let mut last_decoder_busy: Option<Instant> = None;
+    // Last second in which the phone said it had lowered its bitrate.
+    let mut last_lowered: Option<Instant> = None;
     while !shared.stop.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_millis(100));
         if last.elapsed() < Duration::from_secs(1) {
@@ -1133,12 +1341,23 @@ fn ticker(shared: &Shared) -> Totals {
 
         let received = shared.received.swap(0, Ordering::Relaxed);
         let decoded = shared.decoded.swap(0, Ordering::Relaxed);
+        let skipped = shared.skipped.swap(0, Ordering::Relaxed);
+        if skipped > 0 && skipped * 10 > decoded + skipped {
+            last_struggle = Some(Instant::now());
+        }
+        let last_drain = *shared.last_drain.lock().unwrap();
         let bytes = shared.bytes.swap(0, Ordering::Relaxed);
         let errors = shared.errors_total.load(Ordering::Relaxed);
         let latency = std::mem::take(&mut *shared.latency.lock().unwrap());
         let avg_ms =
             |sum: i64| (latency.count > 0).then(|| sum as f64 / latency.count as f64 / 1000.0);
         let latency_ms = avg_ms(latency.total_sum);
+        // Decoding is on the reading thread: busy all the time, video waits in the sockets.
+        if let Some(decode_ms) = avg_ms(latency.decode_sum) {
+            if decode_ms * f64::from(decoded) / secs > 900.0 {
+                last_decoder_busy = Some(Instant::now());
+            }
+        }
         totals.add_second(decoded, &latency);
         totals.errors = errors;
         let rtt_ms = shared
@@ -1187,6 +1406,18 @@ fn ticker(shared: &Shared) -> Totals {
             .clone()
             .unwrap_or_default();
         totals.dropped = phone.get("dropped").and_then(Value::as_u64);
+        let target_mbits = phone
+            .get("target_bitrate")
+            .and_then(Value::as_f64)
+            .map(|b| b / 1e6);
+        if target_mbits.is_some() {
+            last_lowered = Some(Instant::now());
+        }
+        let recent = |t: Option<Instant>| t.is_some_and(|t| t.elapsed() < BEHIND_FOR);
+        // Late video drained: this computer's fault if its decoding was saturated, else the link's.
+        let drained = recent(last_drain);
+        let behind = recent(last_struggle) || (drained && recent(last_decoder_busy));
+        let link_slow = !behind && (drained || recent(last_lowered));
         if latency.count > 0 {
             totals.add_phone(PhoneSplit::from_stats(&phone));
         }
@@ -1219,8 +1450,13 @@ fn ticker(shared: &Shared) -> Totals {
             phone: phone.get("latency_ms").and_then(Value::as_f64),
             split: PhoneSplit::from_stats(&phone),
             pc: avg_ms(latency.pc_sum),
+            pc_decode: avg_ms(latency.decode_sum),
             rtt: rtt_ms,
             dropped: totals.dropped,
+            skipped: shared.skipped_total.load(Ordering::Relaxed),
+            behind,
+            link_slow,
+            target_mbits,
             errors,
             clock_mismatch: latency.rejected > 0,
         }));
@@ -1295,5 +1531,32 @@ mod totals_tests {
             })
         );
         assert_eq!(Summary::default().phone, None);
+    }
+}
+
+#[cfg(test)]
+mod watch_tests {
+    use super::{DecodeWatch, WATCH_FRAMES, WATCH_WARMUP};
+
+    /// Feeds `n` pictures decoded in `us` each; whether any of them was judged too slow.
+    fn feed(w: &mut DecodeWatch, n: u32, us: u64) -> bool {
+        (0..n).fold(false, |slow, _| w.too_slow(us).is_some() || slow)
+    }
+
+    #[test]
+    fn a_decoder_slower_than_the_frame_rate_is_noticed() {
+        // 60 fps = 16.7 ms a picture: 20 ms is too slow, 10 ms is fine.
+        let mut w = DecodeWatch::new(60);
+        assert!(
+            !feed(&mut w, WATCH_WARMUP, 50_000),
+            "a slow start is forgiven"
+        );
+        assert!(!feed(&mut w, WATCH_FRAMES - 1, 20_000));
+        assert_eq!(w.too_slow(20_000), Some(20_000));
+        let mut fine = DecodeWatch::new(60);
+        assert!(!feed(&mut fine, WATCH_WARMUP + 5 * WATCH_FRAMES, 10_000));
+        // The same 20 ms is fine at 30 fps (33 ms a picture).
+        let mut thirty = DecodeWatch::new(30);
+        assert!(!feed(&mut thirty, WATCH_WARMUP + 5 * WATCH_FRAMES, 20_000));
     }
 }
