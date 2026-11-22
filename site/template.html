@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<link rel="canonical" href="{{url}}">
+<link rel="alternate" hreflang="en" href="{{site}}/">
+<link rel="alternate" hreflang="fr" href="{{site}}/fr/">
+<link rel="alternate" hreflang="x-default" href="{{site}}/">
+<meta name="theme-color" content="#0B1220">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Oculibre">
+<meta property="og:title" content="{{og_title}}">
+<meta property="og:description" content="{{description}}">
+<meta property="og:url" content="{{url}}">
+<meta property="og:locale" content="{{locale}}">
+<meta property="og:image" content="{{site}}/static/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{{og_image_alt}}">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="/static/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/space-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/style.css?v={{asset_version}}">
+<script src="/static/main.js?v={{asset_version}}" defer></script>
+<script type="application/ld+json">{{jsonld}}</script>
+</head>
+<body>
+<a class="skip" href="#main">{{skip}}</a>
+
+<header class="top">
+  <div class="wrap top__inner">
+    <a class="brand" href="{{path}}">
+      <span class="brand__tile"><img src="/static/img/logo.svg" alt="" width="28" height="28"></span>
+      <span class="brand__name">Oculibre</span>
+    </a>
+    <nav class="nav" aria-label="{{nav_label}}">
+      <a href="#features">{{nav_features}}</a>
+      <a href="#how">{{nav_how}}</a>
+      <a href="#download">{{nav_download}}</a>
+      <a href="#faq">{{nav_faq}}</a>
+      <a href="https://github.com/Raspeur/Oculibre">{{nav_github}}</a>
+    </nav>
+    <a class="lang" href="{{alt_path}}" hreflang="{{alt_lang}}" lang="{{alt_lang}}" aria-label="{{lang_switch_label}}">{{lang_switch}}</a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div class="wrap hero__inner">
+      <div class="hero__text">
+        <p class="badge">{{hero_badge}}</p>
+        <h1>{{hero_title}}</h1>
+        <p class="lead">{{hero_text}}</p>
+        <div class="actions">
+          <a class="btn btn--primary" id="dl-main" href="#download"
+             data-label="{{hero_download_for}}"
+             data-windows="{{win_url}}" data-linux="#download" data-android="{{apk_url}}">{{hero_download}}</a>
+          <a class="btn" href="#download" id="dl-all" hidden>{{hero_all}}</a>
+        </div>
+        <p class="hint">{{hero_points}}</p>
+      </div>
+      <div class="hero__shots">
+        <img class="shot shot--desktop" src="/static/img/desktop.webp" width="1346" height="655" alt="{{hero_img_alt}}" fetchpriority="high">
+        <img class="shot shot--phone" src="/static/img/android.webp" width="540" height="1158" alt="{{hero_phone_alt}}">
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <h2 id="features-title">{{features_title}}</h2>
+      <p class="intro">{{features_intro}}</p>
+      <ul class="cards">
+        <li class="card"><svg class="card__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.5-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.5-9.5 9-9.5 9z"/></svg><h3>{{f1_title}}</h3><p>{{f1_text}}</p></li>
+        <li class="card"><svg class="card__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><h3>{{f2_title}}</h3><p>{{f2_text}}</p></li>
+        <li class="card"><svg class="card__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg><h3>{{f3_title}}</h3><p>{{f3_text}}</p></li>
+        <li class="card"><svg class="card__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><h3>{{f4_title}}</h3><p>{{f4_text}}</p></li>
+        <li class="card"><svg class="card__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 6-3v10l-6-3"/></svg><h3>{{f5_title}}</h3><p>{{f5_text}}</p></li>
+        <li class="card"><svg class="card__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><h3>{{f6_title}}</h3><p>{{f6_text}}</p></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section section--alt" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <h2 id="how-title">{{how_title}}</h2>
+      <p class="intro">{{how_intro}}</p>
+      <img class="diagram" src="/static/img/how-it-works.svg" width="960" height="400" alt="{{how_img_alt}}">
+      <ol class="steps">
+        <li class="step"><h3><span class="step__n" aria-hidden="true">1</span>{{step1_title}}</h3><p>{{step1_text}}</p>
+          <img class="shot shot--tall" src="/static/img/phone-ready.webp" width="540" height="1158" alt="{{step1_img_alt}}"></li>
+        <li class="step"><h3><span class="step__n" aria-hidden="true">2</span>{{step2_title}}</h3><p>{{step2_text}}</p>
+          <img class="shot" src="/static/img/pairing.webp" width="1250" height="601" alt="{{step2_img_alt}}"></li>
+        <li class="step"><h3><span class="step__n" aria-hidden="true">3</span>{{step3_title}}</h3><p>{{step3_text}}</p>
+          <img class="shot" src="/static/img/in-app.webp" width="559" height="618" alt="{{step3_img_alt}}"></li>
+      </ol>
+      <p class="note">{{usb_note}}</p>
+    </div>
+  </section>
+
+  <section class="section" id="download" aria-labelledby="download-title">
+    <div class="wrap">
+      <h2 id="download-title">{{download_title}}</h2>
+      <p class="intro">{{download_intro}} <span class="version">{{download_version}}</span></p>
+      <div class="downloads">
+        <div class="dl" id="dl-windows">
+          <h3>{{dl_windows}}</h3>
+          <p class="dl__req">{{dl_windows_req}}</p>
+          <a class="btn btn--primary" href="{{win_url}}">{{dl_windows_btn}}</a>
+          <p class="dl__note">{{dl_windows_note}}</p>
+        </div>
+        <div class="dl" id="dl-linux">
+          <h3>{{dl_linux}}</h3>
+          <p class="dl__req">{{dl_linux_req}}</p>
+          <div class="dl__list">{{deb_links}}</div>
+          <p class="dl__note">{{dl_linux_note}}</p>
+        </div>
+        <div class="dl" id="dl-android">
+          <h3>{{dl_android}}</h3>
+          <p class="dl__req">{{dl_android_req}}</p>
+          <a class="btn btn--primary" href="{{apk_url}}">{{dl_android_btn}}</a>
+          <p class="dl__note">{{dl_android_note}}</p>
+        </div>
+      </div>
+      <p class="small">{{dl_macos}}</p>
+      <p class="small">{{dl_checksums}}</p>
+    </div>
+  </section>
+
+  <section class="section section--alt" id="privacy" aria-labelledby="privacy-title">
+    <div class="wrap">
+      <h2 id="privacy-title">{{privacy_title}}</h2>
+      <ul class="points">
+        <li>{{p1}}</li>
+        <li>{{p2}}</li>
+        <li>{{p3}}</li>
+        <li>{{p4}}</li>
+      </ul>
+      <div class="policy" id="code-signing-policy">
+        <h3>{{signing_title}}</h3>
+        <p>{{signing_text}}</p>
+        <p>{{privacy_statement}}</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="faq" aria-labelledby="faq-title">
+    <div class="wrap wrap--narrow">
+      <h2 id="faq-title">{{faq_title}}</h2>
+      <details><summary>{{q1}}</summary><p>{{a1}}</p></details>
+      <details><summary>{{q2}}</summary><p>{{a2}}</p></details>
+      <details><summary>{{q3}}</summary><p>{{a3}}</p></details>
+      <details><summary>{{q4}}</summary><p>{{a4}}</p></details>
+      <details><summary>{{q5}}</summary><p>{{a5}}</p></details>
+      <details><summary>{{q6}}</summary><p>{{a6}}</p></details>
+      <details><summary>{{q7}}</summary><p>{{a7}}</p></details>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__inner">
+    <div>
+      <a class="brand" href="{{path}}">
+        <span class="brand__tile"><img src="/static/img/logo.svg" alt="" width="28" height="28"></span>
+        <span class="brand__name">Oculibre</span>
+      </a>
+      <p class="small">{{footer_tagline}}</p>
+    </div>
+    <nav aria-label="{{footer_project}}">
+      <h2 class="foot__title">{{footer_project}}</h2>
+      <ul>
+        <li><a href="https://github.com/Raspeur/Oculibre">{{footer_source}}</a></li>
+        <li><a href="https://github.com/Raspeur/Oculibre/releases">{{footer_releases}}</a></li>
+        <li><a href="https://github.com/Raspeur/Oculibre/issues/new/choose">{{footer_issues}}</a></li>
+        <li><a href="https://github.com/Raspeur/Oculibre/discussions">{{footer_discussions}}</a></li>
+        <li><a href="https://github.com/Raspeur/Oculibre/blob/main/CONTRIBUTING.md">{{footer_contribute}}</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="wrap"><p class="small foot__legal">{{footer_legal}}</p></div>
+</footer>
+</body>
+</html>
