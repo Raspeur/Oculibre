@@ -46,6 +46,7 @@
   "how_img_alt": "Le téléphone filme et encode la vidéo, l'envoie par le Wi-Fi (chiffré, appairé par un QR code) ou le câble USB à l'ordinateur, qui la décode et la présente comme la webcam Oculibre dans toutes les applis",
   "step1_title": "Installer",
   "step1_text": "Installez Oculibre sur l'ordinateur et sur le téléphone.",
+  "step1_img_alt": "L'appli Oculibre sur le téléphone, prête : un seul bouton Démarrer",
   "step2_title": "Appairer une fois",
   "step2_text": "Sur l'ordinateur, cliquez sur <strong>Ajouter un téléphone</strong> et scannez le QR code avec le téléphone. Les fois suivantes, le téléphone retrouve l'ordinateur tout seul.",
   "step2_img_alt": "Appairage d'un téléphone par QR code dans la fenêtre d'Oculibre",

@@ -46,6 +46,7 @@
   "how_img_alt": "The phone films and encodes the video, sends it over Wi-Fi (encrypted, paired with a QR code) or the USB cable to the computer, which decodes it and shows it as the webcam Oculibre in every app",
   "step1_title": "Install",
   "step1_text": "Install Oculibre on the computer and on the phone.",
+  "step1_img_alt": "The Oculibre app on the phone, ready: one Start button",
   "step2_title": "Pair once",
   "step2_text": "On the computer, click <strong>Add a phone</strong> and scan the QR code with the phone. Next time, the phone finds the computer by itself.",
   "step2_img_alt": "Pairing a phone with a QR code in the Oculibre window",
