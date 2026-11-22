@@ -2,9 +2,19 @@
 // or, without a phone, what to do.
 
 import { useEffect, useRef, useState } from "react";
-import { type PreviewMode, type Status, onPreview, phoneName, setPreviewMode } from "../engine";
+import {
+  type DecoderChoice,
+  type PreviewMode,
+  type Status,
+  onPreview,
+  onWindows,
+  phoneName,
+  setPreviewMode,
+  setSettings,
+  settings,
+} from "../engine";
 import type { EngineState } from "../useEngine";
-import { t, useLang } from "../i18n";
+import { type Key, t, useLang } from "../i18n";
 
 export function Stage({ engine }: { engine: EngineState }) {
   useLang();
@@ -12,6 +22,7 @@ export function Stage({ engine }: { engine: EngineState }) {
   const [mode, setMode] = usePreviewMode();
   const [details, setDetails] = useDetailsOpen();
   const preview = usePreview(phone !== null && mode !== "Off");
+  const decoder = useDecoderChoice(status?.behind ?? false);
 
   if (!phone) {
     return (
@@ -113,9 +124,18 @@ export function Stage({ engine }: { engine: EngineState }) {
           <div className="oc-alert__body">
             <span className="oc-alert__title">{t("behind_title")}</span>
             <span className="oc-alert__text">{t("behind_text")}</span>
-            {mode === "Full" && (
+            {decoder.choice !== null && decoder.choice !== "auto" && (
+              <span className="oc-alert__text">{t("behind_decoder", { choice: t(decoderLabel(decoder.choice)) })}</span>
+            )}
+            {decoder.saved && <span className="oc-alert__text">{t("behind_decoder_saved")}</span>}
+            {(mode === "Full" || (decoder.choice !== null && decoder.choice !== "auto")) && (
               <div className="oc-alert__actions">
-                <button type="button" className="oc-btn oc-btn--secondary" onClick={() => setMode("Light")}>{t("behind_light")}</button>
+                {mode === "Full" && (
+                  <button type="button" className="oc-btn oc-btn--secondary" onClick={() => setMode("Light")}>{t("behind_light")}</button>
+                )}
+                {decoder.choice !== null && decoder.choice !== "auto" && (
+                  <button type="button" className="oc-btn oc-btn--secondary" onClick={decoder.setAuto}>{t("behind_decoder_auto")}</button>
+                )}
               </div>
             )}
             <span className="oc-alert__code">{t("code", { code: 504 })}</span>
@@ -340,4 +360,44 @@ function CameraIcon() {
       <rect x="1" y="5" width="15" height="14" rx="2" />
     </svg>
   );
+}
+
+/** The decoder chosen in the settings, read again whenever `behind` turns on (problem 504). */
+function useDecoderChoice(behind: boolean) {
+  const [choice, setChoice] = useState<DecoderChoice | null>(null);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (!behind) return;
+    let live = true;
+    settings().then((s) => live && setChoice(s.decoder)).catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [behind]);
+  const setAuto = () => {
+    settings()
+      .then((s) => setSettings({ ...s, decoder: "auto" }))
+      .then(() => {
+        setChoice("auto");
+        setSaved(true);
+      })
+      .catch(() => {});
+  };
+  return { choice, saved, setAuto };
+}
+
+/** The name the settings list gives a decoder choice. */
+function decoderLabel(choice: DecoderChoice): Key {
+  switch (choice) {
+    case "vaapi":
+      return onWindows ? "decoder_gpu_windows" : "decoder_gpu";
+    case "nvdec":
+      return "decoder_nvidia";
+    case "software":
+      return onWindows ? "decoder_windows" : "decoder_cpu";
+    case "openh264":
+      return "decoder_openh264";
+    default:
+      return "automatic";
+  }
 }
