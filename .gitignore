@@ -63,3 +63,6 @@ docs/build/
 __pycache__/
 CLAUDE.md
 devices/samsung/galaxy-s23-ultra/valeurs_mesurées.ods
+
+# --- Website ---
+site/build/

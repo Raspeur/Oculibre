@@ -16,6 +16,7 @@
 </p>
 
 <p align="center">
+  <a href="https://oculibre.org"><strong>oculibre.org</strong></a> ·
   <a href="#download">Download</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#get-started">Get started</a> ·
@@ -64,7 +65,7 @@ real webcam, your call app decides how to show your self-view.
   <tr>
     <td align="center" valign="top"><img src="docs/assets/screenshots/android.jpg" alt="The Oculibre app on the phone, live at 1080p 60" width="107"><br><sub>On the phone: one button, Start or Stop</sub></td>
     <td align="center" valign="top"><img src="docs/assets/screenshots/pairing.png" alt="Pairing a phone with a QR code" width="478"><br><sub>Wi-Fi pairing: scan a QR code, once</sub></td>
-    <td align="center" valign="top"><img src="docs/assets/screenshots/in-app.png" alt="Oculibre chosen as the camera in OBS Studio" width="253"><br><sub>Then pick "Oculibre" in your app, here OBS</sub></td>
+    <td align="center" valign="top"><img src="docs/assets/screenshots/in-app.png" alt="Oculibre chosen as the camera in OBS Studio" width="208"><br><sub>Then pick "Oculibre" in your app, here OBS</sub></td>
   </tr>
 </table>
 
