@@ -7,6 +7,7 @@
 
 import { useEffect, useLayoutEffect, useState } from "react";
 import logo from "../../../../oculibre_logo.svg";
+import { onWindows } from "../engine";
 import { t, useLang } from "../i18n";
 
 interface Step {
@@ -23,7 +24,7 @@ const steps = (): Step[] => [
     target: "add",
     side: "right",
     title: t("tour1_title"),
-    text: t("tour1_text"),
+    text: t(onWindows ? "tour1_text" : "tour1_text_linux"),
   },
   {
     target: "phones",

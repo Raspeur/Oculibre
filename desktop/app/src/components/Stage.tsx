@@ -32,7 +32,8 @@ export function Stage({ engine }: { engine: EngineState }) {
           <div className="oc-stack" style={{ alignItems: "center", gap: 14, maxWidth: 440, textAlign: "center", padding: 24 }}>
             <CameraIcon />
             <h1 className="oc-title oc-title--md">{t("waiting_title")}</h1>
-            <p className="oc-text oc-muted">{t("waiting_text")}</p>
+            {/* USB without developer mode: Linux only for now (Windows keeps adb, #21). */}
+            <p className="oc-text oc-muted">{t(onWindows ? "waiting_text" : "waiting_text_linux")}</p>
             {engine.key && <span className="oc-small">{t("computer_code", { key: engine.key })}</span>}
           </div>
         </div>

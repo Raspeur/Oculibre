@@ -49,13 +49,15 @@
         "recommends": [
           "libavcodec62 | libopenh264-8",
           "adb",
-          "pkexec"
+          "pkexec",
+          "libmtp-runtime"
         ],
         "files": {
           "/etc/modprobe.d/oculibre.conf": "linux/modprobe-oculibre.conf",
           "/etc/modules-load.d/oculibre.conf": "linux/modules-load-oculibre.conf",
           "/usr/lib/oculibre/vcam-setup": "linux/vcam-setup.sh",
           "/usr/share/polkit-1/actions/org.oculibre.vcam.policy": "linux/org.oculibre.vcam.policy",
+          "/usr/lib/udev/rules.d/70-oculibre.rules": "linux/udev-oculibre.rules",
           "/usr/share/doc/oculibre/THIRD-PARTY-LICENSES.html": "../../target/licences/THIRD-PARTY-LICENSES.html"
         },
         "postInstallScript": "linux/postinst.sh"

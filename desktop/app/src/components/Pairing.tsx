@@ -4,7 +4,7 @@
 // settings, a card offers to turn it on instead of the QR code.
 
 import { useEffect, useRef, useState } from "react";
-import { type AppSettings, type PairingOffer, onEngineEvent, pairingOffer, setSettings, settings as loadSettings } from "../engine";
+import { type AppSettings, type PairingOffer, onEngineEvent, onWindows, pairingOffer, setSettings, settings as loadSettings } from "../engine";
 import { t, useLang } from "../i18n";
 
 export function Pairing(props: { computerKey: string | null; phoneLive: boolean; onDone: () => void }) {
@@ -110,8 +110,8 @@ export function Pairing(props: { computerKey: string | null; phoneLive: boolean;
             <div className="oc-card oc-card--raised oc-cluster" style={{ flexWrap: "nowrap", gap: 14, padding: "14px 16px", borderRadius: "var(--oc-r-sm)" }}>
               <span className="oc-badge oc-badge--ok" aria-hidden="true">✓</span>
               <span className="oc-row__label" style={{ gap: 4 }}>
-                <span className="oc-text oc-text--lg oc-strong">{t("usb_nothing")}</span>
-                <span className="oc-text oc-muted">{t("usb_nothing_text")}</span>
+                <span className="oc-text oc-text--lg oc-strong">{t(onWindows ? "usb_nothing" : "usb_nothing_linux")}</span>
+                <span className="oc-text oc-muted">{t(onWindows ? "usb_nothing_text" : "usb_nothing_text_linux")}</span>
               </span>
             </div>
             <p className="oc-text oc-text--lg oc-muted">{t("wifi_once")}</p>

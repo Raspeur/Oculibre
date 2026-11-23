@@ -1,0 +1,7 @@
+# Oculibre: USB without developer mode (Android Open Accessory, #21).
+#
+# Oculibre (the logged-in user's program, not root) switches the phone to accessory mode, then
+# reads and writes it. The phone in accessory mode uses Google's ids whatever its maker: let the
+# user at the computer open it (systemd's "uaccess"). Before switching, a phone in its normal mode
+# is already theirs through libmtp's rule (ID_MEDIA_PLAYER, a recommended package).
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="18d1", ATTR{idProduct}=="2d0[0-5]", TAG+="uaccess"

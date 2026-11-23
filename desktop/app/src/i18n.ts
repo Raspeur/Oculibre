@@ -35,6 +35,8 @@ const en = {
   waiting_title: "Waiting for a phone",
   waiting_text:
     "Open Oculibre on the phone and press “Start”. Over Wi-Fi, it must be paired with this computer and on the same network; over the USB cable, USB debugging must be on.",
+  waiting_text_linux:
+    "Plug the phone in with its USB cable, or open Oculibre on it and press “Start”: over Wi-Fi, it must be paired with this computer and on the same network.",
   computer_code: "This computer's code: {key}",
   preview: "Preview",
   changing_mode: "Changing mode…",
@@ -115,6 +117,9 @@ const en = {
   pair_ready_text: "Press “Start” on the phone. Next time, opening the app is enough.",
   done: "Done",
   usb_nothing: "USB cable: USB debugging needed",
+  usb_nothing_linux: "USB cable: just plug it in",
+  usb_nothing_text_linux:
+    "Plug the phone in: this window asks whether to use it, then the phone offers to open Oculibre. Accept, then press “Start”. No developer mode needed. Wi-Fi does not need the cable.",
   usb_nothing_text:
     "Turn on USB debugging on the phone (Settings › Developer options), plug it in, allow this computer on the phone, then press “Start”. USB debugging gives the computer wide access to the phone: only allow your own computer, never a public one, and turn it off when you do not use it. This is temporary: a future version of Oculibre will connect over USB without it. Wi-Fi does not need it.",
   wifi_once: "To use it over Wi-Fi too, pair it once. Then it reconnects by itself.",
@@ -148,6 +153,8 @@ const en = {
   tour1_title: "Connect your phone",
   tour1_text:
     "Over Wi-Fi, pair it here once, with a QR code. Over the USB cable, turn on USB debugging on the phone, plug it in and press “Start” in the phone's app.",
+  tour1_text_linux:
+    "Over Wi-Fi, pair it here once, with a QR code. Over the USB cable, just plug it in and press “Start” in the phone's app.",
   tour2_title: "Your phones",
   tour2_text: "Green dot: live. Grey circle: stopped or too far. Oculibre remembers each one's settings.",
   tour3_title: "Start from the phone",
@@ -287,6 +294,8 @@ const fr: Record<Key, string> = {
   waiting_title: "En attente d'un téléphone",
   waiting_text:
     "Ouvrez Oculibre sur le téléphone et appuyez sur « Démarrer ». En Wi-Fi, il doit être relié à cet ordinateur et sur le même réseau ; par câble USB, le débogage USB doit être activé.",
+  waiting_text_linux:
+    "Branchez le téléphone avec son câble USB, ou ouvrez Oculibre dessus et appuyez sur « Démarrer » : en Wi-Fi, il doit être relié à cet ordinateur et sur le même réseau.",
   computer_code: "Code de cet ordinateur : {key}",
   preview: "Aperçu",
   changing_mode: "Changement de mode…",
@@ -365,6 +374,9 @@ const fr: Record<Key, string> = {
   pair_ready_text: "Appuyez sur « Démarrer » sur le téléphone. La prochaine fois, il suffira d'ouvrir l'app.",
   done: "Terminer",
   usb_nothing: "Par câble USB : débogage USB nécessaire",
+  usb_nothing_linux: "Par câble USB : branchez-le, c'est tout",
+  usb_nothing_text_linux:
+    "Branchez le téléphone : cette fenêtre demande s'il faut l'utiliser, puis le téléphone propose d'ouvrir Oculibre. Acceptez, puis appuyez sur « Démarrer ». Pas besoin du mode développeur. Le Wi-Fi n'a pas besoin du câble.",
   usb_nothing_text:
     "Activez le débogage USB sur le téléphone (Paramètres › Options pour les développeurs), branchez-le, autorisez cet ordinateur sur le téléphone, puis appuyez sur « Démarrer ». Le débogage USB donne à l'ordinateur un large accès au téléphone : n'autorisez que votre propre ordinateur, jamais un ordinateur public, et désactivez-le quand vous ne l'utilisez pas. C'est temporaire : une prochaine version d'Oculibre se connectera par USB sans lui. Le Wi-Fi n'en a pas besoin.",
   wifi_once: "Pour l'utiliser aussi en Wi-Fi, reliez-le une seule fois. Ensuite, il se reconnecte tout seul.",
@@ -398,6 +410,8 @@ const fr: Record<Key, string> = {
   tour1_title: "Reliez votre téléphone",
   tour1_text:
     "En Wi-Fi, reliez-le une seule fois ici, avec un QR code. Par câble USB, activez le débogage USB sur le téléphone, branchez-le et appuyez sur « Démarrer » dans l'app du téléphone.",
+  tour1_text_linux:
+    "En Wi-Fi, reliez-le une seule fois ici, avec un QR code. Par câble USB, branchez-le simplement et appuyez sur « Démarrer » dans l'app du téléphone.",
   tour2_title: "Vos téléphones",
   tour2_text: "Point vert : en direct. Cercle gris : arrêté ou trop loin. Oculibre se souvient des réglages de chacun.",
   tour3_title: "Démarrer depuis le téléphone",

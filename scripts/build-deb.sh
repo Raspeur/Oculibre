@@ -62,7 +62,7 @@ for t in "${targets[@]}"; do
     mkdir -p "$work/src/desktop/target/licences"
     cp "$ROOT/desktop/target/licences/THIRD-PARTY-LICENSES.html" "$work/src/desktop/target/licences/"
 
-    config=$(printf '{"build":{"beforeBuildCommand":""},"bundle":{"linux":{"deb":{"depends":[%s],"recommends":["%s","adb","pkexec"]}}}}' "${MODULE[$t]}" "${DECODERS[$t]}")
+    config=$(printf '{"build":{"beforeBuildCommand":""},"bundle":{"linux":{"deb":{"depends":[%s],"recommends":["%s","adb","pkexec","libmtp-runtime"]}}}}' "${MODULE[$t]}" "${DECODERS[$t]}")
     echo "== $t: build (first time: several minutes)"
     docker run --rm --user "$(id -u):$(id -g)" \
         -e HOME=/tmp -e CARGO_HOME=/cache/cargo -e CARGO_TARGET_DIR=/cache/target -e npm_config_cache=/cache/npm \

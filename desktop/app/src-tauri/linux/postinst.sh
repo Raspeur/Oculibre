@@ -5,6 +5,10 @@
 # /usr/lib/oculibre/vcam-setup, which the app also runs (through pkexec) to repair the camera.
 # Never fails the installation: when the camera cannot be loaded now, it says what to do.
 
+# USB without developer mode: the phone in accessory mode is the user's from its next plug
+# (/usr/lib/udev/rules.d/70-oculibre.rules).
+udevadm control --reload-rules 2>/dev/null || true
+
 # Executable whatever the packaging kept (polkit runs it by this path).
 chmod 755 /usr/lib/oculibre/vcam-setup
 /usr/lib/oculibre/vcam-setup
