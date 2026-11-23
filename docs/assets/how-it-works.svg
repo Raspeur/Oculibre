@@ -1,8 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" width="960" height="400" role="img" aria-labelledby="title desc">
-  <title id="title">How Oculibre works</title>
-  <desc id="desc">The Android phone films and encodes the video, sends it to the computer over Wi-Fi (encrypted, paired with a QR code) or over the USB cable; Oculibre on the computer decodes it on the graphics card and shows it as a webcam named Oculibre in every app: OBS, Zoom, Teams, Discord, Google Meet.</desc>
-  <style>
-    text { font-family: -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif; fill: #0B1220; }
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 960 400"
+   width="960"
+   height="400"
+   role="img"
+   aria-labelledby="title desc"
+   version="1.1"
+   id="svg30"
+   sodipodi:docname="how-it-works.svg"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs30" />
+  <sodipodi:namedview
+     id="namedview30"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="0.67213542"
+     inkscape:cx="-744.64161"
+     inkscape:cy="-109.35296"
+     inkscape:window-width="3440"
+     inkscape:window-height="1406"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg30" />
+  <title
+     id="title">How Oculibre works</title>
+  <desc
+     id="desc">The Android phone films and encodes the video, sends it to the computer over Wi-Fi (encrypted, paired with a QR code) or over the USB cable; Oculibre on the computer decodes it on the graphics card and shows it as a webcam named Oculibre in every app: OBS, Zoom, Teams, Discord, Google Meet.</desc>
+  <style
+     id="style1">
+    text { font-family: -apple-system, &quot;Segoe UI&quot;, Inter, Helvetica, Arial, sans-serif; fill: #0B1220; }
     .muted { fill: #4A5873; }
     .title { font-size: 17px; font-weight: 700; }
     .small { font-size: 13px; }
@@ -37,67 +74,429 @@
       .badge-text { fill: #0B1220; }
     }
   </style>
-
   <!-- The phone -->
-  <rect class="card" x="20" y="40" width="210" height="300" rx="18"/>
-  <rect class="outline" x="85" y="66" width="80" height="148" rx="14"/>
-  <rect class="screen" x="91" y="80" width="68" height="112" rx="5"/>
-  <circle class="ring" cx="125" cy="136" r="17"/>
-  <circle cx="125" cy="136" r="6" class="accent"/>
-  <rect class="base" x="113" y="200" width="24" height="4" rx="2"/>
-  <text x="125" y="248" text-anchor="middle" class="title">Your phone</text>
-  <text x="125" y="270" text-anchor="middle" class="small muted">Android 5 and up,</text>
-  <text x="125" y="287" text-anchor="middle" class="small muted">even an old one</text>
-  <text x="125" y="314" text-anchor="middle" class="tiny muted">films and encodes (H.264)</text>
-
+  <rect
+     class="card"
+     x="20"
+     y="40"
+     width="210"
+     height="300"
+     rx="18"
+     id="rect1" />
+  <rect
+     class="outline"
+     x="85"
+     y="66"
+     width="80"
+     height="148"
+     rx="14"
+     id="rect2" />
+  <rect
+     class="screen"
+     x="91"
+     y="80"
+     width="68"
+     height="112"
+     rx="5"
+     id="rect3" />
+  <rect
+     class="base"
+     x="113"
+     y="200"
+     width="24"
+     height="4"
+     rx="2"
+     id="rect4" />
+  <text
+     x="125"
+     y="248"
+     text-anchor="middle"
+     class="title"
+     id="text4">Your phone</text>
+  <text
+     x="125"
+     y="270"
+     text-anchor="middle"
+     class="small muted"
+     id="text5">Android 5 and up,</text>
+  <text
+     x="125"
+     y="287"
+     text-anchor="middle"
+     class="small muted"
+     id="text6">even an old one</text>
+  <text
+     x="125"
+     y="314"
+     text-anchor="middle"
+     class="tiny muted"
+     id="text7">films and encodes (H.264)</text>
   <!-- The two links -->
-  <path class="wire" d="M232 150 C 300 150, 330 120, 400 120 L 470 120 C 540 120, 560 150, 628 150"/>
-  <path class="flow" d="M232 150 C 300 150, 330 120, 400 120 L 470 120 C 540 120, 560 150, 628 150"/>
-  <path class="wire" d="M232 230 C 300 230, 330 260, 400 260 L 470 260 C 540 260, 560 230, 628 230"/>
-  <path class="flow usb" d="M232 230 C 300 230, 330 260, 400 260 L 470 260 C 540 260, 560 230, 628 230"/>
-
+  <path
+     class="wire"
+     d="M232 150 C 300 150, 330 120, 400 120 L 470 120 C 540 120, 560 150, 628 150"
+     id="path7" />
+  <path
+     class="flow"
+     d="M232 150 C 300 150, 330 120, 400 120 L 470 120 C 540 120, 560 150, 628 150"
+     id="path8" />
+  <path
+     class="wire"
+     d="M232 230 C 300 230, 330 260, 400 260 L 470 260 C 540 260, 560 230, 628 230"
+     id="path9" />
+  <path
+     class="flow usb"
+     d="M232 230 C 300 230, 330 260, 400 260 L 470 260 C 540 260, 560 230, 628 230"
+     id="path10" />
   <!-- Wi-Fi label with a padlock -->
-  <rect class="chip" x="316" y="72" width="238" height="34" rx="17"/>
-  <g transform="translate(332 79)">
-    <rect x="0" y="8" width="14" height="11" rx="2" class="accent"/>
-    <path d="M3 8 V5 a4 4 0 0 1 8 0 V8" class="ring" style="stroke-width: 2.2"/>
+  <rect
+     class="chip"
+     x="316"
+     y="72"
+     width="238"
+     height="34"
+     rx="17"
+     id="rect10" />
+  <g
+     transform="translate(332 79)"
+     id="g11">
+    <rect
+       x="0"
+       y="8"
+       width="14"
+       height="11"
+       rx="2"
+       class="accent"
+       id="rect11" />
+    <path
+       d="M3 8 V5 a4 4 0 0 1 8 0 V8"
+       class="ring"
+       style="stroke-width: 2.2"
+       id="path11" />
   </g>
-  <text x="354" y="94" class="small"><tspan font-weight="700">Wi-Fi</tspan> <tspan class="muted">encrypted, paired by QR</tspan></text>
-
+  <text
+     x="354"
+     y="94"
+     class="small"
+     id="text12"><tspan
+       font-weight="700"
+       id="tspan11">Wi-Fi</tspan><tspan
+       class="muted"
+       id="tspan12" /></text>
   <!-- USB label -->
-  <rect class="chip" x="345" y="274" width="180" height="34" rx="17"/>
-  <g transform="translate(360 282)">
-    <path d="M0 9 H17 M17 9 l-5 -5 M17 9 l-5 5" class="live-line"/>
+  <rect
+     class="chip"
+     x="345"
+     y="274"
+     width="180"
+     height="34"
+     rx="17"
+     id="rect12" />
+  <g
+     transform="translate(360 282)"
+     id="g12">
+    <path
+       d="M0 9 H17 M17 9 l-5 -5 M17 9 l-5 5"
+       class="live-line"
+       id="path12" />
   </g>
-  <text x="384" y="296" class="small"><tspan font-weight="700">USB cable</tspan> <tspan class="muted">or both</tspan></text>
-
+  <text
+     x="384"
+     y="296"
+     class="small"
+     id="text14"><tspan
+       font-weight="700"
+       id="tspan13">USB cable</tspan><tspan
+       class="muted"
+       id="tspan14" /></text>
+  <text
+     x="453.25232"
+     y="295.86548"
+     class="small"
+     id="text14-2"
+     style="font-size:13px;font-family:'-apple-system', 'Segoe UI', Inter, Helvetica, Arial, sans-serif;fill:#0b1220"><tspan
+       style="fill:#4a5873;fill-opacity:1"
+       id="tspan3">or both</tspan></text>
   <!-- The computer -->
-  <rect class="card" x="630" y="40" width="200" height="300" rx="18"/>
-  <rect class="outline" x="668" y="74" width="124" height="82" rx="8"/>
-  <rect class="screen" x="674" y="80" width="112" height="70" rx="3"/>
-  <circle class="ring" cx="730" cy="115" r="14" style="stroke-width: 2.5"/>
-  <circle cx="730" cy="115" r="5" class="accent"/>
-  <rect class="base" x="712" y="160" width="36" height="10" rx="2"/>
-  <rect class="base" x="696" y="170" width="68" height="5" rx="2.5"/>
-  <text x="730" y="210" text-anchor="middle" class="title">Your computer</text>
-  <text x="730" y="232" text-anchor="middle" class="small muted">Windows or Linux</text>
-  <text x="730" y="256" text-anchor="middle" class="tiny muted">decodes on the graphics card</text>
-  <rect class="accent" x="660" y="276" width="140" height="40" rx="10"/>
-  <text x="730" y="301" text-anchor="middle" class="small badge-text">Webcam "Oculibre"</text>
-
-  <!-- The apps -->
-  <path class="wire" d="M832 166 H 840 M840 61 V 271 M840 61 H 850 M840 103 H 850 M840 145 H 850 M840 187 H 850 M840 229 H 850 M840 271 H 850" style="stroke-width: 2"/>
-  <g class="small">
-    <rect class="chip" x="852" y="44" width="96" height="34" rx="10"/><text x="900" y="66" text-anchor="middle">OBS Studio</text>
-    <rect class="chip" x="852" y="86" width="96" height="34" rx="10"/><text x="900" y="108" text-anchor="middle">Zoom</text>
-    <rect class="chip" x="852" y="128" width="96" height="34" rx="10"/><text x="900" y="150" text-anchor="middle">Teams</text>
-    <rect class="chip" x="852" y="170" width="96" height="34" rx="10"/><text x="900" y="192" text-anchor="middle">Discord</text>
-    <rect class="chip" x="852" y="212" width="96" height="34" rx="10"/><text x="900" y="234" text-anchor="middle">Google Meet</text>
-    <rect class="chip" x="852" y="254" width="96" height="34" rx="10"/><text x="900" y="276" text-anchor="middle">Chrome, Edge</text>
-    <text x="900" y="316" text-anchor="middle" class="tiny muted">and every app</text>
-    <text x="900" y="332" text-anchor="middle" class="tiny muted">with a camera</text>
+  <rect
+     class="card"
+     x="630"
+     y="40"
+     width="200"
+     height="300"
+     rx="18"
+     id="rect14" />
+  <rect
+     class="outline"
+     x="668"
+     y="74"
+     width="124"
+     height="82"
+     rx="8"
+     id="rect15" />
+  <rect
+     class="screen"
+     x="674"
+     y="80"
+     width="112"
+     height="70"
+     rx="3"
+     id="rect16"
+     sodipodi:insensitive="true" />
+  <g
+     id="g30"
+     inkscape:label="logo"
+     transform="matrix(0.04846517,0,0,0.04846517,698.30554,108.84506)">
+    <path
+       fill="#1c3051"
+       d="m 1044.5477,70.28545 c 17.08,50.878 22.99,104.835 17.36,158.205 -11.02,100.993 -61.62,193.5 -140.72997,257.245 -82.19,66.409 -187.67,96.899 -292.62,84.579 -102.03,-11.52 -195.38,-62.843 -259.79,-142.805 -64.07,-78.623 -93.771,-179.746 -82.382,-280.531 11.612,-100.029 62.702,-191.272 141.922,-253.437 82.1,-64.955 186.69,-94.544 290.65,-82.226 15.51,1.933 29.95,3.975 45.26,7.308 38.51,8.889 62.69,18.652 97.57,36.128 -22.89,4.168 -39.86,8.454 -62.18,14.507 -76.32,-27.912 -159.76,-29.607 -237.15,-4.817 -88.08,28.39 -161.25,90.664 -203.35,173.08 -39.92,79.725 -46.78,171.973 -19.1,256.726 29.75,87.792 92.64,160.479 175.24,202.546 83.88,42.021 180.97,49.201 270.11,19.961 90.54,-30.561 165.04,-96.15 206.82,-182.082 37.61997,-75.692 42.15997,-172.951 15.40997,-252.771 15,-3.131 23.05,-5.157 36.96,-11.616 z"
+       id="path2-7"
+       style="display:block" />
+    <path
+       fill="#fe633c"
+       d="m 1187.5877,-245.02555 1.12,1.349 c 0.74,6.584 -0.09,12.267 -0.93,18.71 -12.47,96.195 -108.24,131.918 -191.20997,147.093 -19.02,3.478 -38.98,5.614 -58.3,9.174 56.68,4.708 118.03997,2.629 172.15997,-16.049 18.21,-6.285 35.37,-14.64 52.83,-22.749 -34.9,103.843 -163.86997,104.12 -253.39997,96.609 51.06,23.157 124.96997,27.922 179.34997,15.02 -2.02,2.748 -4.09,5.459 -6.21,8.132 -23.31,29.125 -55.22,44.722 -91.88997,48.848 -53.45,6.404 -80.25,-5.864 -130.95,-13.157 -69.43,-9.988 -159.7,-11.121 -227.48,9.999 -16.62,5.181 -34.93,16.024 -48.72,26.448 136.9,-305.258 422.35997,-138.104 603.62997,-329.427 z"
+       id="path3-5"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 368.79773,299.51245 c 12.47,3.499 26.23,8.564 39.04,12.349 20.85,6.094 42.06,10.913 63.5,14.43 59.97,10.23 121.07,12.151 181.56,5.71 41.68,-4.149 70.25,-8.969 104.99,-33.836 -17.99,37.339 -39.44,72.907 -64.07,106.236 -33.69,43.34 -51.23,62.089 -92.81,96.847 -20.26,-5.267 -39.66,-10.682 -58.76,-19.355 -82.34,-37.393 -140.62,-98.877 -173.45,-182.381 z"
+       id="path4-3"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 744.98773,61.64645 c 13.9,-1.347 39.91,-0.463 53.75,0.427 66.05,4.249 126.9,14.92 188.28,40.283 1.14,3.814 2.19,7.654 3.15,11.517 21.34997,84.276 5.3,168.552 -38.71,242.539 -9.85,15.433 -15.94,23.798 -27.87,37.667 -3.99,-14.451 -6.6,-29.76 -10.55,-44.356 -19.21,-71.012 -51.09,-135.589 -92.12,-196.45 -27.99,-41.517 -46.33,-67.631 -91.47,-90.645 z"
+       id="path5-5"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 425.40773,-15.05055 c 1.58,2.956 6.27,29.18 7.56,34.846 2.47,10.687 5.3,21.289 8.48,31.788 19.85,65.365 52.31,123.996 90.88,179.983 27.08,39.309 45.05,62.005 87.32,84.531 -25.81,0.476 -48.73,0.901 -74.54,-0.651 -58.4,-1.112 -130.06,-18.41 -184.09,-40.061 -6.49,-22.046 -10.43,-47.758 -11.72,-70.663 -4.24,-80.376 23.06,-159.233 76.11,-219.773 z"
+       id="path6-6"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 812.83773,176.85145 c 3.75,3.571 14.26,21.258 17.7,27.069 40.69,68.657 61.81,130.937 75.81,208.66 -55.11,52.876 -114.02,83.762 -190.25,94.379 -31.21,3.747 -59.51,3.989 -90.59,-1.128 13.08,-10.985 25.5,-22.723 37.21,-35.154 52.18,-54.684 91.29,-116.827 122.55,-185.36 18.4,-40.334 28.63,-63.603 27.57,-108.466 z"
+       id="path7-2"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 661.48773,-127.32355 c 26.65,-2.952 71.54,4.924 97.39,10.712 -45.48,18.982 -79.51,39.265 -114.83,74.26 -54.68,54.181 -109.29,160.261 -109.23,237.826 0.03,0.973 -0.23,2.002 -0.41,3.005 -2.84,-1.707 -15.48,-22.899 -17.98,-27.078 -38.32,-62.713 -63.5,-132.559 -74,-205.298 60.1,-59.66 135.32,-88.946 219.06,-93.427 z"
+       id="path8-9"
+       style="display:block" />
+    <path
+       fill="#fe633c"
+       d="m 718.95773,-188.68455 c 12.03,-46.906 22.79,-87.37 67.7,-113.653 28.24,-16.357 61.79,-20.894 93.35,-12.622 31.5,8.483 58.36,29.099 74.71,57.336 12.85,22.465 16.5,46.136 15.55,71.633 -15.6,3.728 -31.97,7.221 -47.43,11.143 3.98,-23.369 2.41,-45.952 -11.93,-65.755 -25.26,-34.905 -72.97,-42.843 -107.7,-17.046 -28.11,20.889 -28.7,45.737 -38.99,76.272 -15.31,-3.333 -29.75,-5.375 -45.26,-7.308 z"
+       id="path15-1"
+       style="display:block" />
   </g>
-
+  <g
+     id="g30-7"
+     inkscape:label="logo"
+     transform="matrix(0.04846517,0,0,0.04846517,91.734188,129.7624)">
+    <path
+       fill="#1c3051"
+       d="m 1044.5477,70.28545 c 17.08,50.878 22.99,104.835 17.36,158.205 -11.02,100.993 -61.62,193.5 -140.72997,257.245 -82.19,66.409 -187.67,96.899 -292.62,84.579 -102.03,-11.52 -195.38,-62.843 -259.79,-142.805 -64.07,-78.623 -93.771,-179.746 -82.382,-280.531 11.612,-100.029 62.702,-191.272 141.922,-253.437 82.1,-64.955 186.69,-94.544 290.65,-82.226 15.51,1.933 29.95,3.975 45.26,7.308 38.51,8.889 62.69,18.652 97.57,36.128 -22.89,4.168 -39.86,8.454 -62.18,14.507 -76.32,-27.912 -159.76,-29.607 -237.15,-4.817 -88.08,28.39 -161.25,90.664 -203.35,173.08 -39.92,79.725 -46.78,171.973 -19.1,256.726 29.75,87.792 92.64,160.479 175.24,202.546 83.88,42.021 180.97,49.201 270.11,19.961 90.54,-30.561 165.04,-96.15 206.82,-182.082 37.61997,-75.692 42.15997,-172.951 15.40997,-252.771 15,-3.131 23.05,-5.157 36.96,-11.616 z"
+       id="path2-7-0"
+       style="display:block" />
+    <path
+       fill="#fe633c"
+       d="m 1187.5877,-245.02555 1.12,1.349 c 0.74,6.584 -0.09,12.267 -0.93,18.71 -12.47,96.195 -108.24,131.918 -191.20997,147.093 -19.02,3.478 -38.98,5.614 -58.3,9.174 56.68,4.708 118.03997,2.629 172.15997,-16.049 18.21,-6.285 35.37,-14.64 52.83,-22.749 -34.9,103.843 -163.86997,104.12 -253.39997,96.609 51.06,23.157 124.96997,27.922 179.34997,15.02 -2.02,2.748 -4.09,5.459 -6.21,8.132 -23.31,29.125 -55.22,44.722 -91.88997,48.848 -53.45,6.404 -80.25,-5.864 -130.95,-13.157 -69.43,-9.988 -159.7,-11.121 -227.48,9.999 -16.62,5.181 -34.93,16.024 -48.72,26.448 136.9,-305.258 422.35997,-138.104 603.62997,-329.427 z"
+       id="path3-5-9"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 368.79773,299.51245 c 12.47,3.499 26.23,8.564 39.04,12.349 20.85,6.094 42.06,10.913 63.5,14.43 59.97,10.23 121.07,12.151 181.56,5.71 41.68,-4.149 70.25,-8.969 104.99,-33.836 -17.99,37.339 -39.44,72.907 -64.07,106.236 -33.69,43.34 -51.23,62.089 -92.81,96.847 -20.26,-5.267 -39.66,-10.682 -58.76,-19.355 -82.34,-37.393 -140.62,-98.877 -173.45,-182.381 z"
+       id="path4-3-3"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 744.98773,61.64645 c 13.9,-1.347 39.91,-0.463 53.75,0.427 66.05,4.249 126.9,14.92 188.28,40.283 1.14,3.814 2.19,7.654 3.15,11.517 21.34997,84.276 5.3,168.552 -38.71,242.539 -9.85,15.433 -15.94,23.798 -27.87,37.667 -3.99,-14.451 -6.6,-29.76 -10.55,-44.356 -19.21,-71.012 -51.09,-135.589 -92.12,-196.45 -27.99,-41.517 -46.33,-67.631 -91.47,-90.645 z"
+       id="path5-5-6"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 425.40773,-15.05055 c 1.58,2.956 6.27,29.18 7.56,34.846 2.47,10.687 5.3,21.289 8.48,31.788 19.85,65.365 52.31,123.996 90.88,179.983 27.08,39.309 45.05,62.005 87.32,84.531 -25.81,0.476 -48.73,0.901 -74.54,-0.651 -58.4,-1.112 -130.06,-18.41 -184.09,-40.061 -6.49,-22.046 -10.43,-47.758 -11.72,-70.663 -4.24,-80.376 23.06,-159.233 76.11,-219.773 z"
+       id="path6-6-0"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 812.83773,176.85145 c 3.75,3.571 14.26,21.258 17.7,27.069 40.69,68.657 61.81,130.937 75.81,208.66 -55.11,52.876 -114.02,83.762 -190.25,94.379 -31.21,3.747 -59.51,3.989 -90.59,-1.128 13.08,-10.985 25.5,-22.723 37.21,-35.154 52.18,-54.684 91.29,-116.827 122.55,-185.36 18.4,-40.334 28.63,-63.603 27.57,-108.466 z"
+       id="path7-2-6"
+       style="display:block" />
+    <path
+       fill="#1c3051"
+       d="m 661.48773,-127.32355 c 26.65,-2.952 71.54,4.924 97.39,10.712 -45.48,18.982 -79.51,39.265 -114.83,74.26 -54.68,54.181 -109.29,160.261 -109.23,237.826 0.03,0.973 -0.23,2.002 -0.41,3.005 -2.84,-1.707 -15.48,-22.899 -17.98,-27.078 -38.32,-62.713 -63.5,-132.559 -74,-205.298 60.1,-59.66 135.32,-88.946 219.06,-93.427 z"
+       id="path8-9-2"
+       style="display:block" />
+    <path
+       fill="#fe633c"
+       d="m 718.95773,-188.68455 c 12.03,-46.906 22.79,-87.37 67.7,-113.653 28.24,-16.357 61.79,-20.894 93.35,-12.622 31.5,8.483 58.36,29.099 74.71,57.336 12.85,22.465 16.5,46.136 15.55,71.633 -15.6,3.728 -31.97,7.221 -47.43,11.143 3.98,-23.369 2.41,-45.952 -11.93,-65.755 -25.26,-34.905 -72.97,-42.843 -107.7,-17.046 -28.11,20.889 -28.7,45.737 -38.99,76.272 -15.31,-3.333 -29.75,-5.375 -45.26,-7.308 z"
+       id="path15-1-6"
+       style="display:block" />
+  </g>
+  <rect
+     class="base"
+     x="712"
+     y="160"
+     width="36"
+     height="10"
+     rx="2"
+     id="rect17" />
+  <rect
+     class="base"
+     x="696"
+     y="170"
+     width="68"
+     height="5"
+     rx="2.5"
+     id="rect18" />
+  <text
+     x="730"
+     y="210"
+     text-anchor="middle"
+     class="title"
+     id="text18">Your computer</text>
+  <text
+     x="730"
+     y="232"
+     text-anchor="middle"
+     class="small muted"
+     id="text19">Windows or Linux</text>
+  <text
+     x="730"
+     y="256"
+     text-anchor="middle"
+     class="tiny muted"
+     id="text20">decodes on the graphics card</text>
+  <rect
+     class="accent"
+     x="660"
+     y="276"
+     width="140"
+     height="40"
+     rx="10"
+     id="rect20" />
+  <text
+     x="730"
+     y="301"
+     text-anchor="middle"
+     class="small badge-text"
+     id="text21">Webcam &quot;Oculibre&quot;</text>
+  <!-- The apps -->
+  <path
+     class="wire"
+     d="M832 166 H 840 M840 61 V 271 M840 61 H 850 M840 103 H 850 M840 145 H 850 M840 187 H 850 M840 229 H 850 M840 271 H 850"
+     style="stroke-width: 2"
+     id="path21" />
+  <g
+     class="small"
+     id="g29">
+    <rect
+       class="chip"
+       x="852"
+       y="44"
+       width="96"
+       height="34"
+       rx="10"
+       id="rect21" />
+    <text
+       x="900"
+       y="66"
+       text-anchor="middle"
+       id="text22">OBS Studio</text>
+    <rect
+       class="chip"
+       x="852"
+       y="86"
+       width="96"
+       height="34"
+       rx="10"
+       id="rect22" />
+    <text
+       x="900"
+       y="108"
+       text-anchor="middle"
+       id="text23">Zoom</text>
+    <rect
+       class="chip"
+       x="852"
+       y="128"
+       width="96"
+       height="34"
+       rx="10"
+       id="rect23" />
+    <text
+       x="900"
+       y="150"
+       text-anchor="middle"
+       id="text24">Teams</text>
+    <rect
+       class="chip"
+       x="852"
+       y="170"
+       width="96"
+       height="34"
+       rx="10"
+       id="rect24" />
+    <text
+       x="900"
+       y="192"
+       text-anchor="middle"
+       id="text25">Discord</text>
+    <rect
+       class="chip"
+       x="852"
+       y="212"
+       width="96"
+       height="34"
+       rx="10"
+       id="rect25" />
+    <text
+       x="900"
+       y="234"
+       text-anchor="middle"
+       id="text26">Google Meet</text>
+    <rect
+       class="chip"
+       x="852"
+       y="254"
+       width="96"
+       height="34"
+       rx="10"
+       id="rect26" />
+    <text
+       x="900"
+       y="276"
+       text-anchor="middle"
+       id="text27">Chrome, Edge</text>
+    <text
+       x="900"
+       y="316"
+       text-anchor="middle"
+       class="tiny muted"
+       id="text28">and every app</text>
+    <text
+       x="900"
+       y="332"
+       text-anchor="middle"
+       class="tiny muted"
+       id="text29">with a camera</text>
+  </g>
   <!-- The promise -->
-  <text x="480" y="384" text-anchor="middle" class="small muted">About <tspan class="live" font-weight="700">80 ms</tspan> of delay  ·  up to 1080p at 60 fps or 4K  ·  nothing leaves your network</text>
+  <text
+     x="480"
+     y="384"
+     text-anchor="middle"
+     class="small muted"
+     id="text30">About <tspan
+   class="live"
+   font-weight="700"
+   id="tspan29">80 ms</tspan> of delay  ·  up to 1080p at 60 fps or 4K  ·  nothing leaves your network</text>
+  <text
+     x="394.58356"
+     y="93.915497"
+     class="small"
+     id="text12-8"
+     style="font-size:13px;font-family:'-apple-system', 'Segoe UI', Inter, Helvetica, Arial, sans-serif;fill:#0b1220"><tspan
+       style="fill:#4a5873;fill-opacity:1"
+       id="tspan2">encrypted, paired by QR</tspan></text>
 </svg>
