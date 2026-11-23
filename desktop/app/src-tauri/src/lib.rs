@@ -320,6 +320,15 @@ fn use_usb_phone(receiver: State<Receiver>, id: String) -> Result<(), String> {
     running(&receiver)?.use_usb_phone(&id)
 }
 
+/// Phones plugged in over USB that wait for an answer (the window may open after they were
+/// announced).
+#[tauri::command]
+fn usb_phones(receiver: State<Receiver>) -> Vec<oculibre_core::events::UsbPhone> {
+    running(&receiver)
+        .map(|h| h.usb_phones())
+        .unwrap_or_default()
+}
+
 /// The receiver, if running; the lock is only held to copy the handle.
 fn running(receiver: &Receiver) -> Result<Arc<Host>, String> {
     receiver
@@ -593,6 +602,7 @@ pub fn run() {
             settings,
             set_settings,
             use_usb_phone,
+            usb_phones,
             autostart,
             set_autostart,
             forget_phone,

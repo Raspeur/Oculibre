@@ -17,6 +17,7 @@ import {
   onPhonesChanged,
   onReceiver,
   knownPhones,
+  usbPhones,
   start,
 } from "./engine";
 
@@ -72,7 +73,8 @@ type Action =
   | { type: "event"; event: EngineEvent }
   | { type: "started"; address: string }
   | { type: "startFailed"; error: string }
-  | { type: "known"; phones: KnownPhone[] };
+  | { type: "known"; phones: KnownPhone[] }
+  | { type: "usbPhones"; phones: { id: string; phone: string }[] };
 
 /** The phone left: forget everything about it. */
 const noPhone = {
@@ -95,6 +97,8 @@ export function reduce(state: EngineState, action: Action): EngineState {
       return { ...state, running: false, startError: action.error };
     case "known":
       return { ...state, known: action.phones };
+    case "usbPhones":
+      return { ...state, usbPhones: action.phones };
     case "event":
       return reduceEvent(state, action.event);
   }
@@ -141,6 +145,8 @@ export function useEngine(): EngineState {
 
   useEffect(() => {
     const refreshPhones = () => knownPhones().then((phones) => dispatch({ type: "known", phones }));
+    // Phones announced over USB before the window listened (the engine starts first).
+    const refreshUsb = () => usbPhones().then((phones) => dispatch({ type: "usbPhones", phones }));
     const unlisten = onEngineEvent((event) => {
       dispatch({ type: "event", event });
       // A new pairing, or a phone that came (its visit is now known).
@@ -152,11 +158,15 @@ export function useEngine(): EngineState {
     const unlistenReceiver = onReceiver((result) => {
       dispatch("Ok" in result ? { type: "started", address: result.Ok } : { type: "startFailed", error: result.Err });
       refreshPhones();
+      refreshUsb();
     });
     if (inApp) {
       // A second call (React runs effects twice while developing) gets the same address.
       start().then(
-        (address) => dispatch({ type: "started", address }),
+        (address) => {
+          dispatch({ type: "started", address });
+          refreshUsb();
+        },
         (error) => dispatch({ type: "startFailed", error: String(error) }),
       );
     }

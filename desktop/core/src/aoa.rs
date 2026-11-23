@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 
 use oculibre_protocol::{Role, MAGIC, PREAMBLE_LEN};
 
-use crate::events::Accessory;
+use crate::events::{Accessory, UsbPhone};
 
 /// What the app's accessory filter matches (android/app/src/main/res/xml/accessory_filter.xml).
 pub const MANUFACTURER: &str = "Oculibre";
@@ -275,20 +275,34 @@ fn accessory_endpoints(dev: &UsbDevice) -> Option<Endpoints> {
     None
 }
 
-/// The device opened, if it speaks AOA (an Android device). `None` also for the devices this user
-/// may not open. Asking does not switch anything: no prompt on the phone.
-fn android(dev: &UsbDevice) -> Option<File> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(dev.node())
-        .ok()?;
+/// What a USB device answered when asked whether it speaks AOA.
+enum Probe {
+    /// An Android device, opened.
+    Android(File),
+    /// Not one (or it went away).
+    Not,
+    /// This user may not open it, at least not yet: udev gives access a moment after the device
+    /// appears (systemd's uaccess, after libmtp's probe).
+    NoAccess,
+}
+
+/// Asks a device whether it speaks AOA (an Android device). Asking does not switch anything: no
+/// prompt on the phone.
+fn android(dev: &UsbDevice) -> Probe {
+    let file = match OpenOptions::new().read(true).write(true).open(dev.node()) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => return Probe::NoAccess,
+        Err(_) => return Probe::Not,
+    };
     let mut version = [0u8; 2];
     match control(&file, 0xc0, GET_PROTOCOL, 0, &mut version) {
-        Ok(2) if u16::from_le_bytes(version) > 0 => Some(file),
-        _ => None,
+        Ok(2) if u16::from_le_bytes(version) > 0 => Probe::Android(file),
+        _ => Probe::Not,
     }
 }
+
+/// How long a device that cannot be opened yet is looked at again (udev's access comes late).
+const ACCESS_GRACE: Duration = Duration::from_secs(10);
 
 /// Switches an Android device ([`android`]) to accessory mode: it leaves, and comes back as the
 /// accessory a second later.
@@ -746,6 +760,8 @@ pub struct Watch {
     wanted: Arc<Mutex<HashSet<(u32, u32)>>>,
     known: Arc<Mutex<Known>>,
     links: Links,
+    /// Phones announced ([`Accessory::Detected`]) and waiting for an answer: device → its label.
+    announced: Arc<Mutex<HashMap<(u32, u32), String>>>,
 }
 
 impl Watch {
@@ -764,6 +780,23 @@ impl Watch {
         if let Some(hash) = hash {
             self.known.lock().unwrap().tie(&hash, id);
         }
+    }
+
+    /// The phones announced and still waiting for an answer, for a window that opens after the
+    /// announcement (the engine starts before the window listens).
+    pub fn announced(&self) -> Vec<UsbPhone> {
+        let mut phones: Vec<_> = self
+            .announced
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(key, phone)| UsbPhone {
+                id: device_id(*key),
+                phone: phone.clone(),
+            })
+            .collect();
+        phones.sort_by(|a, b| a.id.cmp(&b.id));
+        phones
     }
 
     /// Forgets the cables of the phone `id`: it will be asked about again.
@@ -800,7 +833,9 @@ pub fn watch(
     let wanted: Arc<Mutex<HashSet<(u32, u32)>>> = Arc::default();
     let known = Arc::new(Mutex::new(Known::load(known, crate::host::host_id())));
     let links: Links = Arc::default();
+    let announced: Arc<Mutex<HashMap<(u32, u32), String>>> = Arc::default();
     let watch = Watch {
+        announced: announced.clone(),
         stop: stop.clone(),
         all: switch_all.clone(),
         wanted: wanted.clone(),
@@ -814,7 +849,8 @@ pub fn watch(
             // Each plug is looked at once (a device number changes at each plug); phones
             // announced wait for the user; accessories that cannot be opened are left alone.
             let mut seen: HashSet<(u32, u32)> = HashSet::new();
-            let mut detected: HashSet<(u32, u32)> = HashSet::new();
+            // When each device was first seen, for the ones not accessible yet.
+            let mut appeared: HashMap<(u32, u32), Instant> = HashMap::new();
             let failed: Arc<Mutex<HashSet<(u32, u32)>>> = Arc::default();
             let relaying: Arc<Mutex<HashSet<(u32, u32)>>> = Arc::default();
             while !stop.load(Ordering::Relaxed) {
@@ -854,28 +890,38 @@ pub fn watch(
                         continue;
                     }
                     let first = seen.insert(key);
-                    if !first && !detected.contains(&key) {
+                    if !first && !announced.lock().unwrap().contains_key(&key) {
                         continue; // not a phone, or switched already
                     }
                     let asked = wanted.lock().unwrap().remove(&key);
                     let all = switch_all.load(Ordering::Relaxed);
                     let serial = dev.serial.as_deref();
-                    if !(asked || all || first && known.lock().unwrap().contains(serial)) {
-                        if first && android(dev).is_some() {
-                            detected.insert(key);
-                            report(Accessory::Detected {
-                                id: device_id(key),
-                                phone: dev.label.clone(),
-                            });
+                    let now = asked || all || first && known.lock().unwrap().contains(serial);
+                    if !now && !first {
+                        continue; // announced, waiting for the user
+                    }
+                    let file = match android(dev) {
+                        Probe::Android(file) => file,
+                        Probe::NoAccess
+                            if appeared.entry(key).or_insert_with(Instant::now).elapsed()
+                                < ACCESS_GRACE =>
+                        {
+                            seen.remove(&key); // look again at the next scan
+                            continue;
                         }
+                        _ => continue, // not a phone, or never ours
+                    };
+                    if !now {
+                        announced.lock().unwrap().insert(key, dev.label.clone());
+                        report(Accessory::Detected {
+                            id: device_id(key),
+                            phone: dev.label.clone(),
+                        });
                         continue;
                     }
-                    if detected.remove(&key) {
+                    if announced.lock().unwrap().remove(&key).is_some() {
                         report(Accessory::Gone { id: device_id(key) }); // answered: no more question
                     }
-                    let Some(file) = android(dev) else {
-                        continue; // not a phone (or unplugged meanwhile)
-                    };
                     match switch(&file) {
                         Ok(()) => {
                             known.lock().unwrap().remember(serial);
@@ -890,15 +936,18 @@ pub fn watch(
                     }
                 }
                 let present: HashSet<_> = plugged.iter().map(UsbDevice::key).collect();
-                for key in detected.iter().filter(|k| !present.contains(k)) {
+                let mut waiting = announced.lock().unwrap();
+                for key in waiting.keys().filter(|k| !present.contains(k)) {
                     report(Accessory::Gone {
                         id: device_id(*key),
                     });
                 }
-                detected.retain(|k| present.contains(k));
+                waiting.retain(|k, _| present.contains(k));
                 seen.retain(|k| present.contains(k));
+                appeared.retain(|k, _| present.contains(k));
                 failed.lock().unwrap().retain(|k| present.contains(k));
-                wanted.lock().unwrap().retain(|k| detected.contains(k));
+                wanted.lock().unwrap().retain(|k| waiting.contains_key(k));
+                drop(waiting);
                 thread::sleep(SCAN_EVERY);
             }
         });

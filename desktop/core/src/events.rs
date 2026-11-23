@@ -21,6 +21,15 @@ pub enum Via {
     Wifi { tls: String },
 }
 
+/// An Android phone plugged in that waits for the user's answer ([`Accessory::Detected`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UsbPhone {
+    /// The plug ("1:7"), for [`Host::use_usb_phone`](crate::host::Host::use_usb_phone).
+    pub id: String,
+    /// What it calls itself ("Xiaomi Redmi Note 9 Pro").
+    pub phone: String,
+}
+
 /// What happens with the phones plugged in, in accessory mode ([`Event::Accessory`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", content = "data")]

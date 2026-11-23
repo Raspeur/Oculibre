@@ -619,6 +619,16 @@ impl Host {
         Err("USB without developer mode is off".into())
     }
 
+    /// The phones announced over USB still waiting for an answer: a window that opens later gets
+    /// them here, the events having gone before it listened.
+    pub fn usb_phones(&self) -> Vec<crate::events::UsbPhone> {
+        #[cfg(target_os = "linux")]
+        if let Some(watch) = self.accessory.lock().unwrap().as_ref() {
+            return watch.announced();
+        }
+        Vec::new()
+    }
+
     /// Switch every Android phone plugged in, or only those switched before (the user's choice).
     pub fn set_usb_switch_all(&self, all: bool) {
         #[cfg(target_os = "linux")]

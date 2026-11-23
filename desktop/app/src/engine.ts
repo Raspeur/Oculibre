@@ -257,6 +257,11 @@ export function setSettings(settings: AppSettings, now = false): Promise<Applied
   return invoke<Applied>("set_settings", { settings, now });
 }
 
+/** Phones plugged in over USB waiting for an answer (announced before the window listened, too). */
+export function usbPhones(): Promise<{ id: string; phone: string }[]> {
+  return inApp ? invoke("usb_phones") : Promise.resolve([]);
+}
+
 /** Use a phone plugged in over USB (an `Accessory` `Detected` event gave its id): next time without asking. */
 export function switchUsbPhone(id: string): Promise<void> {
   return invoke("use_usb_phone", { id });
