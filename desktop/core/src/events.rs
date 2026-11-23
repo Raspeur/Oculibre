@@ -25,6 +25,11 @@ pub enum Via {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", content = "data")]
 pub enum Accessory {
+    /// An Android phone was plugged in that this computer has never switched: it waits for the
+    /// user ([`Host::use_usb_phone`](crate::host::Host::use_usb_phone) with this `id`).
+    Detected { id: String, phone: String },
+    /// That phone needs no answer any more: unplugged, or switched (asked, or "every phone").
+    Gone { id: String },
     /// A phone was asked to switch to accessory mode: Android offers to open Oculibre.
     Switched { phone: String },
     /// A phone is in accessory mode: waiting for the app to start the stream.

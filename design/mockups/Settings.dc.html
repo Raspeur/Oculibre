@@ -120,7 +120,7 @@ body{margin:0}
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { autostart: true, tray: true, wifi: true, checked: false };
+    this.state = { autostart: true, tray: true, wifi: true, usb: false, checked: false };
   }
   renderVals() {
     const s = this.state;
@@ -136,6 +136,7 @@ class Component extends DCLogic {
       ],
       network: [
         sw('wifi', 'sw-wifi', 'Accepter les téléphones en Wi-Fi', 'Seulement les téléphones reliés, connexion chiffrée.'),
+        sw('usb', 'sw-usb', 'Utiliser tout téléphone branché en USB', 'Sans demander. Désactivé : seulement les téléphones choisis une fois (un téléphone branché pour charger est laissé tranquille).'),
       ],
       check: () => this.setState({ checked: true }),
       checkText: s.checked ? 'À jour' : 'Vérifier les mises à jour',

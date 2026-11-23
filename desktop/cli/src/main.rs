@@ -132,7 +132,11 @@ fn parse_args() -> Result<Args, String> {
                 c.device = Some(it.next().ok_or("--device needs a value")?.into());
             }
             "--no-adb" => c.adb = false,
-            "--usb-accessory" => c.usb_accessory = true,
+            "--usb-accessory" => {
+                // Typed by the user: every phone, without asking.
+                c.usb_accessory = true;
+                c.usb_switch_all = true;
+            }
             "-w" | "--wifi" => c.wifi = true,
             "--tls12-only" => c.tls12_only = true,
             "--pair" => {

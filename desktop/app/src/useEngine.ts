@@ -45,6 +45,8 @@ export interface EngineState {
   known: KnownPhone[];
   /** Short code of this computer, shown when pairing (Wi-Fi on). */
   key: string | null;
+  /** Android phones plugged in over USB that were never used: they wait for a yes (#21). */
+  usbPhones: { id: string; phone: string }[];
 }
 
 const initial: EngineState = {
@@ -62,6 +64,7 @@ const initial: EngineState = {
   outputSize: null,
   known: [],
   key: null,
+  usbPhones: [],
 };
 
 /** What can change the state: an engine event, or something the window did. */
@@ -117,6 +120,12 @@ function reduceEvent(state: EngineState, event: EngineEvent): EngineState {
       return { ...state, decoder: event.data.name };
     case "DecoderTooSlow":
       return { ...state, decoderTooSlow: { decode_ms: event.data.decode_ms, frame_ms: event.data.frame_ms } };
+    case "Accessory": {
+      const a = event.data;
+      if (a.kind === "Detected") return { ...state, usbPhones: [...state.usbPhones.filter((p) => p.id !== a.data.id), a.data] };
+      if (a.kind === "Gone") return { ...state, usbPhones: state.usbPhones.filter((p) => p.id !== a.data.id) };
+      return state;
+    }
     case "VirtualCameraSize":
       return { ...state, outputSize: event.data.size };
     case "SessionEnded":

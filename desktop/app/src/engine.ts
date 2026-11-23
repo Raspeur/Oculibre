@@ -155,6 +155,8 @@ export interface Summary {
 
 /** USB without developer mode (#21): the phones plugged in, in accessory mode. */
 export type Accessory =
+  | { kind: "Detected"; data: { id: string; phone: string } }
+  | { kind: "Gone"; data: { id: string } }
   | { kind: "Switched"; data: { phone: string } }
   | { kind: "Waiting" }
   | { kind: "Failed"; data: string };
@@ -234,6 +236,8 @@ export interface AppSettings {
   tray: boolean;
   /** "fr", "en", or "" for the system's language (the window and the tray menu). */
   language: string;
+  /** USB without developer mode (Linux): every Android phone plugged in, not only those chosen once. */
+  usb_any_phone: boolean;
 }
 
 /** When changed settings take effect: now, or when the phone streaming now leaves. */
@@ -242,7 +246,7 @@ export type Applied = "Now" | "AfterThisPhone";
 export function settings(): Promise<AppSettings> {
   return inApp
     ? invoke<AppSettings>("settings")
-    : Promise.resolve({ wifi: true, portrait: false, decoder: "auto", tray: true, language: "" });
+    : Promise.resolve({ wifi: true, portrait: false, decoder: "auto", tray: true, language: "", usb_any_phone: false });
 }
 
 /**
@@ -251,6 +255,11 @@ export function settings(): Promise<AppSettings> {
  */
 export function setSettings(settings: AppSettings, now = false): Promise<Applied> {
   return invoke<Applied>("set_settings", { settings, now });
+}
+
+/** Use a phone plugged in over USB (an `Accessory` `Detected` event gave its id): next time without asking. */
+export function switchUsbPhone(id: string): Promise<void> {
+  return invoke("use_usb_phone", { id });
 }
 
 /** Whether Oculibre starts with the computer (hidden, in the system tray). */

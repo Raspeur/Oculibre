@@ -119,6 +119,9 @@ fn start_host(app: &AppHandle, receiver: &Receiver) -> Result<String, String> {
     let config = Config {
         wifi: settings.wifi,
         portrait: settings.portrait,
+        // USB without developer mode: Linux only for now (Windows needs a driver, #21).
+        usb_accessory: cfg!(target_os = "linux"),
+        usb_switch_all: settings.usb_any_phone,
         // Each phone's rotation, mirror, camera and quality, applied again when it comes back.
         settings_file: Some(host::config_dir().join("phone-settings.json")),
         ..Config::default()
@@ -294,6 +297,11 @@ fn set_settings(
             menu.set_language(settings.lang());
         }
     }
+    if before.usb_any_phone != settings.usb_any_phone {
+        if let Ok(host) = running(&receiver) {
+            host.set_usb_switch_all(settings.usb_any_phone);
+        }
+    }
     if !before.needs_restart(&settings) || receiver.host.lock().unwrap().is_none() {
         return Ok(Applied::Now);
     }
@@ -303,6 +311,13 @@ fn set_settings(
     }
     restart(&app);
     Ok(Applied::Now)
+}
+
+/// Switches a phone plugged in over USB to accessory mode (`Accessory::Detected` gave its `id`),
+/// and remembers it for next time.
+#[tauri::command(async)]
+fn use_usb_phone(receiver: State<Receiver>, id: String) -> Result<(), String> {
+    running(&receiver)?.use_usb_phone(&id)
 }
 
 /// The receiver, if running; the lock is only held to copy the handle.
@@ -577,6 +592,7 @@ pub fn run() {
             set_preview_mode,
             settings,
             set_settings,
+            use_usb_phone,
             autostart,
             set_autostart,
             forget_phone,

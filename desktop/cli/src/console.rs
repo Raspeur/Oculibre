@@ -21,6 +21,8 @@ pub fn events(port: u16) -> Events {
         Event::Accessory(Accessory::Switched { phone }) => {
             println!("USB: {phone} switched to accessory mode — accept \"Open Oculibre\" on it")
         }
+        // The command line switches every phone: nothing is announced.
+        Event::Accessory(Accessory::Detected { .. } | Accessory::Gone { .. }) => {}
         Event::Accessory(Accessory::Waiting) => {
             println!("USB: phone in accessory mode — waiting for the app to start")
         }

@@ -20,6 +20,9 @@ pub struct AppSettings {
     pub tray: bool,
     /// "fr", "en", or "" for the system's language: the window (src/i18n.ts) and the tray menu.
     pub language: String,
+    /// USB without developer mode (#21, Linux): switch every Android phone plugged in, not only
+    /// those the user chose once. Off by default: a phone plugged in to charge is left alone.
+    pub usb_any_phone: bool,
 }
 
 /// The languages of the app (the window has the same in src/i18n.ts).
@@ -64,6 +67,7 @@ impl Default for AppSettings {
             decoder: "auto".into(),
             tray: true,
             language: String::new(),
+            usb_any_phone: false,
         }
     }
 }

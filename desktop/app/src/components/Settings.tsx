@@ -218,6 +218,24 @@ export function Settings(props: { engine: EngineState; section?: "about"; onDone
               <span className="oc-switch__knob" aria-hidden="true" />
             </button>
           </div>
+          {!onWindows && (
+            <div className="oc-row">
+              <span className="oc-row__label">
+                <span id="usb-label">{t("usb_any_phone")}</span>
+                <span className="oc-row__hint">{t("usb_any_phone_hint")}</span>
+              </span>
+              <button
+                type="button"
+                className="oc-switch"
+                aria-pressed={values?.usb_any_phone ?? false}
+                aria-labelledby="usb-label"
+                disabled={!values}
+                onClick={() => values && change({ ...values, usb_any_phone: !values.usb_any_phone })}
+              >
+                <span className="oc-switch__knob" aria-hidden="true" />
+              </button>
+            </div>
+          )}
           {engine.known.length === 0 ? (
             <div className="oc-row">
               <span className="oc-row__label">{t("known_phones")}</span>

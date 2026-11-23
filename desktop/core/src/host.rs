@@ -38,9 +38,11 @@ pub struct Config {
     pub device: Option<PathBuf>,
     /// Run `adb reverse` so that USB phones can connect.
     pub adb: bool,
-    /// Experimental (#21, Linux): switch the phones plugged in to accessory mode, so that USB
-    /// works without developer mode.
+    /// USB without developer mode (#21, Linux): follow the phones plugged in, switch to accessory
+    /// mode those switched before and announce the others ([`Event::Accessory`]).
     pub usb_accessory: bool,
+    /// With `usb_accessory`: switch every Android phone plugged in, known or not.
+    pub usb_switch_all: bool,
     /// Also accept paired phones over the network (TLS).
     pub wifi: bool,
     /// Testing: offer TLS 1.2 only, as with Android 5–9 phones.
@@ -64,6 +66,7 @@ impl Default for Config {
             device: None,
             adb: true,
             usb_accessory: false,
+            usb_switch_all: false,
             wifi: false,
             tls12_only: false,
             view: View::default(),
@@ -137,6 +140,8 @@ pub struct Host {
     current_fingerprint: Mutex<Option<String>>,
     /// How the phone being served came (recorded with its visit).
     current_via: Mutex<Option<Via>>,
+    /// Where its connection came from (USB accessory: which cable, see `aoa::Watch::tie`).
+    current_peer: Mutex<Option<SocketAddr>>,
     /// The running session, once the phone is in.
     remote: Mutex<Option<Remote>>,
     /// Rotation and mirror: for the running session and the next ones.
@@ -205,7 +210,10 @@ impl Host {
         #[cfg(target_os = "linux")]
         let accessory = config.usb_accessory.then(|| {
             let events = events.clone();
-            crate::aoa::watch(port, move |what| events(Event::Accessory(what)))
+            let known = Some(usb_phones_file());
+            crate::aoa::watch(port, config.usb_switch_all, known, move |what| {
+                events(Event::Accessory(what))
+            })
         });
 
         let wifi = if config.wifi {
@@ -255,6 +263,7 @@ impl Host {
             current: Mutex::new(None),
             current_fingerprint: Mutex::new(None),
             current_via: Mutex::new(None),
+            current_peer: Mutex::new(None),
             remote: Mutex::new(None),
             view: Mutex::new(view),
             viewers: ViewerSlot::default(),
@@ -329,6 +338,14 @@ impl Host {
         } else {
             Some(remote.phone.name.clone())
         };
+        // Over the USB accessory: its cable is this phone, so that forgetting it forgets the cable.
+        #[cfg(target_os = "linux")]
+        if let (Some(watch), Some(peer)) = (
+            self.accessory.lock().unwrap().as_ref(),
+            *self.current_peer.lock().unwrap(),
+        ) {
+            watch.tie(peer, &remote.phone.id);
+        }
         self.remember(&remote, |p| {
             p.name = name;
             p.last_seen = Some(crate::bench::now_utc());
@@ -451,6 +468,14 @@ impl Host {
                 profiles.forget(id)?;
             }
         }
+        // Its USB cable too: it will be asked about again when plugged in.
+        #[cfg(target_os = "linux")]
+        if !id.is_empty() {
+            match self.accessory.lock().unwrap().as_ref() {
+                Some(watch) => watch.forget(id),
+                None => crate::aoa::forget(&usb_phones_file(), id),
+            }
+        }
         Ok(())
     }
 
@@ -532,9 +557,10 @@ impl Host {
             link,
             fingerprint,
             via,
-            ..
+            peer,
         } = phone;
         *self.current_via.lock().unwrap() = Some(via);
+        *self.current_peer.lock().unwrap() = Some(peer);
         // Wi-Fi phones must be paired (or bring a valid pairing token); USB phones need nothing.
         let authorize = match (&self.wifi, &fingerprint) {
             (Some(wifi), Some(fingerprint)) => Some(move |hello: &Hello| {
@@ -578,7 +604,28 @@ impl Host {
         *self.current.lock().unwrap() = None;
         *self.current_fingerprint.lock().unwrap() = None;
         *self.current_via.lock().unwrap() = None;
+        *self.current_peer.lock().unwrap() = None;
         end
+    }
+
+    /// Switches the phone [`Accessory::Detected`](crate::events::Accessory::Detected) announced to
+    /// accessory mode, and remembers it: next time it is switched without asking.
+    pub fn use_usb_phone(&self, id: &str) -> Result<(), String> {
+        #[cfg(target_os = "linux")]
+        if let Some(watch) = self.accessory.lock().unwrap().as_ref() {
+            return watch.switch(id);
+        }
+        let _ = id;
+        Err("USB without developer mode is off".into())
+    }
+
+    /// Switch every Android phone plugged in, or only those switched before (the user's choice).
+    pub fn set_usb_switch_all(&self, all: bool) {
+        #[cfg(target_os = "linux")]
+        if let Some(watch) = self.accessory.lock().unwrap().as_ref() {
+            watch.set_switch_all(all);
+        }
+        let _ = all;
     }
 
     /// Ends the running session (if any) and makes [`Host::run`] / [`Host::accept`] return.
@@ -643,6 +690,11 @@ pub fn config_dir() -> PathBuf {
 }
 
 /// The phones paired for Wi-Fi, by TLS fingerprint.
+/// The phones switched to accessory mode before (hashes of their USB serial numbers, `aoa`).
+pub fn usb_phones_file() -> PathBuf {
+    config_dir().join("usb-phones.json")
+}
+
 pub fn paired_phones_file() -> PathBuf {
     config_dir().join("paired-phones.json")
 }

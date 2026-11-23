@@ -10,6 +10,7 @@ import {
   onWindows,
   phoneName,
   setPreviewMode,
+  switchUsbPhone,
   setSettings,
   settings,
 } from "../engine";
@@ -35,6 +36,7 @@ export function Stage({ engine }: { engine: EngineState }) {
             {engine.key && <span className="oc-small">{t("computer_code", { key: engine.key })}</span>}
           </div>
         </div>
+        <UsbPhones phones={engine.usbPhones} />
       </section>
     );
   }
@@ -169,6 +171,66 @@ export function Stage({ engine }: { engine: EngineState }) {
       )}
       {details && <LatencyDetails status={status} />}
     </section>
+  );
+}
+
+/**
+ * Plugs already answered ("Not now", or used while the engine switches it): kept while the window
+ * lives, since the waiting screen is shown again after each stream. An id is a plug ("1:7"): the
+ * next plug asks again.
+ */
+const usbAnswered = new Set<string>();
+
+/**
+ * Android phones plugged in over USB that were never used (#21): one question each, on the
+ * waiting screen only (one phone at a time: while one streams, even over adb, the question would
+ * be in the way and its answer of no use until it stops). A yes
+ * switches the phone to accessory mode (it then offers to open Oculibre) and is remembered.
+ */
+function UsbPhones({ phones }: { phones: { id: string; phone: string }[] }) {
+  const [answered, setAnswered] = useState<string[]>(() => [...usbAnswered]);
+  const [error, setError] = useState<string | null>(null);
+  const waiting = phones.filter((p) => !answered.includes(p.id));
+  if (waiting.length === 0 && !error) return null;
+  const answer = (id: string) => {
+    usbAnswered.add(id);
+    setAnswered((a) => [...a, id]);
+  };
+  return (
+    <>
+      {waiting.map((p) => (
+        <div key={p.id} className="oc-alert oc-alert--info" role="status">
+          <span className="oc-alert__icon" aria-hidden="true">i</span>
+          <div className="oc-alert__body">
+            <span className="oc-alert__title">{t("usb_phone_title", { phone: p.phone || t("usb_phone_unnamed") })}</span>
+            <span className="oc-alert__text">{t("usb_phone_text")}</span>
+            <div className="oc-alert__actions">
+              <button
+                type="button"
+                className="oc-btn oc-btn--primary"
+                onClick={() => {
+                  answer(p.id);
+                  switchUsbPhone(p.id).catch((e) => setError(String(e)));
+                }}
+              >
+                {t("usb_phone_use")}
+              </button>
+              <button type="button" className="oc-btn oc-btn--secondary" onClick={() => answer(p.id)}>
+                {t("usb_phone_later")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+      {error && (
+        <div className="oc-alert oc-alert--error" role="alert">
+          <span className="oc-alert__icon" aria-hidden="true">!</span>
+          <div className="oc-alert__body">
+            <span className="oc-alert__text">{error}</span>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
