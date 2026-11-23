@@ -112,6 +112,8 @@ class StreamSession(
     private val port: Int,
     private val requested: StreamConfig,
     private val listener: Listener,
+    /** May show Android's USB accessory permission prompt (Start pressed, see StreamService). */
+    private val askUsb: Boolean = false,
 ) {
     interface Listener {
         fun onStatus(session: StreamSession, text: String)
@@ -449,9 +451,14 @@ class StreamSession(
         if (!running.get()) return null
         val accessory = UsbAccessoryLink.find(appContext) ?: return null
         if (!UsbAccessoryLink.allowed(appContext, accessory)) {
-            // "Open Oculibre" was not accepted: ask here; a yes starts a new attempt.
-            UsbAccessoryLink.askPermission(appContext, accessory)
-            status("USB cable: allow Oculibre to use it (Android's prompt), or plug it again")
+            // "Open Oculibre" was not accepted. On Start, ask here (a yes starts a new attempt);
+            // otherwise Android's own prompt may be showing: leave it alone.
+            if (askUsb) {
+                UsbAccessoryLink.askPermission(appContext, accessory)
+                status("USB cable: allow Oculibre to use it (Android's prompt)")
+            } else {
+                status("USB cable: accept \"Open Oculibre\", or press Stop then Start")
+            }
             return null
         }
         return try {

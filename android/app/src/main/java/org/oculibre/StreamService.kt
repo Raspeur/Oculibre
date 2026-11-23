@@ -140,13 +140,18 @@ class StreamService : Service() {
         attempts = 0
         lostSince = 0L
         publish(Snapshot(true, "Connecting to ${request.host}:${request.port}…"))
-        startSession(request)
+        startSession(request, byUser = true)
         // Not sticky: if Android kills us, don't restart a stream nobody asked for.
         return START_NOT_STICKY
     }
 
-    private fun startSession(request: Request) {
-        val newSession = StreamSession(applicationContext, request.host, request.port, request.config, sessionListener)
+    /**
+     * [byUser]: the user pressed Start. Only then may the session ask for the USB accessory
+     * permission: on a later attempt Android's own "Open Oculibre" may be showing (cable just
+     * plugged), and a second prompt would come on top of it.
+     */
+    private fun startSession(request: Request, byUser: Boolean = false) {
+        val newSession = StreamSession(applicationContext, request.host, request.port, request.config, sessionListener, askUsb = byUser,)
         session = newSession
         wentLive = false
         newSession.start()
